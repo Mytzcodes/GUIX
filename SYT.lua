@@ -262,6 +262,8 @@ local H = {
     vyIdx            = nil,
     prevXIdx         = nil,
     prevYIdx         = nil,
+    renderPosPairs   = {},
+    statePosPairs    = {},
     deadIdx          = nil,
     hpIdx            = nil,
     lastHurtAtIdx    = nil,
@@ -274,6 +276,10 @@ local H = {
     goPrevYIdx       = nil,
     goVxIdx          = nil,
     goVyIdx          = nil,
+    goAckXIdx        = nil,
+    goAckYIdx        = nil,
+    skillsObj        = nil,
+    origHandPower    = nil,
     lastWorldTag     = "",
     lastTileAt       = 0,
     lastDropAt       = 0,
@@ -295,6 +301,9 @@ local H = {
     origTouchBlocks  = nil,
     takeSeq          = 0,
     takingUids       = {},
+    autoMove         = nil,
+    moveConn         = nil,
+    moveHooked       = false,
     takeDropHooked   = false,
     wheelHooked      = false,
     seemsHooked      = false,
@@ -445,8 +454,15 @@ local function inspectUpvalues(gt)
         end
     end
 
+    H.statePosPairs = {}
+    local stFn = H.stateObj and type(H.stateObj.state) == "function" and H.stateObj.state or nil
+    if stFn and uv(stFn, 1) == gt and type(uv(stFn, 3)) == "number" and type(uv(stFn, 4)) == "number" then
+        H.statePosPairs = { x = 3, y = 4, vx = (type(uv(stFn, 5)) == "number") and 5 or nil, vy = (type(uv(stFn, 6)) == "number") and 6 or nil }
+    end
+
     local goTo = rawget(gt, "goTo")
     if type(goTo) == "function" then
+        H.goPxIdx, H.goPyIdx, H.goPrevXIdx, H.goPrevYIdx, H.goVxIdx, H.goVyIdx, H.goAckXIdx, H.goAckYIdx = nil, nil, nil, nil, nil, nil, nil, nil
         for idx = 1, 14 do
             local v1, v2, v3 = uv(goTo, idx), uv(goTo, idx + 1), uv(goTo, idx + 2)
             if type(v1) == "number" and type(v2) == "number" and v3 == gt then
@@ -456,6 +472,9 @@ local function inspectUpvalues(gt)
                 end
                 if type(uv(goTo, idx + 6)) == "number" and type(uv(goTo, idx + 7)) == "number" then
                     H.goVxIdx, H.goVyIdx = idx + 6, idx + 7
+                end
+                if type(uv(goTo, idx + 8)) == "number" and type(uv(goTo, idx + 9)) == "number" then
+                    H.goAckXIdx, H.goAckYIdx = idx + 8, idx + 9
                 end
                 break
             end
@@ -491,14 +510,16 @@ local function inspectUpvalues(gt)
 
     if H.renderFn and refX and refY then
         local fallbackIdx = nil
-        for idx = 10, 55 do
+        H.pxIdx, H.pyIdx, H.prevXIdx, H.prevYIdx, H.vxIdx, H.vyIdx = nil, nil, nil, nil, nil, nil
+        H.renderPosPairs = {}
+        for idx = 1, 90 do
             local vx, vy = uv(H.renderFn, idx), uv(H.renderFn, idx + 1)
             if type(vx) == "number" and type(vy) == "number"
                 and math.abs(vx - refX) < 0.05 and math.abs(vy - refY) < 0.05 then
+                H.renderPosPairs[#H.renderPosPairs + 1] = { x = idx, y = idx + 1 }
                 if not fallbackIdx then fallbackIdx = idx end
-                if type(uv(H.renderFn, idx + 2)) == "boolean" and type(uv(H.renderFn, idx - 1)) == "number" then
+                if not H.pxIdx and type(uv(H.renderFn, idx + 2)) == "boolean" and type(uv(H.renderFn, idx - 1)) == "number" then
                     H.pxIdx, H.pyIdx = idx, idx + 1
-                    break
                 end
             end
         end
@@ -521,6 +542,8 @@ local function inspectUpvalues(gt)
                     H.particles = val
                 elseif not H.backdropObj and type(rawget(val, "setWorld")) == "function" then
                     H.backdropObj = val
+                elseif not H.skillsObj and type(rawget(val, "handPower")) == "function" and type(rawget(val, "punchRange")) == "function" and type(rawget(val, "buildRange")) == "function" then
+                    H.skillsObj = val
                 end
             elseif type(val) == "function" then
                 if H.touchHurtRef and val == H.touchHurtRef and not H.touchHurtIdx then
@@ -559,7 +582,6 @@ local function inspectUpvalues(gt)
             end
         end
 
-        -- Pinpoint HP & Dead upvalue langsung dari blok RenderStepped (v_u_243..v_u_75..v_u_268 & v_u_94..v_u_200)
         if H.touchHurtIdx and H.dieIdx then
             local lo = math.min(H.touchHurtIdx, H.dieIdx)
             local hi = math.max(H.touchHurtIdx, H.dieIdx)
@@ -578,11 +600,24 @@ local function inspectUpvalues(gt)
 
         if H.pxIdx then
             local idx = H.pxIdx
-            if type(uv(H.renderFn, idx - 3)) == "number" and type(uv(H.renderFn, idx - 2)) == "number" then
-                H.vxIdx, H.vyIdx = idx - 3, idx - 2
+            -- Temukan velocity (vx, vy) berdasarkan kesesuaian dengan state() jika tersedia, aman tanpa tebak blindly
+            local refVx, refVy = nil, nil
+            if H.stateObj and type(H.stateObj.state) == "function" then
+                local okSt, st = pcall(H.stateObj.state)
+                if okSt and type(st) == "table" then
+                    refVx, refVy = st.vx, st.vy
+                end
             end
-            if type(uv(H.renderFn, idx + 3)) == "number" and type(uv(H.renderFn, idx + 4)) == "number" then
-                H.prevXIdx, H.prevYIdx = idx + 3, idx + 4
+            if type(refVx) == "number" and type(refVy) == "number" then
+                for k = math.max(1, idx - 8), math.min(90, idx + 8) do
+                    if k ~= idx and k ~= idx + 1 then
+                        local a, b = uv(H.renderFn, k), uv(H.renderFn, k + 1)
+                        if type(a) == "number" and type(b) == "number" and math.abs(a - refVx) < 0.05 and math.abs(b - refVy) < 0.05 then
+                            H.vxIdx, H.vyIdx = k, k + 1
+                            break
+                        end
+                    end
+                end
             end
             if not H.deadIdx then
                 for dIdx = idx + 2, idx + 16 do
@@ -596,7 +631,7 @@ local function inspectUpvalues(gt)
             if not H.hpIdx then
                 for hIdx = math.max(1, idx - 6), idx + 14 do
                     local v = uv(H.renderFn, hIdx)
-                    if type(v) == "number" and hIdx ~= idx and hIdx ~= idx + 1 and hIdx ~= H.vxIdx and hIdx ~= H.vyIdx and hIdx ~= H.prevXIdx and hIdx ~= H.prevYIdx then
+                    if type(v) == "number" and hIdx ~= idx and hIdx ~= idx + 1 and hIdx ~= H.vxIdx and hIdx ~= H.vyIdx then
                         if v >= 1 and v <= 5 and math.floor(v) == v and not H.hpIdx then
                             H.hpIdx = hIdx
                         end
@@ -610,14 +645,55 @@ end
 local Core = {}
 local SYT_Logic = { VERSION = "2.0.0", _Hooks = H, Core = Core }
 
+function Core.EnsureMoveHook()
+    local net = H.Net
+    if not net or not net.move or type(net.move.send) ~= "function" or H.moveHooked then return end
+    H.origMoveSend = H.origMoveSend or net.move.send
+    H.moveHooked = true
+    net.move.send = function(pkt)
+        local ts = (type(pkt) == "table" and pkt.t) or math.floor((os.clock() * 1000) % 65535)
+        local miscRef = SYT_Logic.Misc
+        if miscRef and miscRef.State and miscRef.State.noClip and miscRef.State.noClipAnchor then
+            local a = miscRef.State.noClipAnchor
+            return H.origMoveSend({ x = a.x, y = a.y, vx = 0, vy = 0, flags = 2, t = ts })
+        elseif H.autoMove then
+            local am = H.autoMove
+            return H.origMoveSend({ x = am.x, y = am.y, vx = am.vx or 0, vy = am.vy or 0, flags = am.flags or 2, t = ts })
+        end
+        return H.origMoveSend(pkt)
+    end
+end
+
+function Core.SyncOneHitHook(forceSec)
+    if type(forceSec) == "number" and forceSec > 0 then
+        H.oneHitForceUntil = math.max(H.oneHitForceUntil or 0, os.clock() + forceSec)
+    end
+    local sk = H.skillsObj
+    if not sk or type(sk.handPower) ~= "function" or H.handPowerHooked then return end
+    H.origHandPower = H.origHandPower or sk.handPower
+    H.handPowerHooked = true
+    sk.handPower = function(...)
+        local on = ((H.oneHitForceUntil or 0) > os.clock())
+            or (SYT_Logic.PNB and SYT_Logic.PNB.State and SYT_Logic.PNB.State.oneHit)
+            or (SYT_Logic.Pabrik and SYT_Logic.Pabrik.State and SYT_Logic.Pabrik.State.oneHit)
+            or (SYT_Logic.DirtFarm and SYT_Logic.DirtFarm.State and SYT_Logic.DirtFarm.State.oneHit)
+        if on then return 99 end
+        return H.origHandPower(...)
+    end
+end
+
 function SYT_Logic.Init(forceRefresh)
     local curWName = (H.gt and type(rawget(H.gt, "name")) == "string") and rawget(H.gt, "name") or ""
     if curWName ~= "" and curWName ~= H.lastWorldTag then
         forceRefresh = true
         H.lastWorldTag = curWName
         H.inv = nil
+        H.renderPosPairs = {}
+        H.pxIdx = nil
     end
     if H.initialized and not forceRefresh and isValidGT(H.gt) and H.Net and H.ItemDB and H.inv then
+        Core.EnsureMoveHook()
+        Core.SyncOneHitHook()
         return true
     end
 
@@ -651,6 +727,8 @@ function SYT_Logic.Init(forceRefresh)
                 H.particles = v
             elseif not H.backdropObj and type(rawget(v, "setWorld")) == "function" and type(rawget(v, "draw")) == "function" then
                 H.backdropObj = v
+            elseif not H.skillsObj and type(rawget(v, "handPower")) == "function" and type(rawget(v, "punchRange")) == "function" and type(rawget(v, "buildRange")) == "function" then
+                H.skillsObj = v
             end
         end
     end
@@ -671,6 +749,9 @@ function SYT_Logic.Init(forceRefresh)
     end
     if H.Net and H.Net.died and not H.origDiedSend and type(H.Net.died.send) == "function" then
         H.origDiedSend = H.Net.died.send
+    end
+    if H.skillsObj and not H.origHandPower and type(H.skillsObj.handPower) == "function" then
+        H.origHandPower = H.skillsObj.handPower
     end
 
     if H.gt and (not H.renderFn or forceRefresh) then
@@ -697,6 +778,8 @@ function SYT_Logic.Init(forceRefresh)
         end
     end
 
+    Core.EnsureMoveHook()
+    Core.SyncOneHitHook()
     H.initialized = isValidGT(H.gt) and H.Net ~= nil and H.ItemDB ~= nil
     return H.initialized
 end
@@ -969,7 +1052,7 @@ function Core.GetBackpackSlots()
     return out
 end
 
-function Core.ClearStuckDropVisuals(uid)
+function Core.ClearStuckDropVisuals(uid, remCount)
     Core.EnsureInit()
     local gt = H.gt
     if gt and type(gt.dropList) == "function" then
@@ -978,16 +1061,24 @@ function Core.ClearStuckDropVisuals(uid)
             for i = #drops, 1, -1 do
                 local d = drops[i]
                 if type(d) == "table" and (uid == nil or d.uid == uid) then
-                    local shouldClean = (uid ~= nil and d.uid == uid) or ((d.n or 0) <= 0) or (d.frame and not d.frame.Parent)
-                    if shouldClean then
-                        if uid ~= nil and type(gt.dropTaken) == "function" then
-                            pcall(gt.dropTaken, d.uid, 0)
-                        end
-                        pcall(function()
-                            if d.frame and d.frame.Destroy then d.frame:Destroy() end
-                        end)
-                        if drops[i] == d then
-                            table.remove(drops, i)
+                    local isRemPartial = (uid ~= nil and d.uid == uid and type(remCount) == "number" and remCount > 0)
+                    if isRemPartial then
+                        d.n = remCount
+                        if type(gt.dropTaken) == "function" then pcall(gt.dropTaken, d.uid, remCount) end
+                    else
+                        local shouldClean = (uid ~= nil and d.uid == uid) or ((d.n or 0) <= 0) or (d.frame and not d.frame.Parent)
+                        if shouldClean then
+                            d.n = 0
+                            d.flown = true
+                            pcall(function()
+                                if d.frame and d.frame.Destroy then d.frame:Destroy() end
+                            end)
+                            if drops[i] == d then
+                                table.remove(drops, i)
+                            end
+                            if uid ~= nil and type(gt.dropTaken) == "function" then
+                                pcall(gt.dropTaken, d.uid, 0)
+                            end
                         end
                     end
                 end
@@ -995,14 +1086,16 @@ function Core.ClearStuckDropVisuals(uid)
         end
     end
     -- Bersihkan clone gem / item drop yang tersangkut secara visual di GameGui
-    local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
-    local gg = pg and pg:FindFirstChild("GameGui")
-    if gg then
-        for _, obj in ipairs(gg:GetDescendants()) do
-            if (obj:IsA("ImageLabel") or obj:IsA("Frame")) and obj.Visible then
-                local nm = string.lower(obj.Name)
-                if nm == "dropclone" or nm == "pickupclone" or nm == "gemclone" or string.find(nm, "stuckdrop", 1, true) then
-                    pcall(function() obj:Destroy() end)
+    if not (uid ~= nil and type(remCount) == "number" and remCount > 0) then
+        local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
+        local gg = pg and pg:FindFirstChild("GameGui")
+        if gg then
+            for _, obj in ipairs(gg:GetDescendants()) do
+                if (obj:IsA("ImageLabel") or obj:IsA("Frame")) and obj.Visible then
+                    local nm = string.lower(obj.Name)
+                    if nm == "dropclone" or nm == "pickupclone" or nm == "gemclone" or string.find(nm, "stuckdrop", 1, true) then
+                        pcall(function() obj:Destroy() end)
+                    end
                 end
             end
         end
@@ -1058,17 +1151,54 @@ function Core.SetLocalCoords(px, py, vx, vy)
     Core.EnsureInit()
     local gt = H.gt
     if not gt then return false end
-    if H.renderFn and H.pxIdx and H.pyIdx then
-        suv(H.renderFn, H.pxIdx, px)
-        suv(H.renderFn, H.pyIdx, py)
-        if H.prevXIdx then suv(H.renderFn, H.prevXIdx, px) end
-        if H.prevYIdx then suv(H.renderFn, H.prevYIdx, py) end
-        if H.vxIdx then suv(H.renderFn, H.vxIdx, vx or 0) end
-        if H.vyIdx then suv(H.renderFn, H.vyIdx, vy or 0) end
-    elseif type(gt.goTo) == "function" and H.goPxIdx and H.goPyIdx then
-        suv(gt.goTo, H.goPxIdx, px)
-        suv(gt.goTo, H.goPyIdx, py)
+    vx, vy = vx or 0, vy or 0
+
+    -- 1. Sinkronkan upvalue gt.goTo (ref shared dgn RenderStepped: pos, prevAntiWarp, vel, ack)
+    if type(gt.goTo) == "function" then
+        if not H.goPxIdx then pcall(inspectUpvalues, gt) end
+        if H.goPxIdx and H.goPyIdx then
+            suv(gt.goTo, H.goPxIdx, px)
+            suv(gt.goTo, H.goPyIdx, py)
+            if H.goPrevXIdx and H.goPrevYIdx then
+                suv(gt.goTo, H.goPrevXIdx, px)
+                suv(gt.goTo, H.goPrevYIdx, py)
+            end
+            if H.goAckXIdx and H.goAckYIdx then
+                suv(gt.goTo, H.goAckXIdx, px)
+                suv(gt.goTo, H.goAckYIdx, py)
+            end
+            if H.goVxIdx and H.goVyIdx then
+                suv(gt.goTo, H.goVxIdx, vx)
+                suv(gt.goTo, H.goVyIdx, vy)
+            end
+        end
     end
+
+    -- 2. Sinkronkan stateObj.state() agar Others.lua sendState membaca posisi exact
+    if H.stateObj and type(H.stateObj.state) == "function" and H.statePosPairs and H.statePosPairs.x then
+        suv(H.stateObj.state, H.statePosPairs.x, px)
+        suv(H.stateObj.state, H.statePosPairs.y, py)
+        if H.statePosPairs.vx then suv(H.stateObj.state, H.statePosPairs.vx, vx) end
+        if H.statePosPairs.vy then suv(H.stateObj.state, H.statePosPairs.vy, vy) end
+    end
+
+    -- 3. Sinkronkan seluruh pasangan posisi terverifikasi di RenderStepped (tanpa blind offset)
+    if H.renderFn then
+        if H.renderPosPairs and #H.renderPosPairs > 0 then
+            for _, p in ipairs(H.renderPosPairs) do
+                suv(H.renderFn, p.x, px)
+                suv(H.renderFn, p.y, py)
+            end
+        elseif H.pxIdx and H.pyIdx then
+            suv(H.renderFn, H.pxIdx, px)
+            suv(H.renderFn, H.pyIdx, py)
+        end
+        if H.vxIdx and H.vyIdx then
+            suv(H.renderFn, H.vxIdx, vx)
+            suv(H.renderFn, H.vyIdx, vy)
+        end
+    end
+
     gt.stuckAt, gt.portalGo = nil, nil
     return true
 end
@@ -1123,22 +1253,32 @@ function Core.GetLayerTile(tx, ty, layer)
     return (layer == 2) and Core.GetBG(tx, ty) or Core.GetFG(tx, ty)
 end
 
-function Core.MirrorLocalTile(layer, tx, ty, id)
+function Core.MirrorLocalTile(layer, tx, ty, id, flip)
     local gt = H.gt
     if not gt then return end
-    if layer == 2 then
-        if gt.bg and gt.bg[ty] then gt.bg[ty][tx] = id end
+    local layerName = (layer == 2) and "bg" or "fg"
+    if type(gt.tileChanged) == "function" then
+        pcall(gt.tileChanged, layerName, tx, ty, id, flip == true)
     else
-        if gt.fg and gt.fg[ty] then gt.fg[ty][tx] = id end
-    end
-    if id > 0 then
-        local info = Core.GetItemInfo(id)
-        if info and info.kind == "seed" then
-            H.mirroredTrees[ty * gt.w + tx] = { id = id, p = serverNow() }
+        if layer == 2 then
+            if gt.bg and gt.bg[ty] then gt.bg[ty][tx] = id end
+        else
+            if gt.fg and gt.fg[ty] then gt.fg[ty][tx] = id end
         end
-    else
-        H.mirroredTrees[ty * gt.w + tx] = nil
-        if H.trees then H.trees[ty * gt.w + tx] = nil end
+        if type(gt.placedAt) == "table" and type(gt.placedAt[layerName]) == "table" and gt.w then
+            gt.placedAt[layerName][ty * gt.w + tx] = (id ~= 0) and os.clock() or nil
+        end
+    end
+    if gt.w then
+        if id > 0 then
+            local info = Core.GetItemInfo(id)
+            if info and info.kind == "seed" then
+                H.mirroredTrees[ty * gt.w + tx] = { id = id, p = serverNow() }
+            end
+        else
+            H.mirroredTrees[ty * gt.w + tx] = nil
+            if H.trees then H.trees[ty * gt.w + tx] = nil end
+        end
     end
 end
 
@@ -1381,11 +1521,27 @@ local function moveTs()
     return math.floor((os.clock() * 1000) % 65535)
 end
 
+local function computeMoveFlags(px, py, vx, vy, prevFacing)
+    local facing = prevFacing or 1
+    if math.abs(vx or 0) > 0.05 then
+        facing = (vx > 0) and 1 or -1
+    end
+    local grounded = (math.abs(vy or 0) < 0.35) and Core.IsSolid(math.floor(px), math.floor(py + 0.02))
+    return (facing > 0 and 1 or 0) + (grounded and 2 or 0), facing
+end
+
 function Packets.SendRawMove(px, py, vx, vy, flags)
     Core.EnsureInit()
+    Core.EnsureMoveHook()
     local sendFn = H.origMoveSend or (H.Net and H.Net.move and H.Net.move.send)
     if type(sendFn) ~= "function" then return false end
-    return pcall(sendFn, { x = px, y = py, vx = vx or 0, vy = vy or 0, flags = toInt(flags, 2), t = moveTs() })
+    local fl = flags
+    if fl == nil then
+        fl = computeMoveFlags(px, py, vx or 0, vy or 0, 1)
+    else
+        fl = toInt(fl, 2)
+    end
+    return pcall(sendFn, { x = px, y = py, vx = vx or 0, vy = vy or 0, flags = fl, t = moveTs() })
 end
 
 function Packets.FindTilePath(sx, sy, gx, gy, allowHazard)
@@ -1420,7 +1576,8 @@ function Packets.FindTilePath(sx, sy, gx, gy, allowHazard)
                 if nx >= 0 and nx < w and ny >= 0 and ny < h then
                     local nIdx = ny * w + nx
                     if cameFrom[nIdx] == nil and (nIdx == goalIdx or not Core.IsSolid(nx, ny)) then
-                        local okHazard = ignoreDanger or (nIdx == goalIdx) or Misc.State.godMode
+                        local miscRef = SYT_Logic.Misc
+                        local okHazard = ignoreDanger or (nIdx == goalIdx) or (miscRef and miscRef.State and miscRef.State.godMode)
                         if not okHazard then
                             local fi = Core.GetItemInfo(Core.GetFG(nx, ny))
                             okHazard = not (fi and (fi.deadly or fi.hurts))
@@ -1443,70 +1600,147 @@ function Packets.FindTilePath(sx, sy, gx, gy, allowHazard)
     return runBfs(true)
 end
 
--- Metode Rekomendasi Jarak Jauh: Walk-Path aman anti rubberband/balik ke base
-function Packets.WalkPathTo(tx, ty, speedTilesPerSec, shouldContinueFn)
+-- Helper pergerakan kontinu sub-tile sinkron penuh dengan Game.lua & Server Growblox (anti rubberband / tidak hanya visual)
+local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn)
     Core.EnsureInit()
+    Core.EnsureMoveHook()
     local gt = H.gt
     if not gt then return false, "gt nil" end
     tx = clamp(math.floor(tx), 0, gt.w - 1)
     ty = clamp(math.floor(ty), 0, gt.h - 1)
 
-    local cur = Core.ReadPos()
-    if cur.tx == tx and cur.ty == ty then return true, "at_target" end
+    local sH = clamp(tonumber(speedH) or 6.9, 4.5, 9.5)
+    local sV = clamp(tonumber(speedV) or 11.5, 5.5, 18.0)
+    local maxAttempts = 2
+    local facing = 1
+    local tickSec = 0.067 -- 15Hz identik dengan Others.lua sendState
 
-    local speed = clamp(tonumber(speedTilesPerSec) or 13, 5.5, 16)
-    local stepDelay = clamp(1 / speed, 0.062, 0.22)
-    local retriedSnap = false
-
-    for _ = 1, 2 do
-        cur = Core.ReadPos()
-        if cur.tx == tx and cur.ty == ty then return true, "walk_path_ok" end
+    for attempt = 1, maxAttempts do
+        local cur = Core.ReadPos()
+        if cur.tx == tx and cur.ty == ty then
+            return true, string.format("Walk-Path OK -> (%d, %d)", tx, ty)
+        end
         local path = Packets.FindTilePath(cur.tx, cur.ty, tx, ty)
         if not path or #path <= 1 then
-            return false, "Jalur tertutup blok! Buka 1 celah atau gunakan Direct/Force."
+            return false, "Jalur tertutup blok! Buka 1 celah dulu."
         end
-        local snapped = false
-        local prevX, prevY = cur.tx, cur.ty
-        for idx = 2, #path do
-            if type(shouldContinueFn) == "function" and not shouldContinueFn() then return false, "cancelled" end
-            local node = path[idx]
-            if idx == #path and Core.IsSolid(node.x, node.y) then break end
-            local vx = (node.x - prevX) * speed
-            local vy = (node.y - prevY) * speed
-            local px, py = node.x + 0.5, node.y + 1
-            Core.SetLocalCoords(px, py, vx, vy)
-            Packets.SendRawMove(px, py, vx, vy, 2)
-            prevX, prevY = node.x, node.y
-            GetcSkipper.RandomizedWait(stepDelay, "move", shouldContinueFn)
-            if (idx % 6) == 0 then
-                local act = Core.ReadPos()
-                if (math.abs(act.tx - node.x) + math.abs(act.ty - node.y)) > 7 then
-                    snapped = true
+        -- Jika node terakhir solid, hentikan di node terbuka terakhir
+        if Core.IsSolid(path[#path].x, path[#path].y) then
+            table.remove(path, #path)
+            if #path <= 1 then
+                return false, "Target solid tanpa celah terdekat"
+            end
+        end
+
+        H.moveConn = H.moveConn and (pcall(function() H.moveConn:Disconnect() end) and nil) or nil
+        local curPx, curPy = cur.x, cur.y
+        if math.abs(curPx - (path[1].x + 0.5)) > 1.2 or math.abs(curPy - (path[1].y + 1)) > 1.2 then
+            curPx, curPy = path[1].x + 0.5, path[1].y + 1
+        end
+        local initFl, initFc = computeMoveFlags(curPx, curPy, 0, 0, facing)
+        facing = initFc
+        H.autoMove = { x = curPx, y = curPy, vx = 0, vy = 0, flags = initFl }
+        H.moveConn = RunService.RenderStepped:Connect(function()
+            local am = H.autoMove
+            if am then
+                Core.SetLocalCoords(am.x, am.y, am.vx, am.vy)
+            end
+        end)
+
+        local aborted, cancelled = false, false
+        for i = 2, #path do
+            if type(shouldContinueFn) == "function" and not shouldContinueFn() then
+                cancelled = true
+                break
+            end
+            local n = path[i]
+            local destX, destY = n.x + 0.5, n.y + 1
+            local segDx, segDy = destX - curPx, destY - curPy
+            local isHoriz = math.abs(segDx) >= math.abs(segDy)
+            local speed = isHoriz and sH or sV
+            local dist = math.sqrt(segDx * segDx + segDy * segDy)
+            local maxSub = math.max(0.25, speed * tickSec)
+            local subSteps = math.max(1, math.ceil(dist / maxSub))
+            local stepDt = math.max(0.038, (dist / subSteps) / speed)
+            local segVx = (segDx / (subSteps * stepDt))
+            local segVy = (segDy / (subSteps * stepDt))
+
+            for s = 1, subSteps do
+                if type(shouldContinueFn) == "function" and not shouldContinueFn() then
+                    cancelled = true
                     break
                 end
+                local tFrac = s / subSteps
+                local nx = curPx + segDx * tFrac
+                local ny = curPy + segDy * tFrac
+                local fl, fc = computeMoveFlags(nx, ny, segVx, segVy, facing)
+                facing = fc
+                H.autoMove = { x = nx, y = ny, vx = segVx, vy = segVy, flags = fl }
+                Core.SetLocalCoords(nx, ny, segVx, segVy)
+                Packets.SendRawMove(nx, ny, segVx, segVy, fl)
+                task.wait(stepDt)
+                if type(gt.state) == "function" or (H.stateObj and type(H.stateObj.state) == "function") then
+                    -- Deteksi jika server Force-Move / rollback jauh dari jalur autoMove
+                    local chk = Core.ReadPos()
+                    if (math.abs(chk.x - nx) + math.abs(chk.y - ny)) > 3.6 then
+                        aborted = true
+                        break
+                    end
+                end
             end
+            if aborted or cancelled then break end
+            curPx, curPy = destX, destY
         end
-        if not snapped then
+
+        if H.moveConn then
+            pcall(function() H.moveConn:Disconnect() end)
+            H.moveConn = nil
+        end
+
+        if cancelled then
+            H.autoMove = nil
+            return false, "cancelled"
+        end
+
+        if not aborted then
+            local finNode = path[#path]
+            local fx, fy = finNode.x + 0.5, finNode.y + 1
+            local fFlags = computeMoveFlags(fx, fy, 0, 0, facing)
+            H.autoMove = { x = fx, y = fy, vx = 0, vy = 0, flags = fFlags }
+            Core.SetLocalCoords(fx, fy, 0, 0)
+            Packets.SendRawMove(fx, fy, 0, 0, fFlags)
+            task.wait(0.06)
+            Packets.SendRawMove(fx, fy, 0, 0, fFlags)
+            H.autoMove = nil
             local fin = Core.ReadPos()
-            if (math.abs(fin.tx - tx) + math.abs(fin.ty - ty)) <= 3 then
-                if type(gt.goTo) == "function" and not Core.IsSolid(tx, ty) then pcall(gt.goTo, tx, ty) end
-                Core.SetLocalCoords(tx + 0.5, ty + 1, 0, 0)
-                return true, string.format("Walk-Path OK -> (%d, %d)", tx, ty)
+            if (math.abs(fin.tx - finNode.x) + math.abs(fin.ty - finNode.y)) <= 2 then
+                return true, string.format("Server Walk OK -> (%d, %d)", finNode.x, finNode.y)
             end
-            snapped = true
-        end
-        if snapped and not retriedSnap then
-            retriedSnap = true
-            speed = 9.5
-            stepDelay = 0.11
-            task.wait(0.22)
+            aborted = true
         else
-            break
+            H.autoMove = nil
+        end
+
+        if aborted and attempt < maxAttempts then
+            -- Perlambat kecepatan tepat di bawah batas physics client/server (6.6 H / 9.5 V)
+            sH, sV = 6.5, 9.5
+            task.wait(0.18)
         end
     end
+
+    H.autoMove = nil
     local f = Core.ReadPos()
-    return (math.abs(f.tx - tx) + math.abs(f.ty - ty)) <= 4,
-        string.format("Sampai (%d,%d) - Gunakan Walk-Path lambat bila server lag", f.tx, f.ty)
+    local reached = (math.abs(f.tx - tx) + math.abs(f.ty - ty)) <= 3
+    return reached, reached
+        and string.format("Sampai (%d, %d)", f.tx, f.ty)
+        or string.format("Tertahan server di (%d, %d) - coba Walk-Path lebih pelan", f.tx, f.ty)
+end
+
+-- Metode Rekomendasi Jarak Jauh: Walk-Path aman anti rubberband/balik ke base
+function Packets.WalkPathTo(tx, ty, speedTilesPerSec, shouldContinueFn)
+    local req = tonumber(speedTilesPerSec) or 6.9
+    -- Clamp kecepatan horizontal <= 7.2 t/s default physics Growblox agar server selalu terima
+    return executeServerSyncedPath(tx, ty, clamp(req, 4.8, 7.2), 11.5, shouldContinueFn)
 end
 
 function Packets.StepTeleport(tx, ty, stepSize, stepDelay, shouldContinueFn)
@@ -1525,45 +1759,18 @@ function Packets.StepTeleport(tx, ty, stepSize, stepDelay, shouldContinueFn)
     end
 
     local totalDist = #path - 1
-    -- Radius jauh (>14 tile): batasi hop <=2 tile & rate <=14.5 t/s agar tidak balik ke base/spawn
-    local maxStep = (totalDist > 14) and math.min(toInt(stepSize, 2), 2) or clamp(toInt(stepSize, 3), 1, 4)
-    local rawDelay = tonumber(stepDelay) or 0.06
-    local safeDelay = (totalDist > 14) and math.max(rawDelay, maxStep / 14.5) or math.max(rawDelay, maxStep / 24)
-
-    local idx = 1
-    local hopsSinceCheck = 0
-    while idx < #path do
-        if type(shouldContinueFn) == "function" and not shouldContinueFn() then return false, "cancelled" end
-        local nextIdx = math.min(#path, idx + maxStep)
-        local node = path[nextIdx]
-        if nextIdx == #path and Core.IsSolid(node.x, node.y) and nextIdx > 1 then
-            node = path[nextIdx - 1]
-        end
-        local px, py = node.x + 0.5, node.y + 1
-        Core.SetLocalCoords(px, py, 0, 0)
-        if type(gt.goTo) == "function" and nextIdx == #path then pcall(gt.goTo, node.x, node.y) end
-        Packets.SendRawMove(px, py, 0, 0, 2)
-        idx = nextIdx
-        hopsSinceCheck += 1
-        if idx < #path then
-            GetcSkipper.RandomizedWait(safeDelay, "move", shouldContinueFn)
-        end
-        if hopsSinceCheck >= 5 and idx < #path then
-            hopsSinceCheck = 0
-            local act = Core.ReadPos()
-            if (math.abs(act.tx - node.x) + math.abs(act.ty - node.y)) > 8 then
-                task.wait(0.22)
-                return Packets.WalkPathTo(tx, ty, 11, shouldContinueFn)
-            end
-        end
+    if totalDist <= 1 and not Core.IsSolid(tx, ty) then
+        -- Langkah 1 tile langsung aman 100% mengikuti physics
+        local fx, fy = tx + 0.5, ty + 1
+        local fFl = computeMoveFlags(fx, fy, (fx - cur.x) * 7, (fy - cur.y) * 7, (fx >= cur.x) and 1 or -1)
+        Core.SetLocalCoords(fx, fy, 0, 0)
+        Packets.SendRawMove(fx, fy, 0, 0, fFl)
+        task.wait(0.068)
+        return true, string.format("Step TP (1 node) -> (%d, %d)", tx, ty)
     end
 
-    local fin = Core.ReadPos()
-    if (math.abs(fin.tx - tx) + math.abs(fin.ty - ty)) > 6 then
-        task.wait(0.2)
-        return Packets.WalkPathTo(tx, ty, 10, shouldContinueFn)
-    end
-    return true, string.format("Step TP (%d nodes) -> (%d, %d)", totalDist, tx, ty)
+    -- Mengikuti path bebas rintangan dengan sub-step kontinu 7.1 H / 12.5 V agar 100% diterima server
+    return executeServerSyncedPath(tx, ty, 7.1, 12.5, shouldContinueFn)
 end
 stepTeleportImpl = Packets.StepTeleport
 
@@ -1574,7 +1781,7 @@ function Packets.WalkTeleport(arg1, ty, mode, stepSize, stepDelay)
     local opts = type(arg1) == "table" and arg1 or { tx = arg1, ty = ty, mode = mode, stepSize = stepSize, stepDelay = stepDelay }
     local m = string.lower(tostring(opts.mode or "step"))
     if m == "raw" then
-        return Packets.SendRawMove(opts.x or opts.tx or 0, opts.y or opts.ty or 0, opts.vx or 0, opts.vy or 0, opts.flags or 2)
+        return Packets.SendRawMove(opts.x or opts.tx or 0, opts.y or opts.ty or 0, opts.vx or 0, opts.vy or 0, opts.flags)
     end
     local tx, py = toInt(opts.tx), toInt(opts.ty)
     if not tx or not py then return false, "invalid coords" end
@@ -1582,21 +1789,45 @@ function Packets.WalkTeleport(arg1, ty, mode, stepSize, stepDelay)
     if not okVal and m ~= "force" then return false, msg end
     cx, cy = cx or clamp(tx, 0, gt.w - 1), cy or clamp(py, 0, gt.h - 1)
     if m == "walk" or m == "walkpath" or m == "safe" then
-        return Packets.WalkPathTo(cx, cy, opts.speed or 13, opts.shouldContinueFn)
+        return Packets.WalkPathTo(cx, cy, opts.speed or 6.9, opts.shouldContinueFn)
     elseif m == "direct" or m == "force" then
         local cur = Core.ReadPos()
         local manhattan = math.abs(cx - cur.tx) + math.abs(cy - cur.ty)
-        if m == "direct" and manhattan > 20 then
-            -- Rekomendasi anti-balik base: jarak >20 lewat WalkPathTo
-            return Packets.WalkPathTo(cx, cy, 13, opts.shouldContinueFn)
+        if m == "direct" and manhattan > 3 then
+            -- Server Growblox menolak warp direct >3 tile: teruskan lewat Step/Walk yang diterima server
+            return Packets.StepTeleport(cx, cy, opts.stepSize or 2, opts.stepDelay or 0.068, opts.shouldContinueFn)
         end
         local px, wy = cx + 0.5, cy + 1
+        local fl = computeMoveFlags(px, wy, 0, 0, (px >= cur.x) and 1 or -1)
         Core.SetLocalCoords(px, wy, 0, 0)
-        if type(gt.goTo) == "function" then pcall(gt.goTo, cx, cy) end
-        Packets.SendRawMove(px, wy, 0, 0, 2)
+        Packets.SendRawMove(px, wy, 0, 0, fl)
         return true, string.format("Direct TP -> Tile (%d, %d) | Stats (%d, %d)", cx, cy, cx + 1, cy + 1)
     end
-    return Packets.StepTeleport(cx, cy, opts.stepSize or 2, opts.stepDelay or 0.06, opts.shouldContinueFn)
+    return Packets.StepTeleport(cx, cy, opts.stepSize or 2, opts.stepDelay or 0.068, opts.shouldContinueFn)
+end
+
+local function waitTilePlaceCooldown(layer, tx, ty, shouldContinueFn)
+    local gt = H.gt
+    if not gt or type(gt.placedAt) ~= "table" or not gt.w then return end
+    local layerName = (layer == 2) and "bg" or "fg"
+    local pm = gt.placedAt[layerName]
+    if type(pm) ~= "table" then return end
+    local tAt = pm[ty * gt.w + tx]
+    if type(tAt) == "number" then
+        local elapsed = os.clock() - tAt
+        if elapsed < 0.22 then
+            local rem = 0.22 - elapsed
+            if type(shouldContinueFn) == "function" then
+                local dl = os.clock() + rem
+                while os.clock() < dl do
+                    if not shouldContinueFn() then return end
+                    task.wait(0.02)
+                end
+            else
+                task.wait(rem)
+            end
+        end
+    end
 end
 
 function Packets.PunchBreak(arg1, ty, layer, flip, showHand)
@@ -1612,13 +1843,16 @@ function Packets.PunchBreak(arg1, ty, layer, flip, showHand)
     if not opts.ignoreProtected and Core.IsProtectedTile(curId) then return false, "protected" end
     if opts.autoRange ~= false then GetcSkipper.EnsureRange(tx, py, GetcSkipper.State.maxRangeTiles) end
 
+    waitTilePlaceCooldown(targetLayer, tx, py, opts.shouldContinue)
     local info = Core.GetItemInfo(curId)
     if opts.showHand ~= false and net.act and net.act.send then
         pcall(net.act.send, { kind = 1, x = tx + 0.5, y = py + 0.5 })
         pcall(net.act.send, { kind = 6, x = tx + 0.5, y = py + 0.5 })
     end
     if opts.harvestIfTree ~= false and info and info.kind == "seed" and info.provider and net.harvest and net.harvest.send then
-        return (pcall(net.harvest.send, { x = tx, y = py })), "harvest_sent"
+        local okH = pcall(net.harvest.send, { x = tx, y = py })
+        if okH then Core.MirrorLocalTile(1, tx, py, 0) end
+        return okH, okH and "harvest_sent" or "harvest_failed"
     end
     local ok = pcall(net.tile.send, { layer = targetLayer, x = tx, y = py, id = 0, flip = opts.flip == true })
     if ok then
@@ -1643,20 +1877,105 @@ function Packets.HitDamage(arg1, ty, oneHit, customHits, hitDelay, layer, showHa
 
     local info = Core.GetItemInfo(curId)
     local totalHits = (opts.oneHit == true and 1) or toInt(opts.customHits, (info and info.hits) or 3)
-    if opts.oneHit == true then pcall(function() LP:SetAttribute("OneHitUntil", serverNow() + 60) end) end
-    if totalHits <= 1 then
-        return Packets.PunchBreak({ tx = tx, ty = py, layer = targetLayer, showHand = opts.showHand ~= false, autoRange = false })
+    if opts.oneHit == true then
+        Core.SyncOneHitHook(60)
+        pcall(function() LP:SetAttribute("OneHitUntil", serverNow() + 60) end)
     end
-    local delay = tonumber(opts.hitDelay) or 0.16
+    if totalHits <= 1 then
+        return Packets.PunchBreak({ tx = tx, ty = py, layer = targetLayer, showHand = opts.showHand ~= false, autoRange = false, shouldContinue = opts.shouldContinue })
+    end
+    local delay = tonumber(opts.hitDelay) or 0.14
     for _ = 1, totalHits - 1 do
+        if type(opts.shouldContinue) == "function" and not opts.shouldContinue() then return false end
         if opts.showHand ~= false and net.act and net.act.send then
             pcall(net.act.send, { kind = 1, x = tx + 0.5, y = py + 0.5 })
             pcall(net.act.send, { kind = 6, x = tx + 0.5, y = py + 0.5 })
         end
-        GetcSkipper.RandomizedWait(delay, "act")
+        GetcSkipper.RandomizedWait(delay, "act", opts.shouldContinue)
         if Core.GetLayerTile(tx, py, targetLayer) == 0 then return true end
     end
-    return Packets.PunchBreak({ tx = tx, ty = py, layer = targetLayer, showHand = opts.showHand ~= false, autoRange = false })
+    return Packets.PunchBreak({ tx = tx, ty = py, layer = targetLayer, showHand = opts.showHand ~= false, autoRange = false, shouldContinue = opts.shouldContinue })
+end
+
+-- Break Paralel hingga 3 blok sekaligus via worker threads (task.spawn) + sync visual block
+function Packets.BreakBlocksParallel(targets, opts)
+    Core.EnsureInit()
+    local gt = H.gt
+    if not gt or type(targets) ~= "table" or #targets == 0 then return 0 end
+    opts = opts or {}
+    local defaultLayer = toInt(opts.layer, 1)
+    local maxThreads = clamp(toInt(opts.threads or opts.maxThreads, 3), 1, 3)
+    local shouldCont = opts.shouldContinue or opts.shouldContinueFn
+
+    local queue = {}
+    for _, t in ipairs(targets) do
+        local tx, ty = toInt(t.tx or t.x), toInt(t.ty or t.y)
+        local lyr = toInt(t.layer, defaultLayer)
+        if tx and ty and tx >= 0 and tx < gt.w and ty >= 0 and ty < gt.h then
+            local curId = Core.GetLayerTile(tx, ty, lyr)
+            if curId ~= 0 and not Core.IsProtectedTile(curId) and Core.CanEditTile(tx, ty) then
+                queue[#queue + 1] = { tx = tx, ty = ty, layer = lyr }
+            end
+        end
+    end
+    if #queue == 0 then return 0 end
+    if opts.oneHit == true then
+        Core.SyncOneHitHook(60)
+        pcall(function() LP:SetAttribute("OneHitUntil", serverNow() + 60) end)
+    end
+
+    local brokeTotal = 0
+    local i = 1
+    while i <= #queue do
+        if type(shouldCont) == "function" and not shouldCont() then break end
+        local anchor = queue[i]
+        local batch = { anchor }
+        -- Kumpulkan maksimal 3 blok berdekatan dalam radius punch yg sama
+        while #batch < maxThreads and (i + #batch) <= #queue do
+            local cand = queue[i + #batch]
+            if math.max(math.abs(cand.tx - anchor.tx), math.abs(cand.ty - anchor.ty)) <= 4 then
+                batch[#batch + 1] = cand
+            else
+                break
+            end
+        end
+        i += #batch
+
+        if opts.autoRange ~= false then
+            local cx, cy = 0, 0
+            for _, b in ipairs(batch) do cx += b.tx; cy += b.ty end
+            cx, cy = math.floor(cx / #batch + 0.5), math.floor(cy / #batch + 0.5)
+            GetcSkipper.EnsureRange(cx, cy, GetcSkipper.State.maxRangeTiles, 0.068, shouldCont)
+        end
+
+        if type(shouldCont) == "function" and not shouldCont() then break end
+        local pending = #batch
+        for k, b in ipairs(batch) do
+            task.spawn(function()
+                if k > 1 then task.wait((k - 1) * 0.015) end
+                local ok = Packets.HitDamage({
+                    tx = b.tx, ty = b.ty, layer = b.layer,
+                    oneHit = opts.oneHit == true,
+                    customHits = opts.customHits,
+                    hitDelay = opts.hitDelay,
+                    showHand = opts.showHand,
+                    autoRange = false,
+                    shouldContinue = shouldCont,
+                })
+                if ok then brokeTotal += 1 end
+                pending -= 1
+            end)
+        end
+        local dl = os.clock() + 3.0
+        while pending > 0 and os.clock() < dl do
+            if type(shouldCont) == "function" and not shouldCont() then break end
+            task.wait(0.02)
+        end
+        if i <= #queue then
+            GetcSkipper.RandomizedWait(opts.chunkDelay or 0.03, "tile", shouldCont)
+        end
+    end
+    return brokeTotal
 end
 
 function Packets.Place(arg1, ty, itemId, layer, flip, showHand)
@@ -1679,7 +1998,7 @@ function Packets.Place(arg1, ty, itemId, layer, flip, showHand)
     local ok = pcall(net.tile.send, { layer = targetLayer, x = tx, y = py, id = id, flip = opts.flip == true })
     if ok then
         H.lastTileAt = os.clock()
-        Core.MirrorLocalTile(targetLayer, tx, py, id)
+        Core.MirrorLocalTile(targetLayer, tx, py, id, opts.flip == true)
         if H.inv and type(H.inv.remove) == "function" then pcall(function() H.inv:remove(id, 1) end) end
     end
     return ok, ok and "placed" or "failed"
@@ -1717,7 +2036,7 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
     local opts = type(arg1) == "table" and arg1 or { radius = arg1, filterId = filterId, stepMoveIfFar = stepMoveIfFar, collectDelay = collectDelay }
     local radius, targetId, stepFar = tonumber(opts.radius) or 5, opts.filterId, opts.stepMoveIfFar == true
     local delay = tonumber(opts.collectDelay) or 0.03
-    local shouldContinueFn = opts.shouldContinue
+    local shouldContinueFn = opts.shouldContinue or opts.shouldContinueFn
     local okD, drops = pcall(gt.dropList)
     if not okD or type(drops) ~= "table" then return { totalTaken = 0, gemsTaken = 0, itemsTaken = 0 } end
 
@@ -1779,6 +2098,7 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
         local pending = #batch
         for _, entry in ipairs(batch) do
             local d, want = entry.drop, entry.want
+            local preN = d.n or want
             task.spawn(function()
                 local got = 0
                 if type(gt.takeDrop) == "function" then
@@ -1790,18 +2110,13 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
                 end
                 if got > 0 then
                     sum.totalTaken += got
-                    local rem = math.max(0, (d.n or got) - got)
+                    local rem = math.max(0, preN - got)
                     d.n = rem
                     d.flown = (rem <= 0)
                     if d.frame and rem <= 0 then
                         pcall(function() d.frame.Visible = false end)
                     end
-                    if type(gt.dropTaken) == "function" then
-                        pcall(gt.dropTaken, d.uid, rem)
-                    end
-                    if rem <= 0 then
-                        Core.ClearStuckDropVisuals(d.uid)
-                    end
+                    Core.ClearStuckDropVisuals(d.uid, rem)
                     if d.id == 112 then
                         sum.gemsTaken += got
                     else
@@ -2329,7 +2644,8 @@ end
 
 function Misc.SetNoClip(enabled)
     Core.EnsureInit()
-    local gt, net = H.gt, H.Net
+    Core.EnsureMoveHook()
+    local gt = H.gt
     if not gt then return false end
     local on = enabled == true
     if on == Misc.State.noClip then return on end
@@ -2338,25 +2654,13 @@ function Misc.SetNoClip(enabled)
         local pos = Core.ReadPos()
         Misc.State.noClipAnchor = { x = pos.x, y = pos.y, tx = pos.tx, ty = pos.ty }
         gt.ghost = true
-        if net and net.move then
-            H.origMoveSend = H.origMoveSend or net.move.send
-            net.move.send = function(pkt)
-                if Misc.State.noClip and Misc.State.noClipAnchor then
-                    local a = Misc.State.noClipAnchor
-                    return H.origMoveSend({ x = a.x, y = a.y, vx = 0, vy = 0, flags = 2, t = (type(pkt) == "table" and pkt.t) or moveTs() })
-                end
-                return H.origMoveSend(pkt)
-            end
-        end
     else
-        if net and net.move and H.origMoveSend then net.move.send = H.origMoveSend end
         gt.ghost = false
         local a = Misc.State.noClipAnchor
         Misc.State.noClipAnchor = nil
         if a then
             Core.SetLocalCoords(a.x, a.y, 0, 0)
-            if type(gt.goTo) == "function" then pcall(gt.goTo, a.tx, a.ty) end
-            Packets.SendRawMove(a.x, a.y, 0, 0, 2)
+            Packets.SendRawMove(a.x, a.y, 0, 0, computeMoveFlags(a.x, a.y, 0, 0, 1))
         end
     end
     return Misc.State.noClip
@@ -2697,12 +3001,7 @@ function Misc.SetCollectState(enabled)
             if type(got) == "number" and got > 0 then
                 if Misc.State.autoCleanDrops or Misc.State.collectState then
                     local rem = math.max(0, matchedN - got)
-                    if type(gt.dropTaken) == "function" then
-                        pcall(gt.dropTaken, uid, rem)
-                    end
-                    task.delay(0.12, function()
-                        Core.ClearStuckDropVisuals(uid)
-                    end)
+                    Core.ClearStuckDropVisuals(uid, rem)
                 end
                 if Misc.State.collectState and matchedId == 112 then
                     local now = os.clock()
@@ -2888,20 +3187,23 @@ function PNB.Start()
                 end
             end
 
-            -- Bersihkan blok lain jika ada sebelum place target
+            -- Bersihkan blok lain jika ada sebelum place target (Paralel hingga 3 blok sekaligus)
+            local wrongBlocks = {}
             for _, t in ipairs(targets) do
-                if not alive() then break end
                 local curId = Core.GetLayerTile(t.tx, t.ty, layer)
                 if curId ~= 0 and curId ~= bid then
-                    local g = 0
-                    while alive() and Core.GetLayerTile(t.tx, t.ty, layer) ~= 0 and g < 12 do
-                        g += 1
-                        Packets.HitDamage({ tx = t.tx, ty = t.ty, oneHit = S.oneHit, hitDelay = S.breakDelay, layer = layer, showHand = S.showHand })
-                        GetcSkipper.RandomizedWait(S.breakDelay, "tile", alive)
-                    end
-                    if alive() and S.autoCollect then
-                        Packets.Collect({ radius = 5, stepMoveIfFar = false, collectDelay = S.collectDelay, shouldContinue = alive })
-                    end
+                    wrongBlocks[#wrongBlocks + 1] = { tx = t.tx, ty = t.ty, layer = layer }
+                end
+            end
+            if #wrongBlocks > 0 then
+                setPNBStatus(string.format("Clear %d blok (3x Paralel)...", #wrongBlocks))
+                Packets.BreakBlocksParallel(wrongBlocks, {
+                    threads = 3, layer = layer, oneHit = S.oneHit,
+                    hitDelay = S.breakDelay, showHand = S.showHand,
+                    shouldContinue = alive,
+                })
+                if alive() and S.autoCollect then
+                    Packets.Collect({ radius = 5, stepMoveIfFar = false, collectDelay = S.collectDelay, shouldContinue = alive })
                 end
             end
 
@@ -2921,20 +3223,26 @@ function PNB.Start()
                 end
             end
 
-            -- Break pass 1 per 1 sampai habis
+            -- Break pass paralel hingga 3 blok sekaligus + verifikasi hingga bersih (tidak ghost)
             local brokeAny = false
-            for _, t in ipairs(targets) do
-                if not alive() then break end
-                if Core.GetLayerTile(t.tx, t.ty, layer) ~= 0 then
-                    setPNBStatus(string.format("Break (%d, %d)", t.tx, t.ty))
-                    local g = 0
-                    while alive() and Core.GetLayerTile(t.tx, t.ty, layer) ~= 0 and g < 12 do
-                        g += 1
-                        Packets.HitDamage({ tx = t.tx, ty = t.ty, oneHit = S.oneHit, hitDelay = S.breakDelay, layer = layer, showHand = S.showHand })
-                        GetcSkipper.RandomizedWait(S.breakDelay, "tile", alive)
+            local retryPass = 0
+            while alive() and retryPass < 3 do
+                local toBreak = {}
+                for _, t in ipairs(targets) do
+                    if Core.GetLayerTile(t.tx, t.ty, layer) ~= 0 then
+                        toBreak[#toBreak + 1] = { tx = t.tx, ty = t.ty, layer = layer }
                     end
-                    brokeAny = true
                 end
+                if #toBreak == 0 then break end
+                brokeAny = true
+                retryPass += 1
+                setPNBStatus(string.format("Break %d blok (3x Paralel)", #toBreak))
+                Packets.BreakBlocksParallel(toBreak, {
+                    threads = 3, layer = layer, oneHit = S.oneHit,
+                    hitDelay = S.breakDelay, showHand = S.showHand,
+                    shouldContinue = alive,
+                })
+                if #toBreak <= 0 then break end
             end
 
             if alive() and S.autoCollect then
@@ -3232,30 +3540,48 @@ function Pabrik.Start()
                 local offs = computePabrikBreakOffsets(S.breakTileCount)
                 while alive() and Core.CountItem(S.blockId) > 0 do
                     if evaluateSeems() then break end
+                    -- 1. Bersihkan dulu blok non-target sekaligus (3x Paralel)
+                    local clearBatch, placeTargets = {}, {}
                     for _, off in ipairs(offs) do
-                        if not alive() or Core.CountItem(S.blockId) <= 0 then break end
                         local tx, ty = S.breakPos.x + off.dx, S.breakPos.y + off.dy
                         if tx >= 0 and tx < gt.w and ty >= 0 and ty < gt.h and Core.CanEditTile(tx, ty) then
                             local curId = Core.GetLayerTile(tx, ty, layer)
                             if curId ~= 0 and curId ~= S.blockId then
-                                Packets.HitDamage({ tx = tx, ty = ty, oneHit = S.oneHit, hitDelay = S.breakDelay, layer = layer, showHand = S.showHand, autoRange = false })
-                                GetcSkipper.RandomizedWait(S.breakDelay, "tile", alive)
+                                clearBatch[#clearBatch + 1] = { tx = tx, ty = ty, layer = layer }
                             end
-                            if alive() and Core.GetLayerTile(tx, ty, layer) == 0 and Core.CountItem(S.blockId) > 0 then
-                                Packets.Place({ tx = tx, ty = ty, itemId = S.blockId, layer = layer, showHand = S.showHand, autoRange = false })
-                                GetcSkipper.RandomizedWait(S.placeDelay, "tile", alive)
-                            end
+                            placeTargets[#placeTargets + 1] = { tx = tx, ty = ty }
                         end
                     end
-                    for _, off in ipairs(offs) do
-                        if not alive() then break end
-                        local tx, ty = S.breakPos.x + off.dx, S.breakPos.y + off.dy
-                        local g = 0
-                        while alive() and Core.GetLayerTile(tx, ty, layer) ~= 0 and g < 12 do
-                            g += 1
-                            Packets.HitDamage({ tx = tx, ty = ty, oneHit = S.oneHit, hitDelay = S.breakDelay, layer = layer, showHand = S.showHand, autoRange = false })
-                            GetcSkipper.RandomizedWait(S.breakDelay, "tile", alive)
+                    if #clearBatch > 0 then
+                        Packets.BreakBlocksParallel(clearBatch, {
+                            threads = 3, layer = layer, oneHit = S.oneHit,
+                            hitDelay = S.breakDelay, showHand = S.showHand,
+                            autoRange = false, shouldContinue = alive,
+                        })
+                    end
+                    -- 2. Place block target ke 1-3 tile
+                    for _, pt in ipairs(placeTargets) do
+                        if not alive() or Core.CountItem(S.blockId) <= 0 then break end
+                        if Core.GetLayerTile(pt.tx, pt.ty, layer) == 0 then
+                            Packets.Place({ tx = pt.tx, ty = pt.ty, itemId = S.blockId, layer = layer, showHand = S.showHand, autoRange = false })
+                            GetcSkipper.RandomizedWait(S.placeDelay, "tile", alive)
                         end
+                    end
+                    -- 3. Break seluruh tile terpasang bersamaan (hingga 3 blok paralel!)
+                    for _ = 1, 3 do
+                        if not alive() then break end
+                        local breakBatch = {}
+                        for _, pt in ipairs(placeTargets) do
+                            if Core.GetLayerTile(pt.tx, pt.ty, layer) ~= 0 then
+                                breakBatch[#breakBatch + 1] = { tx = pt.tx, ty = pt.ty, layer = layer }
+                            end
+                        end
+                        if #breakBatch == 0 then break end
+                        Packets.BreakBlocksParallel(breakBatch, {
+                            threads = 3, layer = layer, oneHit = S.oneHit,
+                            hitDelay = S.breakDelay, showHand = S.showHand,
+                            autoRange = false, shouldContinue = alive,
+                        })
                     end
                     if alive() then
                         Packets.Collect({ radius = 5, stepMoveIfFar = true, collectDelay = S.collectDelay, shouldContinue = alive })
@@ -3390,20 +3716,22 @@ end
 local function buildDfBlueprint(gt)
     local w, h = gt.w or 100, gt.h or 60
     local doorX, doorY = gt.spawn and math.floor(gt.spawn.X) or math.floor(w / 2), gt.spawn and math.floor(gt.spawn.Y) or 23
+    local foundDoor = false
     for y = 0, h - 1 do
         for x = 0, w - 1 do
             local id = Core.GetFG(x, y)
             if id == 6 then
-                doorX, doorY = x, y
+                doorX, doorY, foundDoor = x, y, true
                 break
             elseif id > 0 then
                 local info = Core.GetItemInfo(id)
                 if info and (info.door or info.entrance) then
-                    doorX, doorY = x, y
+                    doorX, doorY, foundDoor = x, y, true
                     break
                 end
             end
         end
+        if foundDoor then break end
     end
 
     local bedrockTopY = h - 6
@@ -3458,63 +3786,109 @@ local function buildDfBlueprint(gt)
     }
 end
 
+local function findStandTileNear(tx, ty, maxRange)
+    local cur = Core.ReadPos()
+    local r = maxRange or 4
+    if math.max(math.abs(cur.tx - tx), math.abs(cur.ty - ty)) <= r then
+        return true, cur.tx, cur.ty, 0
+    end
+    local gt = H.gt
+    local w, h = (gt and gt.w) or 100, (gt and gt.h) or 60
+    local cands = {}
+    for dy = -r, r do
+        for dx = -r, r do
+            local ax, ay = tx + dx, ty + dy
+            if ax >= 0 and ax < w and ay >= 0 and ay < h and not Core.IsSolid(ax, ay) then
+                local distP = math.abs(ax - cur.tx) + math.abs(ay - cur.ty)
+                cands[#cands + 1] = { x = ax, y = ay, score = distP }
+            end
+        end
+    end
+    if #cands == 0 then return false, nil, nil, 999 end
+    table.sort(cands, function(a, b) return a.score < b.score end)
+    local limit = math.min(#cands, 12)
+    for idx = 1, limit do
+        local c = cands[idx]
+        local p = Packets.FindTilePath(cur.tx, cur.ty, c.x, c.y)
+        if p and #p >= 1 then
+            return true, c.x, c.y, #p
+        end
+    end
+    return false, nil, nil, 999
+end
+
 local function moveNearDfTile(tx, ty, shouldContinueFn)
     local cur = Core.ReadPos()
     if math.max(math.abs(cur.tx - tx), math.abs(cur.ty - ty)) <= 4 then
         return true
     end
-    local gt = H.gt
-    local w, h = (gt and gt.w) or 100, (gt and gt.h) or 60
-    local candOffsets = {
-        { 0, -1 }, { 0, 1 }, { -1, 0 }, { 1, 0 },
-        { -2, 0 }, { 2, 0 }, { 0, -2 }, { 0, 2 },
-        { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 },
-    }
-    local goalX, goalY = tx, ty
-    for _, off in ipairs(candOffsets) do
-        local ax, ay = clamp(tx + off[1], 0, w - 1), clamp(ty + off[2], 0, h - 1)
-        if not Core.IsSolid(ax, ay) then
-            goalX, goalY = ax, ay
-            break
-        end
+    local okFind, gx, gy = findStandTileNear(tx, ty, 4)
+    if not okFind or not gx then
+        return false, "unreachable"
     end
-    local ok = Packets.StepTeleport(goalX, goalY, 2, 0.065, shouldContinueFn)
-    if not ok then
-        GetcSkipper.EnsureRange(tx, ty, 4)
+    local okMove, msg = Packets.StepTeleport(gx, gy, 2, 0.068, shouldContinueFn)
+    if not okMove then
+        local chk = Core.ReadPos()
+        if math.max(math.abs(chk.tx - tx), math.abs(chk.ty - ty)) <= 4 then
+            return true
+        end
+        return false, msg or "move_failed"
     end
     return true
 end
 
-local function dfBreakTile(tx, ty, aliveFn)
+local function dfBreakBatch(tasksBatch, aliveFn)
+    if #tasksBatch == 0 then return 0 end
     local S = DirtFarm.State
-    moveNearDfTile(tx, ty, aliveFn)
-    Packets.HitDamage({
-        tx = tx, ty = ty, layer = 1,
-        oneHit = S.oneHit, showHand = S.showHand,
-        hitDelay = S.breakDelay,
+    local first = tasksBatch[1]
+    local okM = moveNearDfTile(first.x, first.y, aliveFn)
+    if not okM then return -1 end
+
+    local cur = Core.ReadPos()
+    local execList = {}
+    for _, t in ipairs(tasksBatch) do
+        if math.max(math.abs(cur.tx - t.x), math.abs(cur.ty - t.y)) <= 4 then
+            execList[#execList + 1] = { tx = t.x, ty = t.y, layer = 1 }
+        end
+        if #execList >= 3 then break end
+    end
+    if #execList == 0 then
+        execList[1] = { tx = first.x, ty = first.y, layer = 1 }
+    end
+
+    Packets.BreakBlocksParallel(execList, {
+        threads = 3, layer = 1, oneHit = S.oneHit,
+        hitDelay = S.breakDelay, showHand = S.showHand,
+        autoRange = false, shouldContinue = aliveFn,
     })
     GetcSkipper.RandomizedWait(S.breakDelay, "act", aliveFn)
     if S.autoCollect then
-        Packets.Collect({ radius = 5, collectDelay = S.collectDelay, shouldContinueFn = aliveFn })
+        Packets.Collect({ radius = 5, collectDelay = S.collectDelay, shouldContinue = aliveFn })
     end
+    return #execList
 end
 
 local function dfPlaceDirt(tx, ty, dirtId, aliveFn)
     local S = DirtFarm.State
     if Core.CountItem(dirtId) <= 0 and S.autoCollect then
-        Packets.Collect({ radius = 6, stepMoveIfFar = true, collectDelay = S.collectDelay, shouldContinueFn = aliveFn })
+        Packets.Collect({ radius = 10, filterId = dirtId, stepMoveIfFar = true, collectDelay = S.collectDelay, shouldContinue = aliveFn })
+        if Core.CountItem(dirtId) <= 0 then
+            Packets.Collect({ radius = 8, stepMoveIfFar = true, collectDelay = S.collectDelay, shouldContinue = aliveFn })
+        end
     end
     if Core.CountItem(dirtId) <= 0 then
         return false, "no_dirt"
     end
-    moveNearDfTile(tx, ty, aliveFn)
-    Packets.Place({ tx = tx, ty = ty, itemId = dirtId, layer = 1, showHand = S.showHand })
+    local okM = moveNearDfTile(tx, ty, aliveFn)
+    if not okM then return false, "unreachable" end
+    local okP, msgP = Packets.Place({ tx = tx, ty = ty, itemId = dirtId, layer = 1, showHand = S.showHand, autoRange = false })
     GetcSkipper.RandomizedWait(S.placeDelay, "tile", aliveFn)
-    return true
+    return okP, msgP
 end
 
 function DirtFarm.Start()
     Core.EnsureInit()
+    Core.SyncOneHitHook()
     local gt = H.gt
     if not gt or gt.name == "" then
         setDfStatus("Belum masuk world!")
@@ -3529,6 +3903,17 @@ function DirtFarm.Start()
     if UIHooks.updateButtons then UIHooks.updateButtons() end
 
     DirtFarm.State.thread = task.spawn(function()
+        local skippedKeys, failCounts = {}, {}
+        local lastWorldTracked = ""
+        local noDirtRetries = 0
+
+        local function tileKey(x, y) return y * 1000 + x end
+        local function markFail(x, y)
+            local k = tileKey(x, y)
+            failCounts[k] = (failCounts[k] or 0) + 1
+            if failCounts[k] >= 3 then skippedKeys[k] = true end
+        end
+
         while alive() do
             if evaluateSeems() then break end
             Core.EnsureInit()
@@ -3537,26 +3922,44 @@ function DirtFarm.Start()
                 setDfStatus("Menunggu world...")
                 task.wait(0.5)
             else
+                local curW = cleanWorldName(gt.name)
+                if curW ~= lastWorldTracked then
+                    lastWorldTracked = curW
+                    skippedKeys, failCounts = {}, {}
+                    noDirtRetries = 0
+                end
+
                 local bp = buildDfBlueprint(gt)
                 local dirtId = bp.dirtId
 
-                -- 1. Kumpulkan semua tugas DF berurutan:
-                --    (A) Gali sisi 2 kiri/kanan + center + lorong air bawah kelipatan 2 + baris atas bedrock
-                --    (B) Ganti non-dirt (rock/lava) & isi celah di baris dirt bawah
-                --    (C) Bersihkan + Place Dirt baris atas (y < doorY) kelipatan 2 bottom-up
-                local digLowerTasks, fillLowerTasks, upperTasks = {}, {}, {}
+                -- Urutan penggalian anti-stuck:
+                -- (A) Gali Shaft sisi kiri, kanan & tengah dulu dari doorY ke bawah/atas agar semua baris punya akses
+                -- (B) Gali baris air kelipatan 2 + bersihkan halangan
+                -- (C) Ganti non-dirt & isi celah di baris dirt bawah
+                -- (D) Bersihkan + Place Dirt baris atas (y < doorY) bottom-up
+                local digShaftTasks, digRowTasks, fillLowerTasks, upperTasks = {}, {}, {}, {}
+
+                local function isShaftX(x)
+                    return x <= 1 or x >= bp.w - 2 or (DirtFarm.State.centerGap and (x == bp.midX - 1 or x == bp.midX))
+                end
 
                 for y = bp.doorY, bp.maxWorkY do
                     local rev = ((y - bp.doorY) % 2 == 1)
                     local xStart, xEnd, xStep = rev and (bp.w - 1) or 0, rev and 0 or (bp.w - 1), rev and -1 or 1
                     for x = xStart, xEnd, xStep do
-                        local want = bp.desiredAt(x, y)
-                        if want ~= nil then
-                            local curId = Core.GetFG(x, y)
-                            if want == 0 and curId ~= 0 then
-                                digLowerTasks[#digLowerTasks + 1] = { x = x, y = y, op = "break" }
-                            elseif want == dirtId and curId ~= dirtId then
-                                fillLowerTasks[#fillLowerTasks + 1] = { x = x, y = y, op = (curId ~= 0) and "replace" or "place" }
+                        if not skippedKeys[tileKey(x, y)] then
+                            local want = bp.desiredAt(x, y)
+                            if want ~= nil then
+                                local curId = Core.GetFG(x, y)
+                                if want == 0 and curId ~= 0 then
+                                    if isShaftX(x) then
+                                        digShaftTasks[#digShaftTasks + 1] = { x = x, y = y, op = "break" }
+                                    else
+                                        digRowTasks[#digRowTasks + 1] = { x = x, y = y, op = "break" }
+                                    end
+                                elseif want == dirtId and curId ~= dirtId then
+                                    fillLowerTasks[#fillLowerTasks + 1] = { x = x, y = y, op = (curId ~= 0) and "replace" or "place" }
+                                end
                             end
                         end
                     end
@@ -3566,21 +3969,26 @@ function DirtFarm.Start()
                     local rev = ((bp.doorY - y) % 2 == 0)
                     local xStart, xEnd, xStep = rev and (bp.w - 1) or 0, rev and 0 or (bp.w - 1), rev and -1 or 1
                     for x = xStart, xEnd, xStep do
-                        local want = bp.desiredAt(x, y)
-                        if want ~= nil then
-                            local curId = Core.GetFG(x, y)
-                            if want == 0 and curId ~= 0 then
-                                digLowerTasks[#digLowerTasks + 1] = { x = x, y = y, op = "break" }
-                            elseif want == dirtId and curId ~= dirtId then
-                                upperTasks[#upperTasks + 1] = { x = x, y = y, op = (curId ~= 0) and "replace" or "place" }
+                        if not skippedKeys[tileKey(x, y)] then
+                            local want = bp.desiredAt(x, y)
+                            if want ~= nil then
+                                local curId = Core.GetFG(x, y)
+                                if want == 0 and curId ~= 0 then
+                                    if isShaftX(x) then
+                                        digShaftTasks[#digShaftTasks + 1] = { x = x, y = y, op = "break" }
+                                    else
+                                        digRowTasks[#digRowTasks + 1] = { x = x, y = y, op = "break" }
+                                    end
+                                elseif want == dirtId and curId ~= dirtId then
+                                    upperTasks[#upperTasks + 1] = { x = x, y = y, op = (curId ~= 0) and "replace" or "place" }
+                                end
                             end
                         end
                     end
                 end
 
-                local totalTodo = #digLowerTasks + #fillLowerTasks + #upperTasks
+                local totalTodo = #digShaftTasks + #digRowTasks + #fillLowerTasks + #upperTasks
                 if totalTodo == 0 then
-                    local curW = cleanWorldName(gt.name)
                     local rot = DirtFarm.State.rotationWorlds
                     local nextWorld = nil
                     if #rot > 0 then
@@ -3601,7 +4009,7 @@ function DirtFarm.Start()
                         setDfStatus(string.format("[%s] SELESAI -> Rotation ke %s", curW, nextWorld))
                         emitNotify("SYT Dirt Farm", string.format("DF %s selesai! Pindah ke %s...", curW, nextWorld))
                         if DirtFarm.State.autoCollect then
-                            Packets.Collect({ radius = 6, stepMoveIfFar = true, collectDelay = DirtFarm.State.collectDelay, shouldContinueFn = alive })
+                            Packets.Collect({ radius = 8, stepMoveIfFar = true, collectDelay = DirtFarm.State.collectDelay, shouldContinue = alive })
                         end
                         DirtFarm.State.switchingWorld = true
                         pcall(gt.enter, nextWorld)
@@ -3615,49 +4023,99 @@ function DirtFarm.Start()
                         pcall(SYT_Logic.Init, true)
                         DirtFarm.State.switchingWorld = false
                     else
-                        setDfStatus(string.format("Selesai! World %s 100%% Dirt Farm", curW))
-                        emitNotify("SYT Dirt Farm", "Dirt Farm selesai sempurna di world " .. curW)
+                        setDfStatus(string.format("Selesai! World %s Dirt Farm Selesai", curW))
+                        emitNotify("SYT Dirt Farm", "Dirt Farm selesai di world " .. curW)
                         DirtFarm.State.running = false
                         break
                     end
                 else
-                    local activeQueue = (#digLowerTasks > 0 and digLowerTasks)
-                        or (#fillLowerTasks > 0 and fillLowerTasks)
-                        or upperTasks
-                    local phaseLabel = (#digLowerTasks > 0 and "Fase 1: Gali Pojok & Baris Bawah")
-                        or (#fillLowerTasks > 0 and "Fase 1b: Ubah Rock/Lava -> Dirt")
-                        or "Fase 2: Place Dirt Atas"
+                    local activeQueue, phaseLabel
+                    if #digShaftTasks > 0 then
+                        activeQueue, phaseLabel = digShaftTasks, "Fase 1A: Gali Pojok & Shaft"
+                    elseif #digRowTasks > 0 then
+                        activeQueue, phaseLabel = digRowTasks, "Fase 1B: Gali Lorong Kelipatan 2"
+                    elseif #fillLowerTasks > 0 then
+                        activeQueue, phaseLabel = fillLowerTasks, "Fase 1C: Ubah/Isi Dirt Bawah"
+                    else
+                        activeQueue, phaseLabel = upperTasks, "Fase 2: Place Dirt Atas"
+                    end
 
-                    for i, taskItem in ipairs(activeQueue) do
-                        if not alive() or evaluateSeems() then break end
-                        setDfStatus(string.format("%s (%d/%d | Sisa:%d) (%d,%d)", phaseLabel, i, #activeQueue, totalTodo - i + 1, taskItem.x, taskItem.y))
+                    local didAnyAction = false
+                    local idx = 1
+                    while idx <= #activeQueue and alive() do
+                        if evaluateSeems() then break end
+                        local taskItem = activeQueue[idx]
+                        setDfStatus(string.format("%s (%d/%d | Sisa:%d) (%d,%d)", phaseLabel, idx, #activeQueue, totalTodo - idx + 1, taskItem.x, taskItem.y))
                         local curId = Core.GetFG(taskItem.x, taskItem.y)
+
                         if taskItem.op == "break" then
                             if curId ~= 0 and not Core.IsProtectedTile(curId) then
-                                dfBreakTile(taskItem.x, taskItem.y, alive)
+                                local batch = { taskItem }
+                                local look = 1
+                                while #batch < 3 and (idx + look) <= #activeQueue do
+                                    local nx = activeQueue[idx + look]
+                                    if nx.op == "break" and math.max(math.abs(nx.x - taskItem.x), math.abs(nx.y - taskItem.y)) <= 2 then
+                                        batch[#batch + 1] = nx
+                                        look += 1
+                                    else
+                                        break
+                                    end
+                                end
+                                local resB = dfBreakBatch(batch, alive)
+                                if resB > 0 then
+                                    didAnyAction = true
+                                    noDirtRetries = 0
+                                    for _, bt in ipairs(batch) do
+                                        if Core.GetFG(bt.x, bt.y) ~= 0 then markFail(bt.x, bt.y) end
+                                    end
+                                else
+                                    markFail(taskItem.x, taskItem.y)
+                                end
+                                idx += #batch
+                            else
+                                idx += 1
                             end
                         elseif taskItem.op == "replace" then
                             if curId ~= 0 and curId ~= dirtId and not Core.IsProtectedTile(curId) then
-                                dfBreakTile(taskItem.x, taskItem.y, alive)
+                                local resB = dfBreakBatch({ taskItem }, alive)
+                                if resB > 0 then didAnyAction = true else markFail(taskItem.x, taskItem.y) end
                             end
                             if Core.GetFG(taskItem.x, taskItem.y) == 0 then
-                                local okP = dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
-                                if not okP then
-                                    setDfStatus("Dirt di Backpack habis! Cari/ambil Dirt drops...")
-                                    task.wait(0.8)
-                                    break
+                                local okP, errP = dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
+                                if okP then
+                                    didAnyAction = true
+                                    noDirtRetries = 0
+                                elseif errP == "no_dirt" then
+                                    noDirtRetries += 1
+                                    setDfStatus(string.format("Dirt habis! Collect drops (%d/3)...", noDirtRetries))
+                                    task.wait(0.5)
+                                    if noDirtRetries >= 3 then break end
+                                else
+                                    markFail(taskItem.x, taskItem.y)
                                 end
                             end
-                        elseif taskItem.op == "place" then
+                            idx += 1
+                        else -- "place"
                             if Core.GetFG(taskItem.x, taskItem.y) == 0 then
-                                local okP = dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
-                                if not okP then
-                                    setDfStatus("Dirt di Backpack habis! Cari/ambil Dirt drops...")
-                                    task.wait(0.8)
-                                    break
+                                local okP, errP = dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
+                                if okP then
+                                    didAnyAction = true
+                                    noDirtRetries = 0
+                                elseif errP == "no_dirt" then
+                                    noDirtRetries += 1
+                                    setDfStatus(string.format("Dirt habis! Collect drops (%d/3)...", noDirtRetries))
+                                    task.wait(0.5)
+                                    if noDirtRetries >= 3 then break end
+                                else
+                                    markFail(taskItem.x, taskItem.y)
                                 end
                             end
+                            idx += 1
                         end
+                    end
+
+                    if not didAnyAction and alive() then
+                        task.wait(0.35)
                     end
                 end
             end
@@ -5195,7 +5653,7 @@ buildMountedCanvasesFn = function()
     tpBtn.TextColor3 = Color3.new(0, 0, 0)
 
     local mapTilePx, mapPanX, mapPanY = 3.2, 6, 6
-    local didFit, fittedW, fittedH, lastDraw = false, nil, nil, 0
+    local didFit, fittedW, fittedH, lastDraw, userPanned = false, nil, nil, 0, false
     local mapPool = {}
 
     local function getScale()
@@ -5203,15 +5661,36 @@ buildMountedCanvasesFn = function()
         return (h > 10) and clamp(h / 285, 0.25, 4) or 1
     end
 
+    local function updatePlayerOverlay(selfPos, w, h)
+        selfPos = selfPos or Core.ReadPos()
+        w = w or ((H.gt and H.gt.w) or 100)
+        h = h or ((H.gt and H.gt.h) or 60)
+        local fx = (selfPos.tx + 0.5) / w
+        local fy = (selfPos.ty + 0.5) / h
+        local dsz = clamp(mapTilePx + 4, 9, 14)
+        crossH.Position = UDim2.fromScale(0, fy)
+        crossV.Position = UDim2.fromScale(fx, 0)
+        playerDot.Size = UDim2.fromOffset(dsz, dsz)
+        playerDot.Position = UDim2.fromScale(fx, fy)
+        if selfPos.ty < 4 then
+            youTag.AnchorPoint = Vector2.new(0.5, 0)
+            youTag.Position = UDim2.new(fx, 0, fy, dsz * 0.5 + 3)
+        else
+            youTag.AnchorPoint = Vector2.new(0.5, 1)
+            youTag.Position = UDim2.new(fx, 0, fy, -(dsz * 0.5 + 3))
+        end
+    end
+
     local function updateTransform()
         local w, h = (H.gt and H.gt.w) or 100, (H.gt and H.gt.h) or 60
         local s = getScale()
         local vw, vh = math.max(100, mapView.AbsoluteSize.X / s), math.max(80, mapView.AbsoluteSize.Y / s)
         local cw, ch = w * mapTilePx, h * mapTilePx
-        mapPanX = (cw <= vw) and clamp(mapPanX, 4, math.max(4, vw - cw - 4)) or clamp(mapPanX, vw - cw - 12, 12)
-        mapPanY = (ch <= vh) and clamp(mapPanY, 4, math.max(4, vh - ch - 4)) or clamp(mapPanY, vh - ch - 12, 12)
+        mapPanX = (cw <= vw) and math.floor((vw - cw) * 0.5) or clamp(mapPanX, vw - cw - 8, 8)
+        mapPanY = (ch <= vh) and math.floor((vh - ch) * 0.5) or clamp(mapPanY, vh - ch - 8, 8)
         mapCanvas.Size = UDim2.fromOffset(cw, ch)
         mapCanvas.Position = UDim2.fromOffset(mapPanX, mapPanY)
+        updatePlayerOverlay(nil, w, h)
     end
 
     local function fitMap()
@@ -5221,17 +5700,25 @@ buildMountedCanvasesFn = function()
         mapTilePx = clamp(math.min((vw - 10) / w, (vh - 10) / h), 2, 18)
         mapPanX = math.floor((vw - w * mapTilePx) * 0.5)
         mapPanY = math.floor((vh - h * mapTilePx) * 0.5)
-        didFit, fittedW, fittedH = true, w, h
+        didFit, fittedW, fittedH, userPanned = true, w, h, false
         updateTransform()
     end
 
     local function applyZoom(newPx)
+        local w, h = (H.gt and H.gt.w) or 100, (H.gt and H.gt.h) or 60
         local s = getScale()
         local vw, vh = math.max(100, mapView.AbsoluteSize.X / s), math.max(80, mapView.AbsoluteSize.Y / s)
         local oldPx = mapTilePx
         local clamped = clamp(newPx, 2, 18)
         if math.abs(clamped - oldPx) < 0.01 then return end
-        local cx, cy = (vw * 0.5 - mapPanX) / oldPx, (vh * 0.5 - mapPanY) / oldPx
+        local cx, cy
+        if not userPanned or (w * oldPx <= vw + 4 and h * oldPx <= vh + 4) then
+            -- Zoom otomatis mengunci posisi player agar posisi & HUD bar tetap presisi tanpa bergeser
+            local sp = Core.ReadPos()
+            cx, cy = sp.tx + 0.5, sp.ty + 0.5
+        else
+            cx, cy = (vw * 0.5 - mapPanX) / oldPx, (vh * 0.5 - mapPanY) / oldPx
+        end
         mapTilePx = clamped
         mapPanX = vw * 0.5 - cx * clamped
         mapPanY = vh * 0.5 - cy * clamped
@@ -5301,7 +5788,8 @@ buildMountedCanvasesFn = function()
         if not gt or not gt.fg then return end
 
         local px, used = mapTilePx, 0
-        -- 1. Background cave walls (soft cave brown when FG empty)
+        -- Gunakan koordinat normalized UDim2.fromScale agar semua objek 100% terkunci pada grid saat di-zoom!
+        -- 1. Background cave walls
         if type(gt.bg) == "table" then
             for y = 0, h - 1 do
                 local fgRow, bgRow = gt.fg[y], gt.bg[y]
@@ -5313,8 +5801,9 @@ buildMountedCanvasesFn = function()
                             while x < w and (bgRow[x] or 0) ~= 0 and (not fgRow or (fgRow[x] or 0) == 0) do x += 1 end
                             used += 1
                             local f = getBox(used, 1, Color3.fromRGB(68, 52, 42), 0.15, false)
-                            f.Position = UDim2.fromOffset(sx * px, y * px)
-                            f.Size = UDim2.fromOffset(math.max(1, (x - sx) * px), math.max(1, px))
+                            f.AnchorPoint = Vector2.zero
+                            f.Position = UDim2.fromScale(sx / w, y / h)
+                            f.Size = UDim2.fromScale((x - sx) / w, 1 / h)
                         else
                             x += 1
                         end
@@ -5323,7 +5812,7 @@ buildMountedCanvasesFn = function()
             end
         end
 
-        -- 2. Terrain, Lava, Water, Locks, Seeds, Doors (merged per color bucket)
+        -- 2. Terrain, Lava, Water, Locks, Seeds, Doors
         for y = 0, h - 1 do
             local row = gt.fg[y]
             if row then
@@ -5345,8 +5834,9 @@ buildMountedCanvasesFn = function()
                         end
                         used += 1
                         local f = getBox(used, 2, col, 0, false)
-                        f.Position = UDim2.fromOffset(sx * px, y * px)
-                        f.Size = UDim2.fromOffset(math.max(1, (x - sx) * px), math.max(1, px))
+                        f.AnchorPoint = Vector2.zero
+                        f.Position = UDim2.fromScale(sx / w, y / h)
+                        f.Size = UDim2.fromScale((x - sx) / w, 1 / h)
                     else
                         if info and (info.kind == "seed" or info.door or info.entrance or info.lock or id == 6) then
                             used += 1
@@ -5357,8 +5847,9 @@ buildMountedCanvasesFn = function()
                                 col = select(1, classifyMapColor(id, info))
                             end
                             local f = getBox(used, 3, col, 0, false)
-                            f.Position = UDim2.fromOffset(x * px, y * px)
-                            f.Size = UDim2.fromOffset(math.max(2, px), math.max(2, px))
+                            f.AnchorPoint = Vector2.zero
+                            f.Position = UDim2.fromScale(x / w, y / h)
+                            f.Size = UDim2.fromScale(1 / w, 1 / h)
                         end
                         x += 1
                     end
@@ -5374,8 +5865,10 @@ buildMountedCanvasesFn = function()
                     if type(d) == "table" and d.x and d.y and (d.n or 0) > 0 then
                         used += 1
                         local f = getBox(used, 3, (d.id == 112) and Color3.fromRGB(103, 232, 249) or Color3.fromRGB(251, 191, 36), 0, true)
-                        f.Position = UDim2.fromOffset(d.x * px - 1, (d.y - 0.5) * px - 1)
-                        f.Size = UDim2.fromOffset(math.max(3, px * 0.65), math.max(3, px * 0.65))
+                        f.AnchorPoint = Vector2.new(0.5, 0.5)
+                        f.Position = UDim2.fromScale(d.x / w, (d.y - 0.5) / h)
+                        local ds = clamp(px * 0.65, 4, 9)
+                        f.Size = UDim2.fromOffset(ds, ds)
                     end
                 end
             end
@@ -5385,15 +5878,16 @@ buildMountedCanvasesFn = function()
         for _, seg in ipairs(Pabrik.GetConnectedLines()) do
             used += 1
             local f = getBox(used, 4, Color3.fromRGB(168, 85, 247), 0.12, false)
-            local hBar = (seg.len > 1) and math.max(3, px * 0.72) or math.max(3, px)
-            local yOff = (seg.len > 1) and (px - hBar) * 0.5 or 0
-            f.Position = UDim2.fromOffset(seg.x1 * px, seg.y * px + yOff)
-            f.Size = UDim2.fromOffset(math.max(3, seg.len * px), hBar)
+            f.AnchorPoint = Vector2.zero
+            local hRatio = (seg.len > 1) and 0.72 or 1
+            local yOff = (seg.len > 1) and 0.14 or 0
+            f.Position = UDim2.fromScale(seg.x1 / w, (seg.y + yOff) / h)
+            f.Size = UDim2.fromScale(seg.len / w, hRatio / h)
         end
         if Pabrik.State.breakPos then
             breakBox.Visible = true
-            breakBox.Position = UDim2.fromOffset(Pabrik.State.breakPos.x * px, Pabrik.State.breakPos.y * px)
-            breakBox.Size = UDim2.fromOffset(math.max(6, px), math.max(6, px))
+            breakBox.Position = UDim2.fromScale(Pabrik.State.breakPos.x / w, Pabrik.State.breakPos.y / h)
+            breakBox.Size = UDim2.fromScale(1 / w, 1 / h)
         else
             breakBox.Visible = false
         end
@@ -5404,9 +5898,11 @@ buildMountedCanvasesFn = function()
             local col = ok and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(239, 68, 68)
             selBox.Visible = true
             selBox.BackgroundColor3 = col
-            local boxSz = math.max(7, px)
-            selBox.Position = UDim2.fromOffset((tpState.selectedX + 0.5) * px - boxSz * 0.5, (tpState.selectedY + 0.5) * px - boxSz * 0.5)
-            selBox.Size = UDim2.fromOffset(boxSz, boxSz)
+            selBox.AnchorPoint = Vector2.new(0.5, 0.5)
+            selBox.Position = UDim2.fromScale((tpState.selectedX + 0.5) / w, (tpState.selectedY + 0.5) / h)
+            local minFracW = math.max(1 / w, 7 / math.max(w * px, 1))
+            local minFracH = math.max(1 / h, 7 / math.max(h * px, 1))
+            selBox.Size = UDim2.fromScale(minFracW, minFracH)
         else
             selBox.Visible = false
         end
@@ -5416,28 +5912,14 @@ buildMountedCanvasesFn = function()
             if op.tx and op.ty then
                 used += 1
                 local f = getBox(used, 6, Color3.fromRGB(244, 63, 94), 0, true)
-                local dsz = math.max(5, px + 1.5)
-                f.Position = UDim2.fromOffset(op.tx * px, op.ty * px)
+                f.AnchorPoint = Vector2.new(0.5, 0.5)
+                f.Position = UDim2.fromScale((op.tx + 0.5) / w, (op.ty + 0.5) / h)
+                local dsz = clamp(px + 2, 6, 12)
                 f.Size = UDim2.fromOffset(dsz, dsz)
             end
         end
 
-        local pcx = (selfPos.tx + 0.5) * px
-        local pcy = (selfPos.ty + 0.5) * px
-        local dsz = math.max(9, px + 4)
-        crossH.Position = UDim2.fromOffset(0, pcy)
-        crossV.Position = UDim2.fromOffset(pcx, 0)
-        playerDot.Size = UDim2.fromOffset(dsz, dsz)
-        playerDot.Position = UDim2.fromOffset(pcx, pcy)
-        local cw = w * px
-        local tagX = clamp(pcx, 16, math.max(16, cw - 16))
-        if pcy < 18 then
-            youTag.AnchorPoint = Vector2.new(0.5, 0)
-            youTag.Position = UDim2.fromOffset(tagX, pcy + dsz * 0.5 + 2)
-        else
-            youTag.AnchorPoint = Vector2.new(0.5, 1)
-            youTag.Position = UDim2.fromOffset(tagX, pcy - dsz * 0.5 - 2)
-        end
+        updatePlayerOverlay(selfPos, w, h)
 
         for i = used + 1, #mapPool do mapPool[i].Visible = false end
     end
@@ -5527,6 +6009,8 @@ buildMountedCanvasesFn = function()
     end
 
     local function handleMapTap(cx, cy)
+        local vp, vs = mapView.AbsolutePosition, mapView.AbsoluteSize
+        if cx < vp.X or cy < vp.Y or cx > vp.X + vs.X or cy > vp.Y + vs.Y then return end
         local absPos, absSize = mapCanvas.AbsolutePosition, mapCanvas.AbsoluteSize
         local maxW, maxH = (H.gt and H.gt.w) or 100, (H.gt and H.gt.h) or 60
         local rx, ry = cx - absPos.X, cy - absPos.Y
@@ -5573,7 +6057,6 @@ buildMountedCanvasesFn = function()
     local function onMapWheel(inp)
         if inp.UserInputType == Enum.UserInputType.MouseWheel then
             applyZoom(mapTilePx * (inp.Position.Z > 0 and 1.18 or (1 / 1.18)))
-            renderMap(true)
         end
     end
     mapHitOverlay.InputChanged:Connect(onMapWheel)
@@ -5587,6 +6070,7 @@ buildMountedCanvasesFn = function()
             local d = inp.Position - startScr
             if d.Magnitude > 14 then
                 moved = true
+                userPanned = true
                 local s = getScale()
                 mapPanX, mapPanY = startPan.X + d.X / s, startPan.Y + d.Y / s
                 updateTransform()
@@ -5606,8 +6090,8 @@ buildMountedCanvasesFn = function()
     end)
 
     fitBtn.MouseButton1Click:Connect(function() fitMap(); renderMap(true) end)
-    zoomInBtn.MouseButton1Click:Connect(function() applyZoom(mapTilePx + 1); renderMap(true) end)
-    zoomOutBtn.MouseButton1Click:Connect(function() applyZoom(mapTilePx - 1); renderMap(true) end)
+    zoomInBtn.MouseButton1Click:Connect(function() applyZoom(mapTilePx + 1.5); renderMap(true) end)
+    zoomOutBtn.MouseButton1Click:Connect(function() applyZoom(mapTilePx - 1.5); renderMap(true) end)
     tpBtn.MouseButton1Click:Connect(function()
         if tpState.selectedX and tpState.selectedY then
             local ok, msg = Packets.WalkTeleport({ tx = tpState.selectedX, ty = tpState.selectedY, mode = "step", stepSize = 4 })

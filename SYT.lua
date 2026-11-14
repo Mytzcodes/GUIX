@@ -5,7 +5,7 @@
     Framework   : https://raw.githubusercontent.com/Mytzcodes/R-8/refs/heads/main/r%268_dv.lua
 
     Fitur Lengkap V1 + V2 dalam 1 Script Terintegrasi (SYT):
-      - Overview         : Profil Akun In-Game, live world/posisi, list player, Auto Save/Load Config, Theme & FPS Boost
+      - Overview         : Profil Akun In-Game, live world/posisi, list player, Kontrol Sesi & Theme & FPS Boost
       - Teleport & Map   : Manual TP validasi, Walk-Path Safe (anti-rubberband jarak jauh), Step TP, Gap TP, Peta World 2D
       - Misc (V1)        : Fly, Seems, Fast Roulette (0-36), No Clip, True God Mode (HP Full/Anti-Die/Anti-Respawn),
                            Auto Follow Player (Dropdown Scroll Walk), Collect State, Radius Auto Collect, FPS Boost, Auto Rerun
@@ -21,6 +21,190 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 local cachedR8Source = nil
 local cachedImGuiFactory = nil
+local BootLoader = {}
+
+function BootLoader.Show(pct, status)
+    local env = (type(getgenv) == "function" and select(2, pcall(getgenv))) or _G
+    if BootLoader.Gui and BootLoader.Gui.Parent then
+        BootLoader.Set(pct, status)
+        return BootLoader.Gui
+    end
+    if type(env) == "table" and env.__SYT_BOOT_LOADER then
+        pcall(function() env.__SYT_BOOT_LOADER:Destroy() end)
+        env.__SYT_BOOT_LOADER = nil
+    end
+
+    local parentGui = nil
+    if type(gethui) == "function" then
+        local okH, h = pcall(gethui)
+        if okH and typeof(h) == "Instance" then parentGui = h end
+    end
+    if not parentGui then
+        local okCg, cg = pcall(game.GetService, game, "CoreGui")
+        if okCg and cg then parentGui = cg end
+    end
+    if not parentGui then
+        local okPl, plrs = pcall(game.GetService, game, "Players")
+        local lp = okPl and plrs and plrs.LocalPlayer
+        parentGui = lp and lp:FindFirstChildOfClass("PlayerGui")
+    end
+    if not parentGui then return nil end
+
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "SYT_BootLoader"
+    sg.IgnoreGuiInset = true
+    sg.ResetOnSpawn = false
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    sg.DisplayOrder = 1000000
+
+    local card = Instance.new("Frame")
+    card.Name = "Card"
+    card.Size = UDim2.fromOffset(360, 108)
+    card.Position = UDim2.fromScale(0.5, 0.48)
+    card.AnchorPoint = Vector2.new(0.5, 0.5)
+    card.BackgroundColor3 = Color3.fromRGB(13, 17, 25)
+    card.BorderSizePixel = 0
+    card.Parent = sg
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 12)
+    local stroke = Instance.new("UIStroke", card)
+    stroke.Color = Color3.fromRGB(56, 189, 248)
+    stroke.Thickness = 1.4
+    stroke.Transparency = 0.25
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Size = UDim2.new(1, -80, 0, 22)
+    titleLbl.Position = UDim2.fromOffset(16, 14)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Font = Enum.Font.GothamBlack
+    titleLbl.TextSize = 15
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.TextColor3 = Color3.fromRGB(241, 245, 249)
+    titleLbl.Text = "SYT GROWBLOX SUITE"
+    titleLbl.Parent = card
+
+    local pctLbl = Instance.new("TextLabel")
+    pctLbl.Size = UDim2.fromOffset(56, 22)
+    pctLbl.Position = UDim2.new(1, -72, 0, 14)
+    pctLbl.BackgroundTransparency = 1
+    pctLbl.Font = Enum.Font.Code
+    pctLbl.TextSize = 13
+    pctLbl.TextXAlignment = Enum.TextXAlignment.Right
+    pctLbl.TextColor3 = Color3.fromRGB(56, 189, 248)
+    pctLbl.Text = "0%"
+    pctLbl.Parent = card
+
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, -32, 0, 20)
+    statusLbl.Position = UDim2.fromOffset(16, 42)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Font = Enum.Font.GothamMedium
+    statusLbl.TextSize = 12
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    statusLbl.TextColor3 = Color3.fromRGB(148, 163, 184)
+    statusLbl.Text = tostring(status or "Memulai loader...")
+    statusLbl.Parent = card
+
+    local barBg = Instance.new("Frame")
+    barBg.Size = UDim2.new(1, -32, 0, 7)
+    barBg.Position = UDim2.fromOffset(16, 72)
+    barBg.BackgroundColor3 = Color3.fromRGB(26, 33, 46)
+    barBg.BorderSizePixel = 0
+    barBg.Parent = card
+    Instance.new("UICorner", barBg).CornerRadius = UDim.new(1, 0)
+
+    local barFill = Instance.new("Frame")
+    barFill.Size = UDim2.fromScale(0, 1)
+    barFill.BackgroundColor3 = Color3.fromRGB(56, 189, 248)
+    barFill.BorderSizePixel = 0
+    barFill.Parent = barBg
+    Instance.new("UICorner", barFill).CornerRadius = UDim.new(1, 0)
+
+    local errLbl = Instance.new("TextLabel")
+    errLbl.Size = UDim2.new(1, -32, 0, 48)
+    errLbl.Position = UDim2.fromOffset(16, 86)
+    errLbl.BackgroundTransparency = 1
+    errLbl.Font = Enum.Font.Code
+    errLbl.TextSize = 11
+    errLbl.TextWrapped = true
+    errLbl.TextXAlignment = Enum.TextXAlignment.Left
+    errLbl.TextYAlignment = Enum.TextYAlignment.Top
+    errLbl.TextColor3 = Color3.fromRGB(248, 113, 113)
+    errLbl.Text = ""
+    errLbl.Visible = false
+    errLbl.Parent = card
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.fromOffset(110, 26)
+    closeBtn.Position = UDim2.new(1, -126, 1, -36)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(220, 38, 38)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 11
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Text = "TUTUP LOADER"
+    closeBtn.Visible = false
+    closeBtn.Parent = card
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+    closeBtn.MouseButton1Click:Connect(function() BootLoader.Close() end)
+
+    sg.Parent = parentGui
+    if type(env) == "table" then env.__SYT_BOOT_LOADER = sg end
+    BootLoader.Gui = sg
+    BootLoader.Card = card
+    BootLoader.Stroke = stroke
+    BootLoader.PctLbl = pctLbl
+    BootLoader.StatusLbl = statusLbl
+    BootLoader.BarFill = barFill
+    BootLoader.ErrLbl = errLbl
+    BootLoader.CloseBtn = closeBtn
+    BootLoader.Set(pct, status)
+    return sg
+end
+
+function BootLoader.Set(pct, status)
+    if not BootLoader.Gui or not BootLoader.Gui.Parent then return end
+    local p = math.clamp(tonumber(pct) or 0, 0, 100)
+    if BootLoader.PctLbl then BootLoader.PctLbl.Text = string.format("%d%%", math.floor(p + 0.5)) end
+    if status and BootLoader.StatusLbl then BootLoader.StatusLbl.Text = tostring(status) end
+    if BootLoader.BarFill then
+        local okTw, twSvc = pcall(game.GetService, game, "TweenService")
+        if okTw and twSvc then
+            pcall(function()
+                twSvc:Create(BootLoader.BarFill, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    Size = UDim2.fromScale(p / 100, 1)
+                }):Play()
+            end)
+        else
+            BootLoader.BarFill.Size = UDim2.fromScale(p / 100, 1)
+        end
+    end
+end
+
+function BootLoader.Error(errText)
+    BootLoader.Show(100, "Terjadi error saat memuat SYT:")
+    if BootLoader.Card then BootLoader.Card.Size = UDim2.fromOffset(390, 174) end
+    if BootLoader.Stroke then BootLoader.Stroke.Color = Color3.fromRGB(239, 68, 68) end
+    if BootLoader.BarFill then BootLoader.BarFill.BackgroundColor3 = Color3.fromRGB(239, 68, 68) end
+    if BootLoader.PctLbl then
+        BootLoader.PctLbl.Text = "ERR"
+        BootLoader.PctLbl.TextColor3 = Color3.fromRGB(248, 113, 113)
+    end
+    if BootLoader.ErrLbl then
+        BootLoader.ErrLbl.Text = tostring(errText or "Unknown error")
+        BootLoader.ErrLbl.Visible = true
+    end
+    if BootLoader.CloseBtn then BootLoader.CloseBtn.Visible = true end
+end
+
+function BootLoader.Close()
+    if BootLoader.Gui then
+        pcall(function() BootLoader.Gui:Destroy() end)
+    end
+    BootLoader.Gui = nil
+    local env = (type(getgenv) == "function" and select(2, pcall(getgenv))) or _G
+    if type(env) == "table" then env.__SYT_BOOT_LOADER = nil end
+end
 
 local function patchR8FrameworkSource(raw)
     if type(raw) ~= "string" or raw == "" then return raw end
@@ -70,23 +254,32 @@ local function loadR8Framework(forceReload)
     if cachedImGuiFactory and not forceReload then
         return cachedImGuiFactory
     end
-    if not cachedR8Source then
+    local env = (type(getgenv) == "function" and select(2, pcall(getgenv))) or _G
+    if not cachedR8Source and not forceReload and type(env) == "table" and type(env.__SYT_R8_SOURCE_CACHE) == "string" and #env.__SYT_R8_SOURCE_CACHE > 128 then
+        cachedR8Source = env.__SYT_R8_SOURCE_CACHE
+    end
+    if not cachedR8Source or forceReload then
+        BootLoader.Set(32, "Mengunduh R&8_DV UI Framework...")
         local urls = {
             "https://raw.githubusercontent.com/Mytzcodes/R-8/refs/heads/main/r%268_dv.lua",
             "https://raw.githubusercontent.com/Mytzcodes/R-8/refs/heads/main/r&8_dv.lua",
         }
-        local okFetch, rawScript
+        local okFetch, rawScript, fetchErr
         for _, url in ipairs(urls) do
-            okFetch, rawScript = pcall(function() return game:HttpGet(url) end)
+            okFetch, rawScript = pcall(function() return game:HttpGet(url, true) end)
             if okFetch and type(rawScript) == "string" and #rawScript > 128 and string.sub(rawScript, 1, 4) ~= "404:" then
                 break
             end
+            fetchErr = rawScript
         end
-        assert(okFetch and type(rawScript) == "string" and #rawScript > 128, "[SYT] Gagal memuat r&8_dv.lua dari GitHub.")
+        assert(okFetch and type(rawScript) == "string" and #rawScript > 128, "[SYT] Gagal mengunduh r&8_dv.lua: " .. tostring(fetchErr or "timeout/kosong"))
+        BootLoader.Set(44, "Menyiapkan patch framework...")
         cachedR8Source = patchR8FrameworkSource(rawScript)
+        if type(env) == "table" then env.__SYT_R8_SOURCE_CACHE = cachedR8Source end
     end
+    BootLoader.Set(52, "Mengompilasi framework UI...")
     local loader, loadErr = loadstring(cachedR8Source)
-    assert(type(loader) == "function", "[SYT] Compile error: " .. tostring(loadErr))
+    assert(type(loader) == "function", "[SYT] Compile error r&8_dv: " .. tostring(loadErr))
     cachedImGuiFactory = loader()
     return cachedImGuiFactory
 end
@@ -128,65 +321,88 @@ local function initSYTWindow(themeOverride, scaleOverride, startHidden)
     }
     return UI
 end
--- Gate kesiapan: jangan buka menu sebelum game (Growblox GameGui + world + Shared) benar-benar siap
+-- Pencarian cepat tabel gt via RenderStepped upvalue (< 1ms, tanpa freeze getgc)
+local function fastHasWorldGT()
+    if type(getconnections) ~= "function" then return false end
+    local okR, rs = pcall(game.GetService, game, "RunService")
+    if not okR or not rs then return false end
+    local okConns, conns = pcall(getconnections, rs.RenderStepped)
+    if not okConns or type(conns) ~= "table" then return false end
+    local g1 = (debug and debug.getupvalue) or getupvalue
+    local g2 = (debug and debug.getupvalues) or getupvalues
+    for _, c in ipairs(conns) do
+        local fn = type(c) == "table" and (c.Function or c["function"]) or nil
+        if type(fn) == "function" then
+            local cand = nil
+            if type(g2) == "function" then
+                local ok, ups = pcall(g2, fn)
+                if ok and type(ups) == "table" then cand = ups[1] end
+            elseif type(g1) == "function" then
+                local ok, _, val = pcall(g1, fn, 1)
+                if ok then cand = val end
+            end
+            if type(cand) == "table" and type(rawget(cand, "fg")) == "table" and type(rawget(cand, "goTo")) == "function" then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Gate kesiapan non-blocking: tunggu komponen inti sebentar lalu langsung lanjut (tidak freeze getgc 30 detik)
 local function waitGameReady(maxSec)
     local t0 = os.clock()
-    maxSec = maxSec or 30
+    maxSec = maxSec or 8
+    BootLoader.Set(8, "Menunggu Roblox game selesai dimuat...")
     if not game:IsLoaded() then
         pcall(function() game.Loaded:Wait() end)
     end
     local plrs = game:GetService("Players")
     local lp = plrs.LocalPlayer
     while not lp and (os.clock() - t0) < maxSec do
-        task.wait(0.15)
+        task.wait(0.1)
         lp = plrs.LocalPlayer
     end
-    local pg = lp and lp:WaitForChild("PlayerGui", math.max(1, maxSec - (os.clock() - t0)))
-    local gg = pg and pg:WaitForChild("GameGui", math.max(1, maxSec - (os.clock() - t0)))
+    BootLoader.Set(14, "Memeriksa PlayerGui & GameGui...")
+    local pg = lp and (lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", math.min(4, math.max(1, maxSec - (os.clock() - t0)))))
+    local gg = pg and (pg:FindFirstChild("GameGui") or pg:WaitForChild("GameGui", math.min(4, math.max(1, maxSec - (os.clock() - t0)))))
     local rs = game:GetService("ReplicatedStorage")
-    local sh = rs and rs:WaitForChild("Shared", math.max(1, math.min(5, maxSec - (os.clock() - t0))))
-    -- Tunggu GameGui selesai inisialisasi tabel gt di GC agar fitur & canvas tidak kosong
-    while gg and (os.clock() - t0) < maxSec do
-        local ok = false
-        if type(getgc) == "function" then
-            local okGc, gcList = pcall(getgc, true)
-            if okGc and type(gcList) == "table" then
-                for _, v in ipairs(gcList) do
-                    if type(v) == "table" and type(rawget(v, "fg")) == "table" and type(rawget(v, "goTo")) == "function"
-                        and type(rawget(v, "dropList")) == "function" and type(rawget(v, "name")) == "string" then
-                        ok = true
-                        break
-                    end
-                end
+    local sh = rs and (rs:FindFirstChild("Shared") or rs:WaitForChild("Shared", math.min(3, math.max(1, maxSec - (os.clock() - t0)))))
+
+    if gg then
+        BootLoader.Set(20, "Sinkronisasi engine Growblox...")
+        local deadline = math.min(t0 + maxSec, os.clock() + 3.5)
+        while os.clock() < deadline do
+            local shOk = sh and sh:FindFirstChild("Net") and sh:FindFirstChild("ItemDB")
+            if shOk and fastHasWorldGT() then
+                break
             end
-        else
-            ok = true
+            task.wait(0.15)
         end
-        if ok and sh and sh:FindFirstChild("Net") and sh:FindFirstChild("ItemDB") then break end
-        task.wait(0.25)
     end
-    task.wait(0.15)
     return gg ~= nil
 end
 
 local function safeInitSYTWindow(theme, scale, startHidden)
     local lastErr
-    for attempt = 1, 5 do
+    for attempt = 1, 2 do
+        BootLoader.Set(55 + (attempt - 1) * 5, attempt == 1 and "Membangun jendela UI SYT..." or "Mencoba ulang bangun UI SYT...")
         local ok, res = pcall(initSYTWindow, theme, scale, startHidden)
-        if ok and UI then return true end
+        if ok and UI then return true, nil end
         lastErr = res
         cachedImGuiFactory = nil
-        task.wait(0.6 * attempt)
+        cachedR8Source = nil
+        task.wait(0.35)
     end
     warn("[SYT] Gagal init window: " .. tostring(lastErr))
-    return false
+    return false, tostring(lastErr or "Init window gagal")
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 2. SERVICES, EXECUTOR HELPERS & SHARED TABLES
 -- ═══════════════════════════════════════════════════════════════════════════
 local Players           = game:GetService("Players")
-local CoreGui           = game:GetService("CoreGui")
+local CoreGui           = (function() local ok, c = pcall(game.GetService, game, "CoreGui"); return ok and c or nil end)()
 local GuiService        = game:GetService("GuiService")
 local RunService        = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -822,7 +1038,8 @@ function Core.DiscoverWheelSpins()
         end
     end
     if gt and db then
-        for _, fn in ipairs(safeGetGC(false)) do
+        local gcFns = safeGetGC(false)
+        for i, fn in ipairs(gcFns) do
             if type(fn) == "function" then
                 local src = fnSource(fn)
                 if src == "" or string.find(src, "Game", 1, true) then
@@ -830,6 +1047,7 @@ function Core.DiscoverWheelSpins()
                     if hit then H.wheelSpins = hit; return hit end
                 end
             end
+            if i % 2500 == 0 then task.wait() end
         end
     end
     return H.wheelSpins
@@ -854,6 +1072,7 @@ function Core.SyncOneHitHook(forceSec)
 end
 
 function SYT_Logic.Init(forceRefresh)
+    H.lastInitTryAt = os.clock()
     local curWName = (H.gt and type(rawget(H.gt, "name")) == "string") and rawget(H.gt, "name") or ""
     if curWName ~= "" and curWName ~= H.lastWorldTag then
         forceRefresh = true
@@ -879,30 +1098,58 @@ function SYT_Logic.Init(forceRefresh)
     H.Autotile   = H.Autotile   or safeRequireShared("Autotile")
     H.BitmapText = H.BitmapText or safeRequireShared("BitmapText")
 
-    for _, v in ipairs(safeGetGC(true)) do
-        if type(v) == "table" then
-            if not H.gt and isValidGT(v) then
-                H.gt = v
-            elseif not H.Net and isValidNet(v) then
-                H.Net = v
-            elseif not H.ItemDB and isValidItemDB(v) then
-                H.ItemDB = v
-            elseif (not H.inv or forceRefresh) and isValidInv(v) then
-                H.inv = v
-            elseif not H.stateObj and isValidStateObj(v) then
-                H.stateObj = v
-            elseif not H.others and isValidOthers(v) then
-                H.others = v
-            elseif not H.trees and isTreeMapCandidate(v) then
-                H.trees = v
-            elseif not H.wheelSpins and isWheelMapCandidate(v) then
-                H.wheelSpins = v
-            elseif not H.particles and type(rawget(v, "swirl")) == "function" and type(rawget(v, "yolk")) == "function" then
-                H.particles = v
-            elseif not H.backdropObj and type(rawget(v, "setWorld")) == "function" and type(rawget(v, "draw")) == "function" then
-                H.backdropObj = v
-            elseif not H.skillsObj and type(rawget(v, "handPower")) == "function" and type(rawget(v, "punchRange")) == "function" and type(rawget(v, "buildRange")) == "function" then
-                H.skillsObj = v
+    -- Fast path (<1ms): ambil H.gt langsung dari koneksi RenderStepped sebelum scan GC
+    if (not H.gt or not isValidGT(H.gt)) and type(getconnections) == "function" then
+        local okConns, conns = pcall(getconnections, RunService.RenderStepped)
+        if okConns and type(conns) == "table" then
+            for _, c in ipairs(conns) do
+                local fn = type(c) == "table" and (c.Function or c["function"]) or nil
+                local u1 = fn and uv(fn, 1) or nil
+                if isValidGT(u1) then
+                    H.gt = u1
+                    if not H.renderFn then
+                        for idx = 1, 80 do
+                            local val = uv(fn, idx)
+                            if val == nil and idx > 65 then break end
+                            if typeof(val) == "Instance" and val:IsA("UIScale") then
+                                H.renderFn = fn
+                                break
+                            end
+                        end
+                    end
+                    break
+                end
+            end
+        end
+    end
+
+    local needTableScan = not isValidGT(H.gt) or not H.Net or not H.ItemDB or not H.inv or not H.stateObj or not H.others
+    if needTableScan then
+        for _, v in ipairs(safeGetGC(true)) do
+            if type(v) == "table" then
+                if not H.gt and isValidGT(v) then
+                    H.gt = v
+                elseif not H.Net and isValidNet(v) then
+                    H.Net = v
+                elseif not H.ItemDB and isValidItemDB(v) then
+                    H.ItemDB = v
+                elseif (not H.inv or forceRefresh) and isValidInv(v) then
+                    H.inv = v
+                elseif not H.stateObj and isValidStateObj(v) then
+                    H.stateObj = v
+                elseif not H.others and isValidOthers(v) then
+                    H.others = v
+                elseif not H.trees and isTreeMapCandidate(v) then
+                    H.trees = v
+                elseif not H.wheelSpins and isWheelMapCandidate(v) then
+                    H.wheelSpins = v
+                elseif not H.particles and type(rawget(v, "swirl")) == "function" and type(rawget(v, "yolk")) == "function" then
+                    H.particles = v
+                elseif not H.backdropObj and type(rawget(v, "setWorld")) == "function" and type(rawget(v, "draw")) == "function" then
+                    H.backdropObj = v
+                elseif not H.skillsObj and type(rawget(v, "handPower")) == "function" and type(rawget(v, "punchRange")) == "function" and type(rawget(v, "buildRange")) == "function" then
+                    H.skillsObj = v
+                end
             end
         end
     end
@@ -930,7 +1177,10 @@ function SYT_Logic.Init(forceRefresh)
 
     if H.gt and (not H.renderFn or forceRefresh) then
         pcall(inspectUpvalues, H.gt)
-        for _, fn in ipairs(safeGetGC(false)) do
+    end
+    -- Hanya jalankan scan fungsi GC bila H.particles belum ketemu via inspectUpvalues (hindari freeze saat tabel kosong)
+    if H.gt and not H.particles then
+        for i, fn in ipairs(safeGetGC(false)) do
             if type(fn) == "function" then
                 local src = fnSource(fn)
                 if src ~= "" and string.find(src, "Game", 1, true) then
@@ -947,8 +1197,9 @@ function SYT_Logic.Init(forceRefresh)
                         end
                     end
                 end
-                if H.trees and H.wheelSpins and H.particles then break end
+                if H.particles then break end
             end
+            if i % 2500 == 0 then task.wait() end
         end
     end
 
@@ -1189,7 +1440,8 @@ function Core.GetLiveInventory()
             H.inv = maybeInv
         end
     end
-    if not isValidInv(H.inv) then
+    if not isValidInv(H.inv) and (os.clock() - (H.lastInvGcAt or 0)) >= 3.0 then
+        H.lastInvGcAt = os.clock()
         for _, v in ipairs(safeGetGC(true)) do
             if isValidInv(v) then
                 H.inv = v
@@ -1282,7 +1534,8 @@ end
 -- Core World / Pos / Inventory / Tree helpers
 function Core.EnsureInit()
     local curName = (H.gt and type(rawget(H.gt, "name")) == "string") and rawget(H.gt, "name") or ""
-    if not H.initialized or not isValidGT(H.gt) or (curName ~= "" and curName ~= H.lastWorldTag) then
+    local worldChanged = (curName ~= "" and curName ~= H.lastWorldTag)
+    if worldChanged or ((not H.initialized or not isValidGT(H.gt)) and (os.clock() - (H.lastInitTryAt or 0)) >= 2.5) then
         SYT_Logic.Init(true)
     end
     return H.gt ~= nil and H.Net ~= nil
@@ -2559,88 +2812,10 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 6. V1 [MISC], V2 [PNB], V3 [AUTO PABRIK], V4 [VISUAL], V5 [SPAM] + CONFIG
+-- 6. V1 [MISC], V2 [PNB], V3 [AUTO PABRIK], V4 [VISUAL], V5 [SPAM]
 -- ═══════════════════════════════════════════════════════════════════════════
 local stopAllAutomationImpl
 local buildSYTMenuFn
-
-local Config = {
-    Folder = "SYT_Config",
-    File   = "SYT_Config/config.json",
-    State  = {
-        autoSave          = true,
-        autoRerun         = false,
-        autoRerunDelay    = 2.5,
-        autoRerunSafe     = true,
-        theme             = "Minimalist Monochrome",
-        scale             = 1.0,
-        fpsBoost          = false,
-        fly               = false,
-        flySpeed          = 12,
-        seems             = false,
-        fastRoulette      = false,
-        godMode           = false,
-        collectState      = false,
-        autoCleanDrops    = true,
-        autoCollect       = false,
-        autoCollectRadius = 5,
-        autoCollectStep   = false,
-        pnbBlockId        = nil,
-        pnbOneHit         = false,
-        pnbShowHand       = true,
-        pnbAutoCollect    = true,
-        pnbLockCenter     = false,
-        pnbPlaceDelay     = 0.12,
-        pnbBreakDelay     = 0.18,
-        pnbCollectDelay   = 0.05,
-        pnbBreakThreads   = 5,
-        pnbGrid5x5        = { ["0,-1"] = true },
-        pabrikItem        = "",
-        pabrikBreakCount  = 1,
-        pabrikOneHit      = false,
-        pabrikShowHand    = true,
-        pabrikPlaceDelay  = 0.14,
-        pabrikBreakDelay  = 0.18,
-        pabrikCollectDelay= 0.05,
-        visCustomName     = "",
-        visRole           = "none",
-        visEffect         = "None",
-        visTitle          = "none",
-        visColorCode      = "",
-        visTilesName      = false,
-        visHideName       = false,
-        visLockNames      = false,
-        visGuildTag       = "",
-        visBooster        = false,
-        spamText          = "",
-        spamMaxLen        = 120,
-        spamPrefix        = "",
-        spamAutoCycle     = false,
-        spamDelay         = 3.0,
-        spamWhisperAll    = false,
-        skipperEnabled    = true,
-        skipperUpdateItems= false,
-        skipperRange      = 5,
-        skipperJMin       = 0.05,
-        skipperJMax       = 0.35,
-        gapTpDelay        = 0.25,
-        followTarget      = "",
-        dfBreakDelay      = 0.16,
-        dfPlaceDelay      = 0.12,
-        dfCollectDelay    = 0.05,
-        dfOneHit          = false,
-        dfShowHand        = true,
-        dfAutoCollect     = true,
-        dfCenterGap       = true,
-        dfRotationWorlds  = "",
-    },
-    dirty = false,
-}
-SYT_Logic.Config = Config
-
-local function markConfigDirty()
-    Config.dirty = true
-end
 
 local Misc = {
     State = {
@@ -2663,9 +2838,6 @@ function Misc.SetFly(enabled, speed)
     Misc.State.fly = enabled == true
     if type(speed) == "number" then Misc.State.flySpeed = clamp(speed, 6, 36) end
     if H.flyConn then H.flyConn:Disconnect(); H.flyConn = nil end
-    Config.State.fly = Misc.State.fly
-    Config.State.flySpeed = Misc.State.flySpeed
-    markConfigDirty()
     local gt = H.gt
     if not gt then return false end
 
@@ -2755,8 +2927,6 @@ function Misc.SetFpsBoost(enabled)
     Core.EnsureInit()
     local on = enabled == true
     Misc.State.fpsBoost = on
-    Config.State.fpsBoost = on
-    markConfigDirty()
 
     if H.fpsConn then H.fpsConn:Disconnect(); H.fpsConn = nil end
 
@@ -3125,8 +3295,6 @@ end
 function Misc.SetFastRoulette(enabled)
     Core.EnsureInit()
     Misc.State.fastRoulette = enabled == true
-    Config.State.fastRoulette = Misc.State.fastRoulette
-    markConfigDirty()
     if H.rouletteSkipConn then H.rouletteSkipConn:Disconnect(); H.rouletteSkipConn = nil end
     if Misc.State.fastRoulette then
         Core.DiscoverWheelSpins()
@@ -3244,8 +3412,6 @@ function Misc.SetGodMode(enabled)
     Core.EnsureInit()
     local net, gt = H.Net, H.gt
     Misc.State.godMode = enabled == true
-    Config.State.godMode = Misc.State.godMode
-    markConfigDirty()
     if H.godConn then H.godConn:Disconnect(); H.godConn = nil end
 
     if net and net.died then
@@ -3375,8 +3541,6 @@ end
 function Misc.SetFollowTarget(nameOrLabel)
     local nm = extractFollowName(nameOrLabel)
     Misc.State.followTarget = nm
-    Config.State.followTarget = nm
-    markConfigDirty()
     return nm
 end
 
@@ -3481,8 +3645,6 @@ end
 function Misc.SetCollectState(enabled)
     Core.EnsureInit()
     Misc.State.collectState = enabled == true
-    Config.State.collectState = Misc.State.collectState
-    markConfigDirty()
     local gt = H.gt
     if gt and type(gt.takeDrop) == "function" and not H.takeDropHooked then
         H.takeDropHooked = true
@@ -3528,16 +3690,12 @@ function Misc.SetAutoCollect(enabled, radius, stepEnabled)
     local S = Misc.State
     if type(radius) == "number" then
         S.autoCollectRadius = clamp(toInt(radius, 5), 1, 6)
-        Config.State.autoCollectRadius = S.autoCollectRadius
     end
     if stepEnabled ~= nil then
         S.autoCollectStep = stepEnabled == true
-        Config.State.autoCollectStep = S.autoCollectStep
     end
     local wantOn = enabled == true
     S.autoCollect = wantOn
-    Config.State.autoCollect = wantOn
-    markConfigDirty()
 
     if S.autoCollectThread then
         pcall(task.cancel, S.autoCollectThread)
@@ -3626,7 +3784,6 @@ function PNB.ToggleTile5x5(dx, dy)
     local k = tileKey(dx, dy)
     local nextV = not (PNB.State.grid5x5[k] == true)
     PNB.State.grid5x5[k] = nextV or nil
-    markConfigDirty()
     if UIHooks.refreshPad5x5 then UIHooks.refreshPad5x5() end
     return nextV
 end
@@ -3994,8 +4151,6 @@ function Pabrik.SetItem(idOrName)
     Pabrik.State.blockId  = pair.blockId
     Pabrik.State.seedId   = pair.seedId
     Pabrik.State.itemName = pair.blockName ~= "" and pair.blockName or pair.seedName
-    Config.State.pabrikItem = Pabrik.State.itemName
-    markConfigDirty()
     if UI then UI:SetValue("PabrikPairDisplay", string.format("%s | Block:%s Seed:%s", Pabrik.State.itemName, tostring(pair.blockId), tostring(pair.seedId))) end
     if UIHooks.refreshPadPab then UIHooks.refreshPadPab() end
     return pair
@@ -4007,8 +4162,6 @@ function Pabrik.SetBreakPos(tx, ty)
         tx, ty = p.tx, p.ty
     end
     Pabrik.State.breakPos = { x = math.floor(tx), y = math.floor(ty) }
-    Config.State.pabrikBreakPos = { x = Pabrik.State.breakPos.x, y = Pabrik.State.breakPos.y }
-    markConfigDirty()
     if UI then UI:SetValue("PabrikBreakPosDisplay", string.format("BreakPos (%d, %d) [%d tile]", Pabrik.State.breakPos.x, Pabrik.State.breakPos.y, Pabrik.State.breakTileCount)) end
     if UIHooks.refreshPadPab then UIHooks.refreshPadPab() end
     if UIHooks.refreshMap then UIHooks.refreshMap(true) end
@@ -4017,8 +4170,6 @@ end
 
 function Pabrik.SetBreakCount(c)
     Pabrik.State.breakTileCount = clamp(toInt(c, 1), 1, 3)
-    Config.State.pabrikBreakCount = Pabrik.State.breakTileCount
-    markConfigDirty()
     if Pabrik.State.breakPos and UI then
         UI:SetValue("PabrikBreakPosDisplay", string.format("BreakPos (%d, %d) [%d tile]", Pabrik.State.breakPos.x, Pabrik.State.breakPos.y, Pabrik.State.breakTileCount))
     end
@@ -4242,8 +4393,6 @@ end
 function DirtFarm.SetRotationWorlds(rawText)
     DirtFarm.State.rotationText = tostring(rawText or "")
     DirtFarm.State.rotationWorlds = parseDfRotationList(DirtFarm.State.rotationText)
-    Config.State.dfRotationWorlds = DirtFarm.State.rotationText
-    markConfigDirty()
     return DirtFarm.State.rotationWorlds
 end
 
@@ -4813,7 +4962,6 @@ function Visual.Apply()
     local tag = findNameTag()
     if tag then tag.Visible = not S.hideName end
     S.lastPosKey = tileKey(pos.tx, pos.ty)
-    markConfigDirty()
     return true
 end
 
@@ -4836,7 +4984,6 @@ function Visual.Restore()
     end
     local tag = findNameTag()
     if tag then tag.Visible = true end
-    markConfigDirty()
     return true
 end
 
@@ -5042,232 +5189,6 @@ stopAllAutomationImpl = function(reason)
 end
 SYT_Logic.StopAllAutomation = stopAllAutomationImpl
 
--- Config Save / Auto-Load / Safe-Rerun Engine
-function Config.CaptureFromRuntime()
-    local C = Config.State
-    C.flySpeed          = Misc.State.flySpeed
-    C.fly               = Misc.State.fly
-    C.seems             = Misc.State.seems
-    C.fastRoulette      = Misc.State.fastRoulette
-    C.godMode           = Misc.State.godMode
-    C.collectState      = Misc.State.collectState
-    C.autoCleanDrops    = Misc.State.autoCleanDrops
-    C.autoCollect       = Misc.State.autoCollect
-    C.autoCollectRadius = Misc.State.autoCollectRadius
-    C.autoCollectStep   = Misc.State.autoCollectStep
-    C.fpsBoost          = Misc.State.fpsBoost
-
-    C.pnbBlockId     = PNB.State.selectedBlockId
-    C.pnbOneHit      = PNB.State.oneHit
-    C.pnbShowHand    = PNB.State.showHand
-    C.pnbAutoCollect = PNB.State.autoCollect
-    C.pnbLockCenter  = PNB.State.lockCenterPos
-    C.pnbPlaceDelay  = PNB.State.placeDelay
-    C.pnbBreakDelay  = PNB.State.breakDelay
-    C.pnbCollectDelay= PNB.State.collectDelay
-    C.pnbBreakThreads= PNB.State.breakThreads
-    C.pnbGrid5x5     = PNB.State.grid5x5
-
-    C.pabrikItem         = Pabrik.State.itemName
-    C.pabrikBreakCount   = Pabrik.State.breakTileCount
-    C.pabrikOneHit       = Pabrik.State.oneHit
-    C.pabrikShowHand     = Pabrik.State.showHand
-    C.pabrikPlaceDelay   = Pabrik.State.placeDelay
-    C.pabrikBreakDelay   = Pabrik.State.breakDelay
-    C.pabrikCollectDelay = Pabrik.State.collectDelay
-    C.pabrikBreakPos     = Pabrik.State.breakPos
-
-    C.visCustomName = Visual.State.customName
-    C.visRole       = Visual.State.role
-    C.visEffect     = Visual.State.effect
-    C.visTitle      = Visual.State.customTitle
-    C.visColorCode  = Visual.State.colorCode
-    C.visTilesName  = Visual.State.tilesName
-    C.visHideName   = Visual.State.hideName
-    C.visLockNames  = Visual.State.lockNames
-    C.visGuildTag   = Visual.State.guildTag
-    C.visBooster    = Visual.State.booster
-
-    C.spamText       = Spam.State.text
-    C.spamMaxLen     = Spam.State.maxLength
-    C.spamPrefix     = Spam.State.prefixColor
-    C.spamAutoCycle  = Spam.State.autoCycleColor
-    C.spamDelay      = Spam.State.delay
-    C.spamWhisperAll = Spam.State.experimentalWhisperAll
-
-    C.skipperEnabled     = GetcSkipper.State.enabled
-    C.skipperUpdateItems = GetcSkipper.State.skipUpdateItems
-    C.skipperRange       = GetcSkipper.State.maxRangeTiles
-    C.skipperJMin        = GetcSkipper.State.jitterMin
-    C.skipperJMax        = GetcSkipper.State.jitterMax
-    C.gapTpDelay         = tpState.patrolDelay
-    C.followTarget       = Misc.State.followTarget
-
-    C.dfBreakDelay       = DirtFarm.State.breakDelay
-    C.dfPlaceDelay       = DirtFarm.State.placeDelay
-    C.dfCollectDelay     = DirtFarm.State.collectDelay
-    C.dfOneHit           = DirtFarm.State.oneHit
-    C.dfShowHand         = DirtFarm.State.showHand
-    C.dfAutoCollect      = DirtFarm.State.autoCollect
-    C.dfCenterGap        = DirtFarm.State.centerGap
-    C.dfRotationWorlds   = DirtFarm.State.rotationText
-    return C
-end
-
-function Config.Save(silent)
-    Config.CaptureFromRuntime()
-    Config.dirty = false
-    local env = getEnv()
-    env.SYT_SavedConfig = Config.State
-    local okEnc, jsonStr = pcall(function() return HttpService:JSONEncode(Config.State) end)
-    if okEnc and type(jsonStr) == "string" then
-        pcall(function()
-            if type(isfolder) == "function" and type(makefolder) == "function" and not isfolder(Config.Folder) then
-                makefolder(Config.Folder)
-            end
-            if type(writefile) == "function" then
-                writefile(Config.File, jsonStr)
-            end
-        end)
-    end
-    if not silent then
-        emitNotify("SYT Config", "Konfigurasi tersimpan ke SYT_Config/config.json")
-    end
-    return true
-end
-
-function Config.ApplyRuntime(safeBoot)
-    local C = Config.State
-    PNB.State.selectedBlockId = C.pnbBlockId
-    PNB.State.oneHit          = C.pnbOneHit == true
-    PNB.State.showHand        = C.pnbShowHand ~= false
-    PNB.State.autoCollect     = C.pnbAutoCollect ~= false
-    PNB.State.lockCenterPos   = C.pnbLockCenter == true
-    PNB.State.placeDelay      = tonumber(C.pnbPlaceDelay) or 0.12
-    PNB.State.breakDelay      = tonumber(C.pnbBreakDelay) or 0.18
-    PNB.State.collectDelay    = tonumber(C.pnbCollectDelay) or 0.05
-    PNB.State.breakThreads    = clamp(toInt(C.pnbBreakThreads, 5), 1, 9)
-    if type(C.pnbGrid5x5) == "table" and next(C.pnbGrid5x5) ~= nil then
-        PNB.State.grid5x5 = C.pnbGrid5x5
-    end
-
-    Pabrik.State.breakTileCount = clamp(toInt(C.pabrikBreakCount, 1), 1, 3)
-    Pabrik.State.oneHit         = C.pabrikOneHit == true
-    Pabrik.State.showHand       = C.pabrikShowHand ~= false
-    Pabrik.State.placeDelay     = tonumber(C.pabrikPlaceDelay) or 0.14
-    Pabrik.State.breakDelay     = tonumber(C.pabrikBreakDelay) or 0.18
-    Pabrik.State.collectDelay   = tonumber(C.pabrikCollectDelay) or 0.05
-    if type(C.pabrikBreakPos) == "table" and C.pabrikBreakPos.x and C.pabrikBreakPos.y then
-        Pabrik.State.breakPos = { x = C.pabrikBreakPos.x, y = C.pabrikBreakPos.y }
-    end
-    if type(C.pabrikItem) == "string" and C.pabrikItem ~= "" then
-        pcall(Pabrik.SetItem, C.pabrikItem)
-    end
-
-    Visual.State.customName  = tostring(C.visCustomName or "")
-    Visual.State.role        = tostring(C.visRole or "none")
-    Visual.State.effect      = tostring(C.visEffect or "None")
-    Visual.State.customTitle = tostring(C.visTitle or "none")
-    Visual.State.colorCode   = tostring(C.visColorCode or "")
-    Visual.State.tilesName   = C.visTilesName == true
-    Visual.State.hideName    = C.visHideName == true
-    Visual.State.lockNames   = C.visLockNames == true
-    Visual.State.guildTag    = tostring(C.visGuildTag or "")
-    Visual.State.booster     = C.visBooster == true
-
-    Spam.State.text                   = tostring(C.spamText or "")
-    Spam.State.maxLength              = clamp(toInt(C.spamMaxLen, 120), 20, 120)
-    Spam.State.prefixColor            = tostring(C.spamPrefix or "")
-    Spam.State.autoCycleColor         = C.spamAutoCycle == true
-    Spam.State.delay                  = tonumber(C.spamDelay) or 3.0
-    Spam.State.experimentalWhisperAll = C.spamWhisperAll == true
-
-    GetcSkipper.State.enabled       = C.skipperEnabled ~= false
-    GetcSkipper.State.maxRangeTiles = clamp(toInt(C.skipperRange, 5), 1, 5)
-    GetcSkipper.State.jitterMin     = tonumber(C.skipperJMin) or 0.05
-    GetcSkipper.State.jitterMax     = tonumber(C.skipperJMax) or 0.35
-    tpState.patrolDelay             = tonumber(C.gapTpDelay) or 0.25
-
-    Misc.State.flySpeed          = clamp(toInt(C.flySpeed, 12), 6, 36)
-    Misc.State.autoCleanDrops    = C.autoCleanDrops ~= false
-    Misc.State.autoCollectRadius = clamp(toInt(C.autoCollectRadius, 5), 1, 6)
-    Misc.State.autoCollectStep   = C.autoCollectStep == true
-    Misc.State.followTarget      = tostring(C.followTarget or "")
-
-    DirtFarm.State.breakDelay   = tonumber(C.dfBreakDelay) or 0.16
-    DirtFarm.State.placeDelay   = tonumber(C.dfPlaceDelay) or 0.12
-    DirtFarm.State.collectDelay = tonumber(C.dfCollectDelay) or 0.05
-    DirtFarm.State.oneHit       = C.dfOneHit == true
-    DirtFarm.State.showHand     = C.dfShowHand ~= false
-    DirtFarm.State.autoCollect  = C.dfAutoCollect ~= false
-    DirtFarm.State.centerGap    = C.dfCenterGap ~= false
-    if type(C.dfRotationWorlds) == "string" then
-        DirtFarm.SetRotationWorlds(C.dfRotationWorlds)
-    end
-
-    -- Pastikan Safe Mode menjaga loop berbahaya OFF sementara fitur aman / non-safe dipulihkan
-    if not safeBoot then
-        if C.fly then Misc.SetFly(true, C.flySpeed) end
-        if C.seems then Misc.SetSeems(true) end
-        if C.fastRoulette then Misc.SetFastRoulette(true) end
-        if C.godMode then Misc.SetGodMode(true) end
-        if C.collectState then Misc.SetCollectState(true) end
-        if C.autoCollect then Misc.SetAutoCollect(true, C.autoCollectRadius, C.autoCollectStep) end
-        if C.fpsBoost then Misc.SetFpsBoost(true) end
-        if C.skipperUpdateItems then GetcSkipper.SetSkipUpdateItems(true) end
-    else
-        -- Safe ON: hanya pulihkan utilitas pasif yang aman jika aktif, semua loop tetap OFF
-        PNB.State.running, Pabrik.State.running, DirtFarm.State.running, Spam.State.running, tpState.patrolOn, Misc.State.autoFollow = false, false, false, false, false, false
-        if C.fpsBoost then Misc.SetFpsBoost(true) end
-        if C.fastRoulette then Misc.SetFastRoulette(true) end
-        if C.collectState then Misc.SetCollectState(true) end
-        if C.seems then Misc.SetSeems(true) end
-        if C.godMode then Misc.SetGodMode(true) end
-    end
-    if UI then
-        if C.theme and UI.SetTheme then pcall(function() UI:SetTheme(C.theme) end) end
-        if C.scale and UI.SetScale then pcall(function() UI:SetScale(C.scale) end) end
-    end
-end
-
-function Config.Load(applyNow)
-    local rawTbl = nil
-    pcall(function()
-        if type(isfile) == "function" and type(readfile) == "function" and isfile(Config.File) then
-            local content = readfile(Config.File)
-            if type(content) == "string" and #content > 2 then
-                local okDec, dec = pcall(function() return HttpService:JSONDecode(content) end)
-                if okDec and type(dec) == "table" then rawTbl = dec end
-            end
-        end
-    end)
-    if not rawTbl then
-        local env = getEnv()
-        if type(env.SYT_SavedConfig) == "table" then rawTbl = env.SYT_SavedConfig end
-    end
-    if type(rawTbl) == "table" then
-        for k, v in pairs(rawTbl) do
-            if Config.State[k] ~= nil or k == "pnbBlockId" or k == "pabrikBreakPos" then
-                Config.State[k] = v
-            end
-        end
-    end
-    if applyNow then
-        Config.ApplyRuntime(Config.State.autoRerunSafe ~= false)
-    end
-    return rawTbl ~= nil
-end
-
-function Config.Reset()
-    pcall(function()
-        if type(delfile) == "function" and type(isfile) == "function" and isfile(Config.File) then
-            delfile(Config.File)
-        end
-    end)
-    getEnv().SYT_SavedConfig = nil
-    emitNotify("SYT Config", "File config di-reset.")
-end
-
 local function getActiveMenuGui()
     if UI and UI.ScreenGui and UI.ScreenGui.Parent then return UI.ScreenGui end
     local gEnv = getEnv()
@@ -5279,9 +5200,12 @@ local function getActiveMenuGui()
             if root:IsA("ScreenGui") and root.Parent and string.find(root.Name, "^R8_DV_Engine_") then
                 return root
             end
-            for _, ch in ipairs(root:GetChildren()) do
-                if ch:IsA("ScreenGui") and ch.Parent and string.find(ch.Name, "^R8_DV_Engine_") then
-                    return ch
+            local okCh, children = pcall(root.GetChildren, root)
+            if okCh and type(children) == "table" then
+                for _, ch in ipairs(children) do
+                    if ch:IsA("ScreenGui") and ch.Parent and string.find(ch.Name, "^R8_DV_Engine_") then
+                        return ch
+                    end
                 end
             end
         end
@@ -5295,62 +5219,72 @@ local function menuIsReady()
     if UI and UI.MainWindow and not UI.MainWindow.Parent then return false end
     local okCnt, cnt = pcall(function() return #sg:GetDescendants() end)
     return okCnt and cnt > 80
+end
+
+local function allCanvasesReady()
+    return menuIsReady()
         and UIHooks.refreshMap ~= nil
         and UIHooks.refreshBP ~= nil
         and UIHooks.refreshPad5x5 ~= nil
         and UIHooks.refreshPadPab ~= nil
 end
 
--- Bangun (ulang) menu secara aman: sembunyikan saat membangun -> tunggu game & canvas siap -> tampilkan utuh
+-- Bangun (ulang) menu secara aman: sembunyikan saat membangun -> tampilkan loader progres -> buka utuh setelah siap
 function SYT_Logic.RebuildMenu(reason, delaySec, applySafe)
     if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
     if UIHooks.rerunning or UIHooks.userDestroy then return end
     UIHooks.rerunning = true
-    pcall(function() Config.Save(true) end)
     if UI and UI.Destroy then pcall(function() UI:Destroy() end) end
     task.spawn(function()
-        local built = false
+        local built, lastErr = false, nil
         local okRun, runErr = pcall(function()
+            BootLoader.Show(10, tostring(reason or "Memuat ulang SYT..."))
             if (delaySec or 0) > 0 then
                 emitNotify("SYT Auto Rerun", string.format("%s | Rerun dalam %.1fs", tostring(reason or "Menu Closed"), delaySec))
                 task.wait(delaySec)
             end
-            for attempt = 1, 5 do
+            for attempt = 1, 3 do
                 if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN or UIHooks.userDestroy then break end
-                waitGameReady(25)
-                for tick = 1, 24 do
-                    if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN or UIHooks.userDestroy then return end
-                    if Players.LocalPlayer and SYT_Logic.Init(true) then
-                        if (H.gt and H.gt.name ~= "") or tick >= 12 then break end
-                    end
-                    task.wait(0.25)
-                end
+                waitGameReady(6)
                 if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN or UIHooks.userDestroy then return end
-                pcall(function() Config.Load(false) end)
+                BootLoader.Set(28, "Menyinkronkan engine & UI...")
+                pcall(SYT_Logic.Init, false)
                 UIHooks.refreshMap, UIHooks.refreshBP, UIHooks.refreshPad5x5, UIHooks.refreshPadPab = nil, nil, nil, nil
-                local okInit = safeInitSYTWindow(Config.State.theme, Config.State.scale, true)
-                local okBuild, err = false, nil
+                local okInit, initErr = safeInitSYTWindow(UIHooks.theme or "Minimalist Monochrome", UIHooks.scale or 1.0, true)
+                local okBuild, err = false, initErr
                 if okInit then
-                    okBuild, err = pcall(function()
+                    BootLoader.Set(68, "Merakit tab & fitur menu...")
+                    okBuild, err = xpcall(function()
                         if type(buildSYTMenuFn) == "function" then buildSYTMenuFn() end
-                    end)
+                    end, debug.traceback)
                 end
-                local t0 = os.clock()
-                while okBuild and not menuIsReady() and (os.clock() - t0) < 8 do
-                    task.wait(0.05)
+                if okBuild then
+                    local t0 = os.clock()
+                    while not allCanvasesReady() and (os.clock() - t0) < 3.5 do
+                        local p = 72 + math.min(22, math.floor((os.clock() - t0) * 6))
+                        BootLoader.Set(p, "Memasang Peta, Backpack & Pad...")
+                        task.wait(0.05)
+                    end
+                    if menuIsReady() then
+                        built = true
+                        break
+                    end
+                    err = "ScreenGui tidak ditemukan di parent GUI"
                 end
-                if okBuild and menuIsReady() then
-                    built = true
-                    break
-                end
-                warn("[SYT] Menu belum siap (percobaan " .. attempt .. "): " .. tostring(err))
+                lastErr = err
+                warn("[SYT] Rebuild gagal (" .. attempt .. "): " .. tostring(err))
                 if UI and UI.Destroy then pcall(function() UI:Destroy() end) end
-                task.wait(0.8 * attempt)
+                task.wait(0.6)
             end
             if built and getEnv().__SYT_SCRIPT_TOKEN == MY_SCRIPT_TOKEN and not UIHooks.userDestroy then
-                pcall(function() Config.ApplyRuntime(applySafe ~= false) end)
+                BootLoader.Set(96, "Menyiapkan & membuka menu...")
+                if applySafe ~= false and type(stopAllAutomationImpl) == "function" then
+                    stopAllAutomationImpl("Menu Rebuild -> Otomasi OFF")
+                end
                 local sg = getActiveMenuGui()
                 if sg then sg.Enabled = true end
+                BootLoader.Set(100, "SYT Aktif!")
+                task.delay(0.2, BootLoader.Close)
                 task.defer(function()
                     if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
                     if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
@@ -5359,18 +5293,23 @@ function SYT_Logic.RebuildMenu(reason, delaySec, applySafe)
                     if UIHooks.refreshPadPab then pcall(UIHooks.refreshPadPab) end
                     if UIHooks.updateButtons then pcall(UIHooks.updateButtons) end
                 end)
+            elseif not UIHooks.userDestroy and getEnv().__SYT_SCRIPT_TOKEN == MY_SCRIPT_TOKEN then
+                BootLoader.Error(lastErr or "Gagal membuka menu SYT")
             end
         end)
-        if not okRun then warn("[SYT] RebuildMenu error: " .. tostring(runErr)) end
+        if not okRun then
+            warn("[SYT] RebuildMenu error: " .. tostring(runErr))
+            BootLoader.Error(runErr)
+        end
         UIHooks.rerunning = false
-        if getEnv().__SYT_SCRIPT_TOKEN == MY_SCRIPT_TOKEN and not UIHooks.userDestroy then
-            emitNotify("SYT Auto Rerun", built and "Menu aktif kembali dengan konfigurasi tersimpan!" or "Menu menunggu game siap...")
+        if built and getEnv().__SYT_SCRIPT_TOKEN == MY_SCRIPT_TOKEN and not UIHooks.userDestroy then
+            emitNotify("SYT Auto Rerun", "Menu aktif kembali!")
         end
     end)
 end
 
 function SYT_Logic.TriggerAutoRerun(reason)
-    SYT_Logic.RebuildMenu(reason, clamp(tonumber(Config.State.autoRerunDelay) or 2.5, 0.5, 15), Config.State.autoRerunSafe ~= false)
+    SYT_Logic.RebuildMenu(reason, clamp(tonumber(UIHooks.autoRerunDelay) or 2.5, 0.5, 15), UIHooks.autoRerunSafe ~= false)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -5388,7 +5327,7 @@ buildSYTMenuFn = function()
 
     -- Hook Close Button (X) & ScreenGui Destroy untuk Auto Rerun Menu
     UI.OnCloseMenu = function(self)
-        if Config.State.autoRerun then
+        if UIHooks.autoRerun then
             self._CancelDefaultClose = true
             task.defer(function()
                 SYT_Logic.TriggerAutoRerun("Menu Ditutup")
@@ -5408,7 +5347,6 @@ buildSYTMenuFn = function()
         end
     end)
 
-    local C = Config.State
     if UI.Category then UI:Category("Overview") end
 
     feature("Home", "Home")({
@@ -5444,28 +5382,10 @@ buildSYTMenuFn = function()
         end),
 
         right = right(function(r)
-            local CfgCard = r:Card("Save Config & Auto Load", "Auto", "Shield", {
-                Subtitle = "Simpan ke SYT_Config/config.json agar langsung termuat saat rerun"
+            local SessionCard = r:Card("Kontrol Menu & Sesi", "Menu", "Shield", {
+                Subtitle = "Kelola penutupan menu permanen atau rerun otomatis dari tab Misc"
             })
-            CfgCard:Toggle("Auto Save Config", "CfgAutoSave", C.autoSave ~= false, function(v)
-                C.autoSave = v
-                markConfigDirty()
-                if v then Config.Save(true) end
-            end)
-            CfgCard:Button("Simpan Config Sekarang", "SAVE", "Bolt", function()
-                Config.Save(false)
-            end)
-            CfgCard:Button("Muat Ulang Config Tersimpan", "LOAD", "Visuals", function()
-                if Config.Load(true) then
-                    emitNotify("SYT Config", "Config tersimpan dimuat!")
-                else
-                    emitNotify("SYT Config", "Belum ada file config tersimpan.")
-                end
-            end)
-            CfgCard:Button("Reset Config Tersimpan", "RESET", "Shield", function()
-                Config.Reset()
-            end)
-            CfgCard:Button("Tutup Menu Permanen", "CLOSE", "Shield", function()
+            SessionCard:Button("Tutup Menu Permanen", "CLOSE", "Shield", function()
                 UIHooks.userDestroy = true
                 if type(stopAllAutomationImpl) == "function" then
                     stopAllAutomationImpl("Menu ditutup permanen oleh user")
@@ -5479,9 +5399,8 @@ buildSYTMenuFn = function()
                 Subtitle = "Pilih tema tampilan dan gaya switch"
             })
             if ThemeCard.ThemeSwatches then ThemeCard:ThemeSwatches("Colour Palette") end
-            ThemeCard:Dropdown("Color Style", "ThemeSelect", ThemeChoices, C.theme or "Minimalist Monochrome", function(sel)
-                C.theme = sel
-                markConfigDirty()
+            ThemeCard:Dropdown("Color Style", "ThemeSelect", ThemeChoices, UIHooks.theme or "Minimalist Monochrome", function(sel)
+                UIHooks.theme = sel
                 UI:SetTheme(sel)
             end)
             ThemeCard:Dropdown("Checkbox Style", "CheckboxStyleMode", { "Modern", "Checkbox" }, "Modern", function(mode)
@@ -5494,10 +5413,9 @@ buildSYTMenuFn = function()
             local LayoutCard = r:Card("Window & Layout", nil, "Sliders", {
                 Subtitle = "Atur UI Scale, transparency, rounded borders & hotkey menu"
             })
-            LayoutCard:Slider("UI Scale", "UIScalePct", 60, 130, math.floor((C.scale or 1) * 100), "%", function(val)
-                C.scale = val / 100
-                markConfigDirty()
-                if UI.SetScale then UI:SetScale(C.scale) else UI.UIScale = C.scale end
+            LayoutCard:Slider("UI Scale", "UIScalePct", 60, 130, math.floor((UIHooks.scale or 1) * 100), "%", function(val)
+                UIHooks.scale = val / 100
+                if UI.SetScale then UI:SetScale(UIHooks.scale) else UI.UIScale = UIHooks.scale end
             end)
             LayoutCard:Slider("Transparency", "BgTransPct", 0, 55, 4, "%", function(val)
                 UI:SetTransparency(val / 100)
@@ -5565,10 +5483,8 @@ buildSYTMenuFn = function()
             local SpamTpCard = c:Card("Random Teleport (Via Celah)", nil, "Bolt", {
                 Subtitle = "Otomatis cari celah valid — klik tombol sekali lagi untuk STOP"
             })
-            SpamTpCard:Slider("Jeda Step (detik)", "SpamTpDelaySec", 0.08, 2.0, C.gapTpDelay or 0.25, " s", function(v)
+            SpamTpCard:Slider("Jeda Step (detik)", "SpamTpDelaySec", 0.08, 2.0, tpState.patrolDelay or 0.25, " s", function(v)
                 tpState.patrolDelay = math.max(0.08, tonumber(v) or 0.25)
-                C.gapTpDelay = tpState.patrolDelay
-                markConfigDirty()
             end, 0.05)
             SpamTpCard:Button("[GAP TP] Start / Stop Random Teleport", "TOGGLE", "Bolt", toggleRandomTp)
 
@@ -5592,8 +5508,6 @@ buildSYTMenuFn = function()
             end)
             MoveMisc:Slider("Kecepatan Fly", "MiscFlySpeed", 6, 36, Misc.State.flySpeed, " t/s", function(v)
                 Misc.State.flySpeed = tonumber(v) or 12
-                C.flySpeed = Misc.State.flySpeed
-                markConfigDirty()
             end)
             MoveMisc:Toggle("No Clip (Visual Ghost)", "MiscNoClipToggle", Misc.State.noClip, function(on)
                 Misc.SetNoClip(on)
@@ -5638,21 +5552,15 @@ buildSYTMenuFn = function()
             end)
             CollectCard:Slider("Radius Auto Collect (Tile)", "MiscCollectRadius", 1, 6, Misc.State.autoCollectRadius, " tile", function(v)
                 Misc.State.autoCollectRadius = clamp(toInt(v, 5), 1, 6)
-                C.autoCollectRadius = Misc.State.autoCollectRadius
-                markConfigDirty()
             end, 1)
             CollectCard:Toggle("Step Thread (Jalan Step ke Drop Agak Jauh)", "MiscCollectStep", Misc.State.autoCollectStep, function(on)
                 Misc.State.autoCollectStep = on == true
-                C.autoCollectStep = Misc.State.autoCollectStep
-                markConfigDirty()
             end)
             CollectCard:Toggle("Collect State (Popup Jumlah Gems)", "MiscCollectToggle", Misc.State.collectState, function(on)
                 Misc.SetCollectState(on)
             end)
             CollectCard:Toggle("Auto Clean Drop Visual Stuck", "MiscCleanDropToggle", Misc.State.autoCleanDrops, function(on)
                 Misc.State.autoCleanDrops = on == true
-                C.autoCleanDrops = Misc.State.autoCleanDrops
-                markConfigDirty()
                 if on then Core.ClearStuckDropVisuals() end
             end)
             CollectCard:Input("Gems Terkumpul", "CollectGemsDisplay", "Get 0 Gems", "Get 0 Gems")
@@ -5672,18 +5580,14 @@ buildSYTMenuFn = function()
             ExtraMisc:Toggle("Boost Performance FPS (Hide BG/FX)", "MiscFpsBoost", Misc.State.fpsBoost, function(on)
                 Misc.SetFpsBoost(on)
             end)
-            ExtraMisc:Toggle("Auto Rerun Menu (Saat Menu Ditutup)", "MiscAutoRerun", C.autoRerun == true, function(on)
-                C.autoRerun = on == true
-                markConfigDirty()
-                Config.Save(true)
+            ExtraMisc:Toggle("Auto Rerun Menu (Saat Menu Ditutup)", "MiscAutoRerun", UIHooks.autoRerun == true, function(on)
+                UIHooks.autoRerun = on == true
             end)
-            ExtraMisc:Slider("Delay Auto Rerun (detik)", "MiscRerunDelay", 0.5, 15.0, C.autoRerunDelay or 2.5, " s", function(v)
-                C.autoRerunDelay = clamp(tonumber(v) or 2.5, 0.5, 15.0)
-                markConfigDirty()
+            ExtraMisc:Slider("Delay Auto Rerun (detik)", "MiscRerunDelay", 0.5, 15.0, UIHooks.autoRerunDelay or 2.5, " s", function(v)
+                UIHooks.autoRerunDelay = clamp(tonumber(v) or 2.5, 0.5, 15.0)
             end, 0.5)
-            ExtraMisc:Toggle("Safe Mode Config saat Rerun (Loop OFF)", "MiscRerunSafe", C.autoRerunSafe ~= false, function(on)
-                C.autoRerunSafe = on == true
-                markConfigDirty()
+            ExtraMisc:Toggle("Safe Mode saat Rerun (Loop OFF)", "MiscRerunSafe", UIHooks.autoRerunSafe ~= false, function(on)
+                UIHooks.autoRerunSafe = on == true
             end)
         end)
     })
@@ -5719,14 +5623,14 @@ buildSYTMenuFn = function()
             local OptCard = c:Card("Pengaturan Timing & Mode PNB", nil, "Sliders", {
                 Subtitle = "Atur 1-Hit, Show Hand, Auto Collect & custom delay"
             })
-            OptCard:Toggle("1-Hit Break Mode", "PnbOneHit", PNB.State.oneHit, function(v) PNB.State.oneHit = v; markConfigDirty() end)
-            OptCard:Toggle("Show Hand Break", "PnbShowHand", PNB.State.showHand, function(v) PNB.State.showHand = v; markConfigDirty() end)
-            OptCard:Toggle("Auto Collect Drops", "PnbAutoCollect", PNB.State.autoCollect, function(v) PNB.State.autoCollect = v; markConfigDirty() end)
-            OptCard:Toggle("Lock Posisi Tengah Saat Start", "PnbLockCenter", PNB.State.lockCenterPos, function(v) PNB.State.lockCenterPos = v; markConfigDirty() end)
-            OptCard:Slider("Multi-Thread Break", "PnbBreakThreads", 1, 9, PNB.State.breakThreads, " tile", function(v) PNB.State.breakThreads = math.clamp(math.floor((tonumber(v) or 5) + 0.5), 1, 9); markConfigDirty() end, 1)
-            OptCard:Slider("Place Delay (ms)", "PnbPlaceMs", 0, 600, math.floor(PNB.State.placeDelay * 1000), " ms", function(v) PNB.State.placeDelay = v / 1000; markConfigDirty() end, 10)
-            OptCard:Slider("Break Delay (ms)", "PnbBreakMs", 0, 600, math.floor(PNB.State.breakDelay * 1000), " ms", function(v) PNB.State.breakDelay = v / 1000; markConfigDirty() end, 10)
-            OptCard:Slider("Collect Delay (ms)", "PnbCollectMs", 20, 400, math.floor(PNB.State.collectDelay * 1000), " ms", function(v) PNB.State.collectDelay = v / 1000; markConfigDirty() end, 10)
+            OptCard:Toggle("1-Hit Break Mode", "PnbOneHit", PNB.State.oneHit, function(v) PNB.State.oneHit = v end)
+            OptCard:Toggle("Show Hand Break", "PnbShowHand", PNB.State.showHand, function(v) PNB.State.showHand = v end)
+            OptCard:Toggle("Auto Collect Drops", "PnbAutoCollect", PNB.State.autoCollect, function(v) PNB.State.autoCollect = v end)
+            OptCard:Toggle("Lock Posisi Tengah Saat Start", "PnbLockCenter", PNB.State.lockCenterPos, function(v) PNB.State.lockCenterPos = v end)
+            OptCard:Slider("Multi-Thread Break", "PnbBreakThreads", 1, 9, PNB.State.breakThreads, " tile", function(v) PNB.State.breakThreads = math.clamp(math.floor((tonumber(v) or 5) + 0.5), 1, 9) end, 1)
+            OptCard:Slider("Place Delay (ms)", "PnbPlaceMs", 0, 600, math.floor(PNB.State.placeDelay * 1000), " ms", function(v) PNB.State.placeDelay = v / 1000 end, 10)
+            OptCard:Slider("Break Delay (ms)", "PnbBreakMs", 0, 600, math.floor(PNB.State.breakDelay * 1000), " ms", function(v) PNB.State.breakDelay = v / 1000 end, 10)
+            OptCard:Slider("Collect Delay (ms)", "PnbCollectMs", 20, 400, math.floor(PNB.State.collectDelay * 1000), " ms", function(v) PNB.State.collectDelay = v / 1000 end, 10)
         end)
     })
 
@@ -5786,11 +5690,11 @@ buildSYTMenuFn = function()
                 setPabrikStatus("Cleared")
                 if UIHooks.refreshMap then UIHooks.refreshMap(true) end
             end)
-            TileCard:Toggle("1-Hit Mode (Pabrik)", "PabrikOneHit", Pabrik.State.oneHit, function(v) Pabrik.State.oneHit = v; markConfigDirty() end)
-            TileCard:Toggle("Show Hand (Pabrik)", "PabrikShowHand", Pabrik.State.showHand, function(v) Pabrik.State.showHand = v; markConfigDirty() end)
-            TileCard:Slider("Place Delay (ms)", "PabrikPlaceMs", 40, 600, math.floor(Pabrik.State.placeDelay * 1000), " ms", function(v) Pabrik.State.placeDelay = v / 1000; markConfigDirty() end, 10)
-            TileCard:Slider("Break Delay (ms)", "PabrikBreakMs", 40, 600, math.floor(Pabrik.State.breakDelay * 1000), " ms", function(v) Pabrik.State.breakDelay = v / 1000; markConfigDirty() end, 10)
-            TileCard:Slider("Collect Delay (ms)", "PabrikCollectMs", 20, 400, math.floor(Pabrik.State.collectDelay * 1000), " ms", function(v) Pabrik.State.collectDelay = v / 1000; markConfigDirty() end, 10)
+            TileCard:Toggle("1-Hit Mode (Pabrik)", "PabrikOneHit", Pabrik.State.oneHit, function(v) Pabrik.State.oneHit = v end)
+            TileCard:Toggle("Show Hand (Pabrik)", "PabrikShowHand", Pabrik.State.showHand, function(v) Pabrik.State.showHand = v end)
+            TileCard:Slider("Place Delay (ms)", "PabrikPlaceMs", 40, 600, math.floor(Pabrik.State.placeDelay * 1000), " ms", function(v) Pabrik.State.placeDelay = v / 1000 end, 10)
+            TileCard:Slider("Break Delay (ms)", "PabrikBreakMs", 40, 600, math.floor(Pabrik.State.breakDelay * 1000), " ms", function(v) Pabrik.State.breakDelay = v / 1000 end, 10)
+            TileCard:Slider("Collect Delay (ms)", "PabrikCollectMs", 20, 400, math.floor(Pabrik.State.collectDelay * 1000), " ms", function(v) Pabrik.State.collectDelay = v / 1000 end, 10)
         end)
     })
 
@@ -5846,13 +5750,13 @@ buildSYTMenuFn = function()
             local DfCfgCard = c:Card("Delay & Opsi Format Dirt Farm", nil, "Sliders", {
                 Subtitle = "Atur Break/Place/Collect delay dan opsi bolong tengah (Center Shaft)"
             })
-            DfCfgCard:Slider("Break Delay (ms)", "DfBreakMs", 40, 600, math.floor(DirtFarm.State.breakDelay * 1000), " ms", function(v) DirtFarm.State.breakDelay = v / 1000; markConfigDirty() end, 10)
-            DfCfgCard:Slider("Place Delay (ms)", "DfPlaceMs", 40, 600, math.floor(DirtFarm.State.placeDelay * 1000), " ms", function(v) DirtFarm.State.placeDelay = v / 1000; markConfigDirty() end, 10)
-            DfCfgCard:Slider("Collect Delay (ms)", "DfCollectMs", 20, 400, math.floor(DirtFarm.State.collectDelay * 1000), " ms", function(v) DirtFarm.State.collectDelay = v / 1000; markConfigDirty() end, 10)
-            DfCfgCard:Toggle("1-Hit Mode (DF)", "DfOneHit", DirtFarm.State.oneHit, function(v) DirtFarm.State.oneHit = v; markConfigDirty() end)
-            DfCfgCard:Toggle("Show Hand (DF)", "DfShowHand", DirtFarm.State.showHand, function(v) DirtFarm.State.showHand = v; markConfigDirty() end)
-            DfCfgCard:Toggle("Auto Collect Drops (DF)", "DfAutoCollect", DirtFarm.State.autoCollect, function(v) DirtFarm.State.autoCollect = v; markConfigDirty() end)
-            DfCfgCard:Toggle("Center Shaft / Bolong Tengah (2 Kolom)", "DfCenterGap", DirtFarm.State.centerGap, function(v) DirtFarm.State.centerGap = v; markConfigDirty() end)
+            DfCfgCard:Slider("Break Delay (ms)", "DfBreakMs", 40, 600, math.floor(DirtFarm.State.breakDelay * 1000), " ms", function(v) DirtFarm.State.breakDelay = v / 1000 end, 10)
+            DfCfgCard:Slider("Place Delay (ms)", "DfPlaceMs", 40, 600, math.floor(DirtFarm.State.placeDelay * 1000), " ms", function(v) DirtFarm.State.placeDelay = v / 1000 end, 10)
+            DfCfgCard:Slider("Collect Delay (ms)", "DfCollectMs", 20, 400, math.floor(DirtFarm.State.collectDelay * 1000), " ms", function(v) DirtFarm.State.collectDelay = v / 1000 end, 10)
+            DfCfgCard:Toggle("1-Hit Mode (DF)", "DfOneHit", DirtFarm.State.oneHit, function(v) DirtFarm.State.oneHit = v end)
+            DfCfgCard:Toggle("Show Hand (DF)", "DfShowHand", DirtFarm.State.showHand, function(v) DirtFarm.State.showHand = v end)
+            DfCfgCard:Toggle("Auto Collect Drops (DF)", "DfAutoCollect", DirtFarm.State.autoCollect, function(v) DirtFarm.State.autoCollect = v end)
+            DfCfgCard:Toggle("Center Shaft / Bolong Tengah (2 Kolom)", "DfCenterGap", DirtFarm.State.centerGap, function(v) DirtFarm.State.centerGap = v end)
         end)
     })
 
@@ -5866,7 +5770,6 @@ buildSYTMenuFn = function()
             })
             VisCard:Input("Custom Name Visual", "VisCustomName", "Nama baru...", Visual.State.customName, function(txt)
                 Visual.State.customName = tostring(txt or "")
-                markConfigDirty()
             end)
             VisCard:Dropdown("Roles Visual", "VisRoleSelect", VISUAL_ROLES, Visual.State.role or "none", function(v)
                 Visual.State.role = v
@@ -5886,7 +5789,6 @@ buildSYTMenuFn = function()
             end)
             VisCard:Input("Guild Tag Visual (Opsional)", "VisGuildInput", "Contoh: SYT / PRO", Visual.State.guildTag or "", function(txt)
                 Visual.State.guildTag = tostring(txt or "")
-                markConfigDirty()
             end)
             VisCard:Toggle("Discord Booster Icon", "VisBoosterToggle", Visual.State.booster, function(v)
                 Visual.State.booster = v
@@ -5894,7 +5796,7 @@ buildSYTMenuFn = function()
             end)
             VisCard:Toggle("Tiles Name [X, Y] di Nama", "VisTilesName", Visual.State.tilesName, function(v) Visual.State.tilesName = v; Visual.Apply() end)
             VisCard:Toggle("Hidden Name (Sembunyikan Tag)", "VisHideName", Visual.State.hideName, function(v) Visual.State.hideName = v; Visual.Apply() end)
-            VisCard:Toggle("Lock Names (Re-apply World Baru & Auto-OFF Menu)", "VisLockNames", Visual.State.lockNames, function(v) Visual.State.lockNames = v; markConfigDirty() end)
+            VisCard:Toggle("Lock Names (Re-apply World Baru & Auto-OFF Menu)", "VisLockNames", Visual.State.lockNames, function(v) Visual.State.lockNames = v end)
             VisCard:Button("Terapkan Visualisasi Sekarang", "APPLY", "Bolt", function()
                 Visual.State.customName = tostring(UI:GetValue("VisCustomName") or "")
                 Visual.State.guildTag   = tostring(UI:GetValue("VisGuildInput") or "")
@@ -5917,17 +5819,14 @@ buildSYTMenuFn = function()
             SpamCard:Input("Status Spam", "SpamStatusDisplay", "Idle", "Idle")
             SpamCard:Input("Pesan Spam", "SpamTextInput", "Ketik pesan di sini...", Spam.State.text, function(txt)
                 Spam.State.text = tostring(txt or "")
-                markConfigDirty()
             end)
             SpamCard:Dropdown("Prefix Warna", "SpamPrefixSelect", { "None", "`1", "`2", "`3", "`4", "`5", "`6", "`7", "`8", "`9", "`b", "`d", "`#", "`@" }, (Spam.State.prefixColor ~= "" and Spam.State.prefixColor) or "None", function(v)
                 Spam.State.prefixColor = (v == "None") and "" or v
-                markConfigDirty()
             end)
-            SpamCard:Toggle("Auto Cycle Colour (`1..`9)", "SpamAutoColor", Spam.State.autoCycleColor, function(v) Spam.State.autoCycleColor = v; markConfigDirty() end)
-            SpamCard:Toggle("Experimental: Whisper All (Player Game)", "SpamWhisperAll", Spam.State.experimentalWhisperAll, function(v) Spam.State.experimentalWhisperAll = v; markConfigDirty() end)
+            SpamCard:Toggle("Auto Cycle Colour (`1..`9)", "SpamAutoColor", Spam.State.autoCycleColor, function(v) Spam.State.autoCycleColor = v end)
+            SpamCard:Toggle("Experimental: Whisper All (Player Game)", "SpamWhisperAll", Spam.State.experimentalWhisperAll, function(v) Spam.State.experimentalWhisperAll = v end)
             SpamCard:Slider("Delay Kirim (detik)", "SpamDelaySec", 1.7, 10.0, Spam.State.delay, " s", function(v)
                 Spam.State.delay = math.max(1.65, tonumber(v) or 3.0)
-                markConfigDirty()
             end, 0.1)
             SpamCard:Button("[SPAM] Start / Stop Chat", "TOGGLE", "Bolt", function()
                 if not Spam.State.running then
@@ -5944,15 +5843,12 @@ buildSYTMenuFn = function()
             })
             GuardCard:Toggle("Aktifkan Randomized Jitter Guard", "GuardEnabled", GetcSkipper.State.enabled, function(v)
                 GetcSkipper.State.enabled = v
-                markConfigDirty()
             end)
             GuardCard:Toggle("Skip Update Items UI Berulang", "GuardSkipItems", GetcSkipper.State.skipUpdateItems, function(v)
                 GetcSkipper.SetSkipUpdateItems(v)
-                markConfigDirty()
             end)
             GuardCard:Slider("Max Range Auto Step (Tiles)", "GuardMaxRange", 1, 5, GetcSkipper.State.maxRangeTiles, " tiles", function(v)
                 GetcSkipper.State.maxRangeTiles = clamp(toInt(v, 5), 1, 5)
-                markConfigDirty()
             end, 1)
         end)
     })
@@ -5969,30 +5865,39 @@ local buttonMap = {}
 
 local function findAllTextBoxesWithKey(key)
     local found = {}
-    for _, root in ipairs(getAllGuiRoots()) do
-        if root then
-            for _, d in ipairs(root:GetDescendants()) do
-                if d:IsA("TextBox") and d.Text == key then
+    local function scanRoot(root)
+        if typeof(root) ~= "Instance" then return end
+        local okD, desc = pcall(root.GetDescendants, root)
+        if not okD or type(desc) ~= "table" then return end
+        for _, d in ipairs(desc) do
+            if d:IsA("TextBox") then
+                local okT, txt = pcall(function() return d.Text end)
+                if okT and txt == key then
                     found[#found + 1] = d
                 end
             end
+        end
+    end
+    local ownSg = getActiveMenuGui()
+    if ownSg then
+        scanRoot(ownSg)
+        if #found > 0 then return found end
+    end
+    for _, root in ipairs(getAllGuiRoots()) do
+        if root ~= ownSg then
+            scanRoot(root)
+            if #found > 0 then return found end
         end
     end
     return found
 end
 
 local function mountEmbeddedCanvas(anchorKey, heightPx, buildFn)
-    task.spawn(function()
-        local anchorBox = nil
-        for _ = 1, 80 do
-            local hits = findAllTextBoxesWithKey(anchorKey)
-            if #hits > 0 then
-                anchorBox = hits[1]
-                break
-            end
-            task.wait(0.1)
-        end
-        if not anchorBox or not anchorBox.Parent then return end
+    local function tryMountNow()
+        local hits = findAllTextBoxesWithKey(anchorKey)
+        if #hits == 0 then return false end
+        local anchorBox = hits[1]
+        if not anchorBox or not anchorBox.Parent then return false end
         local rowContainer = anchorBox.Parent
         for _, ch in ipairs(rowContainer:GetChildren()) do
             if not ch:IsA("UICorner") and not ch:IsA("UIStroke") then
@@ -6002,7 +5907,19 @@ local function mountEmbeddedCanvas(anchorKey, heightPx, buildFn)
         rowContainer.Size = UDim2.new(1, 0, 0, heightPx)
         rowContainer.BackgroundColor3 = Color3.fromRGB(11, 14, 20)
         rowContainer.ClipsDescendants = true
-        buildFn(rowContainer)
+        local okB, bErr = xpcall(buildFn, debug.traceback, rowContainer)
+        if not okB then
+            warn("[SYT Canvas Error " .. tostring(anchorKey) .. "]: " .. tostring(bErr))
+        end
+        return true
+    end
+    if tryMountNow() then return end
+    task.spawn(function()
+        for _ = 1, 80 do
+            if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+            if tryMountNow() then return end
+            task.wait(0.05)
+        end
     end)
 end
 
@@ -6015,39 +5932,52 @@ local function scanResponsiveButtons()
         { prefix = "[SPAM]",   getState = function() return Spam.State.running,     "STOP SPAM",   "START SPAM",   "[SPAM] AKTIF (Klik untuk STOP)",   "[SPAM] Start / Stop Chat" end },
         { prefix = "[GAP TP]", getState = function() return tpState.patrolOn,       "STOP TP",     "START TP",     "[GAP TP] AKTIF (Klik untuk STOP)", "[GAP TP] Start / Stop Random Teleport" end },
     }
-    for _, root in ipairs(getAllGuiRoots()) do
-        if root then
-            for _, d in ipairs(root:GetDescendants()) do
-                if d:IsA("TextLabel") then
-                    for _, sp in ipairs(specs) do
-                        if not buttonMap[sp.prefix] and string.sub(d.Text, 1, #sp.prefix) == sp.prefix then
-                            local btn = d:FindFirstAncestorOfClass("TextButton")
-                            if btn then
-                                local badgeTxt, badgePill = nil, nil
-                                for _, ch in ipairs(btn:GetDescendants()) do
-                                    if ch:IsA("TextLabel") and ch ~= d and ch.Text == "TOGGLE" then
-                                        badgeTxt = ch
-                                        badgePill = ch.Parent
-                                        break
+    local scanRoots = {}
+    local ownSg = getActiveMenuGui()
+    if ownSg then
+        scanRoots[1] = ownSg
+    else
+        scanRoots = getAllGuiRoots()
+    end
+    for _, root in ipairs(scanRoots) do
+        if typeof(root) == "Instance" then
+            local okD, desc = pcall(root.GetDescendants, root)
+            if okD and type(desc) == "table" then
+                for _, d in ipairs(desc) do
+                    if d:IsA("TextLabel") then
+                        local okT, dTxt = pcall(function() return d.Text end)
+                        if okT and type(dTxt) == "string" then
+                            for _, sp in ipairs(specs) do
+                                if not buttonMap[sp.prefix] and string.sub(dTxt, 1, #sp.prefix) == sp.prefix then
+                                    local btn = d:FindFirstAncestorOfClass("TextButton")
+                                    if btn then
+                                        local badgeTxt, badgePill = nil, nil
+                                        for _, ch in ipairs(btn:GetDescendants()) do
+                                            if ch:IsA("TextLabel") and ch ~= d and ch.Text == "TOGGLE" then
+                                                badgeTxt = ch
+                                                badgePill = ch.Parent
+                                                break
+                                            end
+                                        end
+                                        buttonMap[sp.prefix] = { lbl = d, badgeTxt = badgeTxt, badgePill = badgePill, getState = sp.getState }
+                                        btn.MouseButton1Click:Connect(function()
+                                            task.delay(0.15, function()
+                                                if UIHooks.updateButtons then UIHooks.updateButtons() end
+                                            end)
+                                        end)
                                     end
                                 end
-                                buttonMap[sp.prefix] = { lbl = d, badgeTxt = badgeTxt, badgePill = badgePill, getState = sp.getState }
-                                btn.MouseButton1Click:Connect(function()
-                                    task.delay(0.15, function()
-                                        if UIHooks.updateButtons then UIHooks.updateButtons() end
-                                    end)
-                                end)
                             end
-                        end
-                    end
-                    if not UIHooks.sidebarSubLbl and d.Text == "Active Session" then
-                        UIHooks.sidebarSubLbl = d
-                        local cardParent = d.Parent
-                        if cardParent then
-                            for _, sib in ipairs(cardParent:GetDescendants()) do
-                                if sib:IsA("TextLabel") and sib ~= d and (sib.Text == (LP and LP.DisplayName) or sib.Text == (LP and LP.Name) or sib.Text == "Operator") then
-                                    UIHooks.sidebarNameLbl = sib
-                                    break
+                            if not UIHooks.sidebarSubLbl and dTxt == "Active Session" then
+                                UIHooks.sidebarSubLbl = d
+                                local cardParent = d.Parent
+                                if cardParent then
+                                    for _, sib in ipairs(cardParent:GetDescendants()) do
+                                        if sib:IsA("TextLabel") and sib ~= d and (sib.Text == (LP and LP.DisplayName) or sib.Text == (LP and LP.Name) or sib.Text == "Operator") then
+                                            UIHooks.sidebarNameLbl = sib
+                                            break
+                                        end
+                                    end
                                 end
                             end
                         end
@@ -6848,8 +6778,6 @@ mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
                 cell.MouseButton1Click:Connect(function()
                     if it.kind ~= "seed" then
                         PNB.State.selectedBlockId = it.id
-                        Config.State.pnbBlockId = it.id
-                        markConfigDirty()
                         UI:SetValue("PnbSelectedDisplay", string.format("%s (ID:%d | x%d)", it.name, it.id, it.count))
                     end
                     Pabrik.SetItem(it.id)
@@ -7031,52 +6959,81 @@ end)
     end)
 end
 
--- Tunggu game & Core siap -> Muat Config -> Bangun UI tersembunyi -> Tampilkan hanya saat 100% siap
-waitGameReady(30)
+-- Tampilkan Loader Instan -> Tunggu Game Ringan -> Load Framework & Modul -> Bangun UI -> Tampilkan
+BootLoader.Show(4, "Menyiapkan environment SYT...")
+task.wait()
+
 for _, root in ipairs(getAllGuiRoots()) do
-    if root then
-        for _, ch in ipairs(root:GetChildren()) do
-            if ch:IsA("ScreenGui") and string.find(ch.Name, "^R8_DV_Engine_") then
-                pcall(function() ch:Destroy() end)
+    if typeof(root) == "Instance" then
+        local okCh, children = pcall(root.GetChildren, root)
+        if okCh and type(children) == "table" then
+            for _, ch in ipairs(children) do
+                if ch:IsA("ScreenGui") and string.find(ch.Name, "^R8_DV_Engine_") then
+                    pcall(function() ch:Destroy() end)
+                end
             end
         end
     end
 end
-pcall(SYT_Logic.Init, true)
-Config.Load(false)
+
+waitGameReady(8)
+LP = LP or Players.LocalPlayer
+BootLoader.Set(24, "Menghubungkan modul & tabel Growblox...")
+pcall(SYT_Logic.Init, false)
+BootLoader.Set(34, "Menyiapkan window & modul UI...")
+
 do
-    local okInit = safeInitSYTWindow(Config.State.theme, Config.State.scale, true)
-    local okB = okInit and pcall(buildSYTMenuFn) or false
-    local t0 = os.clock()
-    while okB and not menuIsReady() and (os.clock() - t0) < 8 do task.wait(0.05) end
-    if not okB or not menuIsReady() then
-        -- Menu terbuka sebelum siap / fitur tidak tampil -> rerun otomatis tersembunyi sampai benar-benar siap
-        UIHooks.rerunning = false
-        SYT_Logic.RebuildMenu("Menu belum siap saat start", 0.5, false)
+    local okInit, initErr = safeInitSYTWindow(UIHooks.theme or "Minimalist Monochrome", UIHooks.scale or 1.0, true)
+    if not okInit then
+        BootLoader.Error("Gagal init UI: " .. tostring(initErr))
     else
-        Config.ApplyRuntime(Config.State.autoRerunSafe ~= false)
-        scanResponsiveButtons()
-        UIHooks.updateButtons()
-        if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
-        if UIHooks.refreshPad5x5 then pcall(UIHooks.refreshPad5x5) end
-        if UIHooks.refreshPadPab then pcall(UIHooks.refreshPadPab) end
-        local sg = getActiveMenuGui()
-        if sg then sg.Enabled = true end
-        task.defer(function()
-            if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
-            if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
-            if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end
-        end)
+        BootLoader.Set(68, "Merakit tab & fitur menu SYT...")
+        local okB, buildErr = xpcall(buildSYTMenuFn, debug.traceback)
+        if not okB then
+            warn("[SYT] Build UI Error: " .. tostring(buildErr))
+            if UI and UI.Destroy then pcall(function() UI:Destroy() end) end
+            BootLoader.Error("Build UI Error: " .. tostring(buildErr))
+        else
+            local t0 = os.clock()
+            while not allCanvasesReady() and (os.clock() - t0) < 3.5 do
+                local p = 72 + math.min(22, math.floor((os.clock() - t0) * 6))
+                BootLoader.Set(p, "Memasang Peta 2D, Backpack & Pad...")
+                task.wait(0.05)
+            end
+            local sg = getActiveMenuGui()
+            if sg and sg.Parent and menuIsReady() then
+                BootLoader.Set(97, "Menyinkronkan kontrol & data UI...")
+                pcall(scanResponsiveButtons)
+                pcall(UIHooks.updateButtons)
+                if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
+                if UIHooks.refreshPad5x5 then pcall(UIHooks.refreshPad5x5) end
+                if UIHooks.refreshPadPab then pcall(UIHooks.refreshPadPab) end
+                sg.Enabled = true
+                BootLoader.Set(100, "SYT Siap Digunakan!")
+                task.delay(0.25, BootLoader.Close)
+                task.defer(function()
+                    if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+                    pcall(scanResponsiveButtons)
+                    if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
+                    if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end
+                end)
+            else
+                -- Bila GUI gagal terpasang di root GUI, coba 1x rebuild bersih dengan info di loader
+                UIHooks.rerunning = false
+                SYT_Logic.RebuildMenu("Menyelesaikan inisialisasi GUI", 0.3, false)
+            end
+        end
     end
 end
 
 -- Watchdog: bila ScreenGui/canvas menu hilang karena sistem/game/sleep (bukan ditutup user), buka ulang otomatis
 task.spawn(function()
     local missing = 0
+    task.wait(3.0)
     while getEnv().__SYT_SCRIPT_TOKEN == MY_SCRIPT_TOKEN and not UIHooks.userDestroy do
-        task.wait(1.2)
+        task.wait(1.5)
         if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN or UIHooks.userDestroy then break end
-        if not UIHooks.rerunning then
+        if not UIHooks.rerunning and (not BootLoader.Gui or not BootLoader.Gui.Parent) then
             if menuIsReady() then
                 missing = 0
             else
@@ -7091,7 +7048,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 9. RUNTIME WATCHER: LIVE POS, IN-GAME NAME SYNC, LOCK NAMES, AUTO SAVE
+-- 9. RUNTIME WATCHER: LIVE POS, IN-GAME NAME SYNC, LOCK NAMES
 -- ═══════════════════════════════════════════════════════════════════════════
 local function computeInvHash()
     local slots = Core.GetBackpackSlots()
@@ -7184,9 +7141,6 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
                     UI._DropRefresh.MiscFollowTarget(fCands)
                 end
             end
-        end
-        if Config.dirty and Config.State.autoSave then
-            Config.Save(true)
         end
     end
 end)

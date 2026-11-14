@@ -6,11 +6,12 @@
 
     Fitur Lengkap V1 + V2 dalam 1 Script Terintegrasi (SYT):
       - Overview         : Profil Akun In-Game, live world/posisi, list player, Auto Save/Load Config, Theme & FPS Boost
-      - Teleport & Map   : Manual TP validasi, Step TP (<=5 tile), Fast Gap TP, Peta World 2D Halus + Marker Player
-      - Misc (V1)        : Fly, Seems, Fast Roulette (Popup 0-36 Anti-Anomali), No Clip, God Mode Anti-Lava/Burn/Knock,
-                           Collect State + Auto Clean Drop, Radius Auto Collect (1-6 Tile + Step), FPS Boost, Auto Rerun Menu
+      - Teleport & Map   : Manual TP validasi, Walk-Path Safe (anti-rubberband jarak jauh), Step TP, Gap TP, Peta World 2D
+      - Misc (V1)        : Fly, Seems, Fast Roulette (0-36), No Clip, True God Mode (HP Full/Anti-Die/Anti-Respawn),
+                           Auto Follow Player (Dropdown Scroll Walk), Collect State, Radius Auto Collect, FPS Boost, Auto Rerun
       - PNB (V2)         : Visual Backpack Selector (Texture Asli Game Atlas/ItemIcon), 5x5 Tile Pad, 1-Hit, Hand, Delay
-      - Auto Pabrik (V3) : Visual Backpack/Seed Pair, Map Tile/Line Selector, BreakPos 1-3 Tile Head Pad
+      - Auto Pabrik (V3) : Visual Backpack/Seed Pair, Map Tile & Connected Line (-----) Selector, BreakPos 1-3 Tile Head Pad
+      - Dirt Farm (DF)   : Auto Break & Ubah ke Dirt (Skip Door/Bedrock/Locks), Pola Kelipatan 2, Rotation World Otomatis
       - Visualisasi (V4) : Custom In-Game Name, Roles Lengkap + Effects (Rainbow/Sponsor/Supporter/CC/Guild/Booster), Title, Lock
       - Spam & Skipper(V5): Input Spam, Color Prefix / Cycle, Fixed 1-Button Stop, Experimental Whisper All, [GETC SKIPER]
 ]]
@@ -33,7 +34,17 @@ local function patchR8FrameworkSource(raw)
     patched = string.gsub(
         patched,
         'local targetHeight = %(#options %* 38%) %+ %(math%.max%(#options %- 1, 0%) %* 6%) %+ 16',
-        'local fullHeight = (#options * 38) + (math.max(#options - 1, 0) * 6) + 16\n            local targetHeight = math.min(fullHeight, 172)'
+        'local function calcDropTargetHeight(cnt)\n                local fullHeight = (cnt * 38) + (math.max(cnt - 1, 0) * 6) + 16\n                return math.min(fullHeight, 172)\n            end\n            local targetHeight = calcDropTargetHeight(#options)'
+    )
+    patched = string.gsub(
+        patched,
+        '(%s*)for i, opt in ipairs%(options%) do',
+        '%1local function RebuildDropdownOpts(newList)\n%1    options = (type(newList) == "table" and #newList > 0) and newList or {"Default"}\n%1    targetHeight = calcDropTargetHeight(#options)\n%1    for _, entry in ipairs(OptionRows) do\n%1        if entry.Btn and entry.Btn.Parent then entry.Btn:Destroy() end\n%1    end\n%1    OptionRows = {}\n%1    for i, opt in ipairs(options) do'
+    )
+    patched = string.gsub(
+        patched,
+        '(%s*)RegisterThemeUpdater%(ListHolder, function%(%) RefreshOptionsVisual%(%) end%)',
+        '%1end\n%1RebuildDropdownOpts(options)\n%1Self._DropRefresh = Self._DropRefresh or {}\n%1Self._DropRefresh[flag] = function(newList)\n%1    RebuildDropdownOpts(newList)\n%1    RefreshOptionsVisual()\n%1    if isOpen then SmoothTween(ListHolder, 0.14, {Size = UDim2.new(1, 0, 0, targetHeight)}) end\n%1end\n%1RegisterThemeUpdater(ListHolder, function() RefreshOptionsVisual() end)'
     )
     -- V2: Hook tombol Close (X) agar mendukung Auto Rerun Menu
     patched = string.gsub(
@@ -137,15 +148,26 @@ end
 local _debug = debug or {}
 local function uv(fn, idx)
     if type(fn) ~= "function" or type(idx) ~= "number" then return nil end
-    local g1 = (_debug and _debug.getupvalue) or getupvalue
-    if type(g1) == "function" then
-        local ok, _, val = pcall(g1, fn, idx)
-        if ok then return val end
-    end
     local g2 = (_debug and _debug.getupvalues) or getupvalues
     if type(g2) == "function" then
         local ok, ups = pcall(g2, fn)
-        if ok and type(ups) == "table" then return ups[idx] end
+        if ok and type(ups) == "table" and ups[idx] ~= nil then
+            return ups[idx]
+        end
+    end
+    local g1 = (_debug and _debug.getupvalue) or getupvalue
+    if type(g1) == "function" then
+        local function pick(ok, ...)
+            if not ok then return nil end
+            local n = select("#", ...)
+            if n >= 2 then
+                return select(2, ...)
+            elseif n == 1 then
+                return (...)
+            end
+            return nil
+        end
+        return pick(pcall(g1, fn, idx))
     end
     return nil
 end
@@ -245,6 +267,7 @@ local H = {
     lastHurtAtIdx    = nil,
     touchHurtIdx     = nil,
     dieIdx           = nil,
+    respawnIdx       = nil,
     goPxIdx          = nil,
     goPyIdx          = nil,
     goPrevXIdx       = nil,
@@ -261,10 +284,17 @@ local H = {
     origOnDie        = nil,
     origTouchHurt    = nil,
     origDieFn        = nil,
+    origRespawnFn    = nil,
+    origGtRespawn    = nil,
+    origTBHurt       = nil,
+    origTBDie        = nil,
+    touchHurtRef     = nil,
+    dieFnRef         = nil,
     origSwirlFn      = nil,
     origYolkFn       = nil,
     origTouchBlocks  = nil,
     takeSeq          = 0,
+    takingUids       = {},
     takeDropHooked   = false,
     wheelHooked      = false,
     seemsHooked      = false,
@@ -350,10 +380,14 @@ local function isValidItemDB(t)
 end
 
 local function isValidInv(t)
-    return type(t) == "table"
-        and type(rawget(t, "slots")) == "table"
-        and type(rawget(t, "count")) == "function"
-        and type(rawget(t, "add")) == "function"
+    if type(t) ~= "table" then return false end
+    if type(rawget(t, "slots")) ~= "table" or type(rawget(t, "capacity")) ~= "number" then
+        return false
+    end
+    local ok, hasMethods = pcall(function()
+        return type(t.count) == "function" and type(t.add) == "function"
+    end)
+    return ok and hasMethods
 end
 
 local function isValidStateObj(t)
@@ -471,29 +505,12 @@ local function inspectUpvalues(gt)
         if not H.pxIdx and fallbackIdx then
             H.pxIdx, H.pyIdx = fallbackIdx, fallbackIdx + 1
         end
-        if H.pxIdx then
-            local idx = H.pxIdx
-            if type(uv(H.renderFn, idx - 3)) == "number" and type(uv(H.renderFn, idx - 2)) == "number" then
-                H.vxIdx, H.vyIdx = idx - 3, idx - 2
-            end
-            if type(uv(H.renderFn, idx + 3)) == "number" and type(uv(H.renderFn, idx + 4)) == "number" then
-                H.prevXIdx, H.prevYIdx = idx + 3, idx + 4
-            end
-            for dIdx = idx + 2, idx + 16 do
-                local v = uv(H.renderFn, dIdx)
-                if type(v) == "boolean" and dIdx ~= idx + 2 then
-                    H.deadIdx = dIdx
-                    break
-                end
-            end
-            for hIdx = math.max(1, idx - 6), idx + 14 do
-                local v = uv(H.renderFn, hIdx)
-                if type(v) == "number" and hIdx ~= idx and hIdx ~= idx + 1 and hIdx ~= H.vxIdx and hIdx ~= H.vyIdx and hIdx ~= H.prevXIdx and hIdx ~= H.prevYIdx then
-                    if v >= 1 and v <= 5 and math.floor(v) == v and not H.hpIdx then
-                        H.hpIdx = hIdx
-                    end
-                end
-            end
+        if type(rawget(gt, "touchBlocks")) == "function" then
+            H.touchHurtRef = H.touchHurtRef or uv(gt.touchBlocks, 1)
+            H.dieFnRef     = H.dieFnRef     or uv(gt.touchBlocks, 2)
+        end
+        if type(rawget(gt, "respawn")) == "function" then
+            H.dieFnRef = H.dieFnRef or uv(gt.respawn, 2)
         end
 
         local getc = (_debug and (_debug.getconstants or _debug.getconsts)) or getconstants
@@ -505,21 +522,84 @@ local function inspectUpvalues(gt)
                 elseif not H.backdropObj and type(rawget(val, "setWorld")) == "function" then
                     H.backdropObj = val
                 end
-            elseif type(val) == "function" and type(getc) == "function" then
-                local okC, consts = pcall(getc, val)
-                if okC and type(consts) == "table" then
-                    local hasHurts, hasDeadly, hasBurnOrDied = false, false, false
-                    for _, c in pairs(consts) do
-                        if c == "hurts" then hasHurts = true end
-                        if c == "deadly" then hasDeadly = true end
-                        if c == "burn" or c == "Burn" or c == "respawn" then hasBurnOrDied = true end
+            elseif type(val) == "function" then
+                if H.touchHurtRef and val == H.touchHurtRef and not H.touchHurtIdx then
+                    H.touchHurtIdx = uIdx
+                    H.origTouchHurt = H.origTouchHurt or val
+                elseif H.dieFnRef and val == H.dieFnRef and not H.dieIdx then
+                    H.dieIdx = uIdx
+                    H.origDieFn = H.origDieFn or val
+                end
+                if type(getc) == "function" then
+                    local okC, consts = pcall(getc, val)
+                    if okC and type(consts) == "table" then
+                        local hasHurts, hasDeadly, hasDieConst, hasRespawnConst = false, false, false, false
+                        for _, c in pairs(consts) do
+                            if c == "hurts" then hasHurts = true end
+                            if c == "deadly" then hasDeadly = true end
+                            if c == "male_scream" or c == "ouch" or c == "deadSince" or c == "glitchSoul" or c == "burn" or c == "Burn" then
+                                hasDieConst = true
+                            end
+                            if c == "died" or c == "respawnedAt" then
+                                hasRespawnConst = true
+                            end
+                        end
+                        if hasHurts and hasDeadly and not H.touchHurtIdx then
+                            H.touchHurtIdx = uIdx
+                            H.origTouchHurt = H.origTouchHurt or val
+                        elseif hasDieConst and not hasHurts and not H.dieIdx then
+                            H.dieIdx = uIdx
+                            H.origDieFn = H.origDieFn or val
+                        elseif hasRespawnConst and not hasHurts and not hasDieConst and not H.respawnIdx then
+                            H.respawnIdx = uIdx
+                            H.origRespawnFn = H.origRespawnFn or val
+                        end
                     end
-                    if hasHurts and hasDeadly and not H.touchHurtIdx then
-                        H.touchHurtIdx = uIdx
-                        H.origTouchHurt = H.origTouchHurt or val
-                    elseif hasBurnOrDied and not hasHurts and not H.dieIdx then
-                        H.dieIdx = uIdx
-                        H.origDieFn = H.origDieFn or val
+                end
+            end
+        end
+
+        -- Pinpoint HP & Dead upvalue langsung dari blok RenderStepped (v_u_243..v_u_75..v_u_268 & v_u_94..v_u_200)
+        if H.touchHurtIdx and H.dieIdx then
+            local lo = math.min(H.touchHurtIdx, H.dieIdx)
+            local hi = math.max(H.touchHurtIdx, H.dieIdx)
+            for hIdx = lo + 1, hi - 1 do
+                local v = uv(H.renderFn, hIdx)
+                if type(v) == "number" and v >= 0 and v <= 5 then
+                    H.hpIdx = hIdx
+                elseif type(v) == "number" and v < 0 then
+                    H.lastHurtAtIdx = hIdx
+                end
+            end
+        end
+        if H.respawnIdx and type(uv(H.renderFn, H.respawnIdx - 1)) == "boolean" then
+            H.deadIdx = H.respawnIdx - 1
+        end
+
+        if H.pxIdx then
+            local idx = H.pxIdx
+            if type(uv(H.renderFn, idx - 3)) == "number" and type(uv(H.renderFn, idx - 2)) == "number" then
+                H.vxIdx, H.vyIdx = idx - 3, idx - 2
+            end
+            if type(uv(H.renderFn, idx + 3)) == "number" and type(uv(H.renderFn, idx + 4)) == "number" then
+                H.prevXIdx, H.prevYIdx = idx + 3, idx + 4
+            end
+            if not H.deadIdx then
+                for dIdx = idx + 2, idx + 16 do
+                    local v = uv(H.renderFn, dIdx)
+                    if type(v) == "boolean" and dIdx ~= idx + 2 then
+                        H.deadIdx = dIdx
+                        break
+                    end
+                end
+            end
+            if not H.hpIdx then
+                for hIdx = math.max(1, idx - 6), idx + 14 do
+                    local v = uv(H.renderFn, hIdx)
+                    if type(v) == "number" and hIdx ~= idx and hIdx ~= idx + 1 and hIdx ~= H.vxIdx and hIdx ~= H.vyIdx and hIdx ~= H.prevXIdx and hIdx ~= H.prevYIdx then
+                        if v >= 1 and v <= 5 and math.floor(v) == v and not H.hpIdx then
+                            H.hpIdx = hIdx
+                        end
                     end
                 end
             end
@@ -742,24 +822,40 @@ function Core.AttachItemSprite(parent, itemId, sizePx)
         end
     end
 
-    -- Prioritas 2: Seed texture (FX.seed) / Atlas lookup dengan FALLBACK_ATLAS lengkap
+    -- Prioritas 2: Seed texture (FX.seed 2-layer base+over) / Atlas lookup dengan FALLBACK_ATLAS lengkap
     if info then
         local atlasTbl = (H.Assets and H.Assets.Atlas) or FALLBACK_ATLAS
         local fxTbl    = (H.Assets and H.Assets.FX) or FALLBACK_FX
-        if info.kind == "seed" then
+        if info.seed or info.kind == "seed" then
             local seedImg = (fxTbl and fxTbl.seed) or FALLBACK_FX.seed
+            local sd = type(info.seed) == "table" and info.seed or {}
+            local sPx = math.floor(sizePx * 0.65)
             local img = Instance.new("ImageLabel")
-            img.Size = UDim2.fromOffset(sizePx, sizePx)
+            img.Size = UDim2.fromOffset(sPx, sPx)
             img.AnchorPoint = Vector2.new(0.5, 0.5)
             img.Position = UDim2.fromScale(0.5, 0.5)
             img.BackgroundTransparency = 1
             img.ResampleMode = Enum.ResamplerMode.Pixelated
             img.Image = seedImg
             img.ImageRectSize = Vector2.new(16, 16)
-            img.ImageRectOffset = Vector2.new(0, 0)
-            img.ImageColor3 = info.tint or Color3.fromRGB(165, 225, 130)
+            img.ImageRectOffset = Vector2.new((sd.base or 0) * 16, 0)
+            img.ImageColor3 = sd.color or info.tint or Color3.fromRGB(165, 225, 130)
             img.ZIndex = zBase + 1
             img.Parent = parent
+            if sd.over ~= nil then
+                local ov = Instance.new("ImageLabel")
+                ov.Size = UDim2.fromOffset(sPx, sPx)
+                ov.AnchorPoint = Vector2.new(0.5, 0.5)
+                ov.Position = UDim2.fromScale(0.5, 0.5)
+                ov.BackgroundTransparency = 1
+                ov.ResampleMode = Enum.ResamplerMode.Pixelated
+                ov.Image = seedImg
+                ov.ImageRectSize = Vector2.new(16, 16)
+                ov.ImageRectOffset = Vector2.new(sd.over * 16, 16)
+                ov.ImageColor3 = sd.overColor or Color3.new(1, 1, 1)
+                ov.ZIndex = zBase + 2
+                ov.Parent = parent
+            end
             return true
         end
 
@@ -786,6 +882,20 @@ function Core.AttachItemSprite(parent, itemId, sizePx)
             img.ImageColor3 = info.tint or Color3.new(1, 1, 1)
             img.ZIndex = zBase + 1
             img.Parent = parent
+            if type(info.overCell) == "table" and info.overCell[1] and info.overCell[2] then
+                local ov = Instance.new("ImageLabel")
+                ov.Size = UDim2.fromOffset(sizePx, sizePx)
+                ov.AnchorPoint = Vector2.new(0.5, 0.5)
+                ov.Position = UDim2.fromScale(0.5, 0.5)
+                ov.BackgroundTransparency = 1
+                ov.ResampleMode = Enum.ResamplerMode.Pixelated
+                ov.Image = atlasImg
+                ov.ImageRectSize = Vector2.new(32, 32)
+                ov.ImageRectOffset = Vector2.new(info.overCell[1] * 32, info.overCell[2] * 32)
+                ov.ImageColor3 = Color3.new(1, 1, 1)
+                ov.ZIndex = zBase + 2
+                ov.Parent = parent
+            end
             return true
         end
     end
@@ -819,27 +929,41 @@ function Core.GetLiveInventory()
             H.inv = maybeInv
         end
     end
+    if not isValidInv(H.inv) then
+        for _, v in ipairs(safeGetGC(true)) do
+            if isValidInv(v) then
+                H.inv = v
+                break
+            end
+        end
+    end
     return H.inv
 end
 
 function Core.GetBackpackSlots()
     Core.EnsureInit()
+    local function collectFrom(tbl)
+        local list = {}
+        if type(tbl) ~= "table" then return list end
+        for idx, sl in pairs(tbl) do
+            if type(sl) == "table" then
+                local id = tonumber(sl.id or sl[1])
+                local n  = tonumber(sl.n or sl[2] or sl.count or 0) or 0
+                if id and id > 0 and n > 0 then
+                    list[#list + 1] = { slot = tonumber(idx) or (#list + 1), id = id, n = n }
+                end
+            end
+        end
+        table.sort(list, function(a, b) return a.slot < b.slot end)
+        return list
+    end
+
     local inv = Core.GetLiveInventory()
-    local rawSlots = nil
-    if inv and type(inv.slots) == "table" and #inv.slots > 0 then
-        rawSlots = inv.slots
-    elseif H.gt and type(rawget(H.gt, "backpackNow")) == "function" then
+    local out = inv and collectFrom(inv.slots) or {}
+    if #out == 0 and H.gt and type(rawget(H.gt, "backpackNow")) == "function" then
         local ok, bn = pcall(H.gt.backpackNow)
         if ok and type(bn) == "table" then
-            rawSlots = bn
-        end
-    end
-    local out = {}
-    if type(rawSlots) == "table" then
-        for i, sl in ipairs(rawSlots) do
-            if type(sl) == "table" and type(sl.id) == "number" and sl.id > 0 and (sl.n or 0) > 0 then
-                out[#out + 1] = { slot = i, id = sl.id, n = sl.n }
-            end
+            out = collectFrom(bn)
         end
     end
     return out
@@ -1264,7 +1388,7 @@ function Packets.SendRawMove(px, py, vx, vy, flags)
     return pcall(sendFn, { x = px, y = py, vx = vx or 0, vy = vy or 0, flags = toInt(flags, 2), t = moveTs() })
 end
 
-function Packets.FindTilePath(sx, sy, gx, gy)
+function Packets.FindTilePath(sx, sy, gx, gy, allowHazard)
     local gt = H.gt
     if not gt then return nil end
     local w, h = gt.w, gt.h
@@ -1272,37 +1396,117 @@ function Packets.FindTilePath(sx, sy, gx, gy)
     gx, gy = clamp(math.floor(gx), 0, w - 1), clamp(math.floor(gy), 0, h - 1)
     if sx == gx and sy == gy then return { { x = gx, y = gy } } end
 
-    local startIdx, goalIdx = sy * w + sx, gy * w + gx
-    local cameFrom = { [startIdx] = -1 }
-    local queue, head = { startIdx }, 1
-    local dirs = { { 1, 0 }, { -1, 0 }, { 0, -1 }, { 0, 1 } }
-    local found = false
-
-    while head <= #queue do
-        local cur = queue[head]
-        head += 1
-        if cur == goalIdx then found = true; break end
-        local cx, cy = cur % w, math.floor(cur / w)
-        for _, d in ipairs(dirs) do
-            local nx, ny = cx + d[1], cy + d[2]
-            if nx >= 0 and nx < w and ny >= 0 and ny < h then
-                local nIdx = ny * w + nx
-                if cameFrom[nIdx] == nil and (nIdx == goalIdx or not Core.IsSolid(nx, ny)) then
-                    cameFrom[nIdx] = cur
-                    queue[#queue + 1] = nIdx
+    local function runBfs(ignoreDanger)
+        local startIdx, goalIdx = sy * w + sx, gy * w + gx
+        local cameFrom = { [startIdx] = -1 }
+        local queue, head = { startIdx }, 1
+        local dirs = { { 1, 0 }, { -1, 0 }, { 0, -1 }, { 0, 1 } }
+        while head <= #queue do
+            local cur = queue[head]
+            head += 1
+            if cur == goalIdx then
+                local rev, c = {}, goalIdx
+                while c ~= -1 do
+                    rev[#rev + 1] = { x = c % w, y = math.floor(c / w) }
+                    c = cameFrom[c]
+                end
+                local path = {}
+                for i = #rev, 1, -1 do path[#path + 1] = rev[i] end
+                return path
+            end
+            local cx, cy = cur % w, math.floor(cur / w)
+            for _, d in ipairs(dirs) do
+                local nx, ny = cx + d[1], cy + d[2]
+                if nx >= 0 and nx < w and ny >= 0 and ny < h then
+                    local nIdx = ny * w + nx
+                    if cameFrom[nIdx] == nil and (nIdx == goalIdx or not Core.IsSolid(nx, ny)) then
+                        local okHazard = ignoreDanger or (nIdx == goalIdx) or Misc.State.godMode
+                        if not okHazard then
+                            local fi = Core.GetItemInfo(Core.GetFG(nx, ny))
+                            okHazard = not (fi and (fi.deadly or fi.hurts))
+                        end
+                        if okHazard then
+                            cameFrom[nIdx] = cur
+                            queue[#queue + 1] = nIdx
+                        end
+                    end
                 end
             end
         end
+        return nil
     end
-    if not found then return nil end
-    local rev, cur = {}, goalIdx
-    while cur ~= -1 do
-        rev[#rev + 1] = { x = cur % w, y = math.floor(cur / w) }
-        cur = cameFrom[cur]
+
+    local safePath = runBfs(allowHazard == true)
+    if safePath or allowHazard == true then
+        return safePath
     end
-    local path = {}
-    for i = #rev, 1, -1 do path[#path + 1] = rev[i] end
-    return path
+    return runBfs(true)
+end
+
+-- Metode Rekomendasi Jarak Jauh: Walk-Path aman anti rubberband/balik ke base
+function Packets.WalkPathTo(tx, ty, speedTilesPerSec, shouldContinueFn)
+    Core.EnsureInit()
+    local gt = H.gt
+    if not gt then return false, "gt nil" end
+    tx = clamp(math.floor(tx), 0, gt.w - 1)
+    ty = clamp(math.floor(ty), 0, gt.h - 1)
+
+    local cur = Core.ReadPos()
+    if cur.tx == tx and cur.ty == ty then return true, "at_target" end
+
+    local speed = clamp(tonumber(speedTilesPerSec) or 13, 5.5, 16)
+    local stepDelay = clamp(1 / speed, 0.062, 0.22)
+    local retriedSnap = false
+
+    for _ = 1, 2 do
+        cur = Core.ReadPos()
+        if cur.tx == tx and cur.ty == ty then return true, "walk_path_ok" end
+        local path = Packets.FindTilePath(cur.tx, cur.ty, tx, ty)
+        if not path or #path <= 1 then
+            return false, "Jalur tertutup blok! Buka 1 celah atau gunakan Direct/Force."
+        end
+        local snapped = false
+        local prevX, prevY = cur.tx, cur.ty
+        for idx = 2, #path do
+            if type(shouldContinueFn) == "function" and not shouldContinueFn() then return false, "cancelled" end
+            local node = path[idx]
+            if idx == #path and Core.IsSolid(node.x, node.y) then break end
+            local vx = (node.x - prevX) * speed
+            local vy = (node.y - prevY) * speed
+            local px, py = node.x + 0.5, node.y + 1
+            Core.SetLocalCoords(px, py, vx, vy)
+            Packets.SendRawMove(px, py, vx, vy, 2)
+            prevX, prevY = node.x, node.y
+            GetcSkipper.RandomizedWait(stepDelay, "move", shouldContinueFn)
+            if (idx % 6) == 0 then
+                local act = Core.ReadPos()
+                if (math.abs(act.tx - node.x) + math.abs(act.ty - node.y)) > 7 then
+                    snapped = true
+                    break
+                end
+            end
+        end
+        if not snapped then
+            local fin = Core.ReadPos()
+            if (math.abs(fin.tx - tx) + math.abs(fin.ty - ty)) <= 3 then
+                if type(gt.goTo) == "function" and not Core.IsSolid(tx, ty) then pcall(gt.goTo, tx, ty) end
+                Core.SetLocalCoords(tx + 0.5, ty + 1, 0, 0)
+                return true, string.format("Walk-Path OK -> (%d, %d)", tx, ty)
+            end
+            snapped = true
+        end
+        if snapped and not retriedSnap then
+            retriedSnap = true
+            speed = 9.5
+            stepDelay = 0.11
+            task.wait(0.22)
+        else
+            break
+        end
+    end
+    local f = Core.ReadPos()
+    return (math.abs(f.tx - tx) + math.abs(f.ty - ty)) <= 4,
+        string.format("Sampai (%d,%d) - Gunakan Walk-Path lambat bila server lag", f.tx, f.ty)
 end
 
 function Packets.StepTeleport(tx, ty, stepSize, stepDelay, shouldContinueFn)
@@ -1311,44 +1515,55 @@ function Packets.StepTeleport(tx, ty, stepSize, stepDelay, shouldContinueFn)
     if not gt then return false, "gt nil" end
     tx = clamp(math.floor(tx), 0, gt.w - 1)
     ty = clamp(math.floor(ty), 0, gt.h - 1)
-    local maxStep = clamp(toInt(stepSize, 4), 1, 5)
-    local delay   = tonumber(stepDelay) or 0.04
 
     local cur = Core.ReadPos()
     if cur.tx == tx and cur.ty == ty then return true, "at_target" end
 
     local path = Packets.FindTilePath(cur.tx, cur.ty, tx, ty)
-    if path and #path > 1 then
-        local idx = 1
-        while idx < #path do
-            if type(shouldContinueFn) == "function" and not shouldContinueFn() then return false, "cancelled" end
-            local nextIdx = math.min(#path, idx + maxStep)
-            local node = path[nextIdx]
-            if nextIdx == #path and Core.IsSolid(node.x, node.y) and nextIdx > 1 then
-                node = path[nextIdx - 1]
-            end
-            local px, py = node.x + 0.5, node.y + 1
-            Core.SetLocalCoords(px, py, 0, 0)
-            if type(gt.goTo) == "function" and nextIdx == #path then pcall(gt.goTo, node.x, node.y) end
-            Packets.SendRawMove(px, py, 0, 0, 2)
-            idx = nextIdx
-            if idx < #path then GetcSkipper.RandomizedWait(delay, "move", shouldContinueFn) end
-        end
-        return true, "bfs_step_ok"
+    if not path or #path <= 1 then
+        return false, "Jalur tertutup blok! Rekomendasi: buka celah & pakai Walk-Path Safe"
     end
 
-    local cx, cy, guard = cur.tx, cur.ty, 0
-    while (cx ~= tx or cy ~= ty) and guard < 200 do
+    local totalDist = #path - 1
+    -- Radius jauh (>14 tile): batasi hop <=2 tile & rate <=14.5 t/s agar tidak balik ke base/spawn
+    local maxStep = (totalDist > 14) and math.min(toInt(stepSize, 2), 2) or clamp(toInt(stepSize, 3), 1, 4)
+    local rawDelay = tonumber(stepDelay) or 0.06
+    local safeDelay = (totalDist > 14) and math.max(rawDelay, maxStep / 14.5) or math.max(rawDelay, maxStep / 24)
+
+    local idx = 1
+    local hopsSinceCheck = 0
+    while idx < #path do
         if type(shouldContinueFn) == "function" and not shouldContinueFn() then return false, "cancelled" end
-        guard += 1
-        cx += clamp(tx - cx, -maxStep, maxStep)
-        cy += clamp(ty - cy, -maxStep, maxStep)
-        local px, py = cx + 0.5, cy + 1
+        local nextIdx = math.min(#path, idx + maxStep)
+        local node = path[nextIdx]
+        if nextIdx == #path and Core.IsSolid(node.x, node.y) and nextIdx > 1 then
+            node = path[nextIdx - 1]
+        end
+        local px, py = node.x + 0.5, node.y + 1
         Core.SetLocalCoords(px, py, 0, 0)
+        if type(gt.goTo) == "function" and nextIdx == #path then pcall(gt.goTo, node.x, node.y) end
         Packets.SendRawMove(px, py, 0, 0, 2)
-        if cx ~= tx or cy ~= ty then GetcSkipper.RandomizedWait(delay, "move", shouldContinueFn) end
+        idx = nextIdx
+        hopsSinceCheck += 1
+        if idx < #path then
+            GetcSkipper.RandomizedWait(safeDelay, "move", shouldContinueFn)
+        end
+        if hopsSinceCheck >= 5 and idx < #path then
+            hopsSinceCheck = 0
+            local act = Core.ReadPos()
+            if (math.abs(act.tx - node.x) + math.abs(act.ty - node.y)) > 8 then
+                task.wait(0.22)
+                return Packets.WalkPathTo(tx, ty, 11, shouldContinueFn)
+            end
+        end
     end
-    return true, "linear_step_ok"
+
+    local fin = Core.ReadPos()
+    if (math.abs(fin.tx - tx) + math.abs(fin.ty - ty)) > 6 then
+        task.wait(0.2)
+        return Packets.WalkPathTo(tx, ty, 10, shouldContinueFn)
+    end
+    return true, string.format("Step TP (%d nodes) -> (%d, %d)", totalDist, tx, ty)
 end
 stepTeleportImpl = Packets.StepTeleport
 
@@ -1366,14 +1581,22 @@ function Packets.WalkTeleport(arg1, ty, mode, stepSize, stepDelay)
     local okVal, msg, cx, cy = Core.ValidateTile(tx, py)
     if not okVal and m ~= "force" then return false, msg end
     cx, cy = cx or clamp(tx, 0, gt.w - 1), cy or clamp(py, 0, gt.h - 1)
-    if m == "direct" or m == "force" then
+    if m == "walk" or m == "walkpath" or m == "safe" then
+        return Packets.WalkPathTo(cx, cy, opts.speed or 13, opts.shouldContinueFn)
+    elseif m == "direct" or m == "force" then
+        local cur = Core.ReadPos()
+        local manhattan = math.abs(cx - cur.tx) + math.abs(cy - cur.ty)
+        if m == "direct" and manhattan > 20 then
+            -- Rekomendasi anti-balik base: jarak >20 lewat WalkPathTo
+            return Packets.WalkPathTo(cx, cy, 13, opts.shouldContinueFn)
+        end
         local px, wy = cx + 0.5, cy + 1
         Core.SetLocalCoords(px, wy, 0, 0)
         if type(gt.goTo) == "function" then pcall(gt.goTo, cx, cy) end
         Packets.SendRawMove(px, wy, 0, 0, 2)
-        return true, string.format("Teleported -> Tile (%d, %d) | Stats (%d, %d)", cx, cy, cx + 1, cy + 1)
+        return true, string.format("Direct TP -> Tile (%d, %d) | Stats (%d, %d)", cx, cy, cx + 1, cy + 1)
     end
-    return Packets.StepTeleport(cx, cy, opts.stepSize or 4, opts.stepDelay or 0.04)
+    return Packets.StepTeleport(cx, cy, opts.stepSize or 2, opts.stepDelay or 0.06, opts.shouldContinueFn)
 end
 
 function Packets.PunchBreak(arg1, ty, layer, flip, showHand)
@@ -1498,42 +1721,65 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
     local okD, drops = pcall(gt.dropList)
     if not okD or type(drops) ~= "table" then return { totalTaken = 0, gemsTaken = 0, itemsTaken = 0 } end
 
-    local pos, now = Core.ReadPos(), os.clock()
+    local now = os.clock()
+    H.takingUids = H.takingUids or {}
+    for uid, exp in pairs(H.takingUids) do
+        if exp <= now then H.takingUids[uid] = nil end
+    end
+
+    local pos = Core.ReadPos()
     local list = {}
     for i = 1, #drops do
         local d = drops[i]
         if type(d) == "table" and d.uid and d.x and d.y and (d.n or 0) > 0 and (d.readyAt or 0) <= now then
-            if not targetId or d.id == targetId then
-                local distBody = math.max(math.abs(d.x - pos.x), math.abs(d.y - (pos.y - 0.5)))
-                local distTile = math.max(math.abs(d.x - (pos.tx + 0.5)), math.abs(d.y - (pos.ty + 0.5)))
-                local dist = math.min(distBody, distTile)
-                if (dist <= radius or stepFar) and (d.id == 112 or Core.GetItemRoom(d.id) > 0) then
-                    list[#list + 1] = { drop = d, dist = dist }
+            if not d.taking and (not H.takingUids[d.uid] or H.takingUids[d.uid] <= now) then
+                if not targetId or d.id == targetId then
+                    local distBody = math.max(math.abs(d.x - pos.x), math.abs(d.y - (pos.y - 0.5)))
+                    local distTile = math.max(math.abs(d.x - (pos.tx + 0.5)), math.abs(d.y - (pos.ty + 0.5)))
+                    local dist = math.min(distBody, distTile)
+                    if (dist <= radius or stepFar) and (d.id == 112 or Core.GetItemRoom(d.id) > 0) then
+                        list[#list + 1] = { drop = d, dist = dist }
+                    end
                 end
             end
         end
     end
+    if #list == 0 then return { totalTaken = 0, gemsTaken = 0, itemsTaken = 0 } end
     table.sort(list, function(a, b) return a.dist < b.dist end)
 
     local sum = { totalTaken = 0, gemsTaken = 0, itemsTaken = 0 }
-    for _, item in ipairs(list) do
-        if type(shouldContinueFn) == "function" and not shouldContinueFn() then break end
-        local d = item.drop
-        local cp = Core.ReadPos()
+    local pickupRange = math.max(radius, 5.5)
+
+    local function distToDrop(d, cp)
         local distBody = math.max(math.abs(d.x - cp.x), math.abs(d.y - (cp.y - 0.5)))
         local distTile = math.max(math.abs(d.x - (cp.tx + 0.5)), math.abs(d.y - (cp.ty + 0.5)))
-        local dist = math.min(distBody, distTile)
-        if dist > 5 and stepFar then
-            Packets.StepTeleport(math.floor(d.x), math.floor(d.y), 4, math.max(0.03, delay), shouldContinueFn)
-            cp = Core.ReadPos()
-            dist = math.min(
-                math.max(math.abs(d.x - cp.x), math.abs(d.y - (cp.y - 0.5))),
-                math.max(math.abs(d.x - (cp.tx + 0.5)), math.abs(d.y - (cp.ty + 0.5)))
-            )
+        return math.min(distBody, distTile)
+    end
+
+    local function collectBatchInRange()
+        local cp = Core.ReadPos()
+        local batch = {}
+        local tNow = os.clock()
+        for _, item in ipairs(list) do
+            local d = item.drop
+            if (d.n or 0) > 0 and not d.taking and (not H.takingUids[d.uid] or H.takingUids[d.uid] <= tNow) then
+                if distToDrop(d, cp) <= pickupRange then
+                    local want = math.min(d.n, (d.id == 112) and d.n or Core.GetItemRoom(d.id))
+                    if want > 0 then
+                        d.taking = true
+                        H.takingUids[d.uid] = tNow + 1.5
+                        batch[#batch + 1] = { drop = d, want = want }
+                    end
+                end
+            end
         end
-        if dist <= math.max(radius, 5.5) then
-            local want = math.min(d.n, (d.id == 112) and d.n or Core.GetItemRoom(d.id))
-            if want > 0 then
+        if #batch == 0 then return 0 end
+
+        -- Eksekusi seluruh drop dalam radius secara paralel bersamaan (mirror Game.lua task.spawn)
+        local pending = #batch
+        for _, entry in ipairs(batch) do
+            local d, want = entry.drop, entry.want
+            task.spawn(function()
                 local got = 0
                 if type(gt.takeDrop) == "function" then
                     local okT, res = pcall(gt.takeDrop, d.uid, want)
@@ -1546,6 +1792,10 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
                     sum.totalTaken += got
                     local rem = math.max(0, (d.n or got) - got)
                     d.n = rem
+                    d.flown = (rem <= 0)
+                    if d.frame and rem <= 0 then
+                        pcall(function() d.frame.Visible = false end)
+                    end
                     if type(gt.dropTaken) == "function" then
                         pcall(gt.dropTaken, d.uid, rem)
                     end
@@ -1559,10 +1809,49 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
                         local inv = Core.GetLiveInventory()
                         if inv and type(inv.add) == "function" then pcall(function() inv:add(d.id, got) end) end
                     end
-                    if delay > 0 then GetcSkipper.RandomizedWait(delay, "take", shouldContinueFn) end
+                end
+                d.taking = false
+                H.takingUids[d.uid] = nil
+                pending -= 1
+            end)
+        end
+
+        local deadline = os.clock() + 0.45
+        while pending > 0 and os.clock() < deadline do
+            if type(shouldContinueFn) == "function" and not shouldContinueFn() then break end
+            task.wait(0.02)
+        end
+        return #batch
+    end
+
+    collectBatchInRange()
+
+    if stepFar then
+        for _ = 1, 16 do
+            if type(shouldContinueFn) == "function" and not shouldContinueFn() then break end
+            local cp = Core.ReadPos()
+            local nextDrop, bestDist = nil, math.huge
+            for _, item in ipairs(list) do
+                local d = item.drop
+                if (d.n or 0) > 0 and not d.taking then
+                    local dist = distToDrop(d, cp)
+                    if dist < bestDist then
+                        bestDist = dist
+                        nextDrop = d
+                    end
                 end
             end
+            if not nextDrop then break end
+            if bestDist > 5 then
+                Packets.StepTeleport(math.floor(nextDrop.x), math.floor(nextDrop.y), 4, math.max(0.03, delay), shouldContinueFn)
+            end
+            local fired = collectBatchInRange()
+            if fired == 0 then break end
         end
+    end
+
+    if sum.totalTaken > 0 and delay > 0 then
+        GetcSkipper.RandomizedWait(delay, "take", shouldContinueFn)
     end
     return sum
 end
@@ -1632,6 +1921,15 @@ local Config = {
         skipperJMin       = 0.05,
         skipperJMax       = 0.35,
         gapTpDelay        = 0.25,
+        followTarget      = "",
+        dfBreakDelay      = 0.16,
+        dfPlaceDelay      = 0.12,
+        dfCollectDelay    = 0.05,
+        dfOneHit          = false,
+        dfShowHand        = true,
+        dfAutoCollect     = true,
+        dfCenterGap       = true,
+        dfRotationWorlds  = "",
     },
     dirty = false,
 }
@@ -1648,6 +1946,7 @@ local Misc = {
         fastRoulette = false, lastWheelSpin = nil, rouletteHistory = {},
         noClip = false, noClipAnchor = nil,
         godMode = false,
+        autoFollow = false, followTarget = "", followToken = 0, followThread = nil, followStatus = "Idle",
         collectState = false, autoCleanDrops = true, comboGems = 0, lastGemAt = 0, sessionGems = 0,
         autoCollect = false, autoCollectRadius = 5, autoCollectStep = false, autoCollectDelay = 0.04,
         autoCollectToken = 0, autoCollectThread = nil,
@@ -2064,19 +2363,38 @@ function Misc.SetNoClip(enabled)
 end
 
 local function hookIncomingGodNet()
-    if H.netGodHooked or not H.Net then return end
+    if H.netGodHooked then return end
     H.netGodHooked = true
     local targetEvents = {
-        knocked = true, impulse = true, forcedie = true, burned = true, useonplayerfx = true,
+        knocked = true, impulse = true, forcedie = true, burned = true, useonplayerfx = true, hurt = true,
     }
-    -- Hook tabel handler internal Net (melalui upvalue Net.on / wheelSpun.listen)
+    -- Hook tabel handler internal Net DAN gt.on (ForceDie / Burned / Knocked / Impulse / MoveTo)
     local probeFns = {}
-    if type(H.Net.on) == "function" then probeFns[#probeFns + 1] = H.Net.on end
-    for _, ch in pairs(H.Net) do
-        if type(ch) == "table" and type(rawget(ch, "listen")) == "function" then
-            probeFns[#probeFns + 1] = rawget(ch, "listen")
+    if H.Net then
+        if type(H.Net.on) == "function" then probeFns[#probeFns + 1] = H.Net.on end
+        for _, ch in pairs(H.Net) do
+            if type(ch) == "table" and type(rawget(ch, "listen")) == "function" then
+                probeFns[#probeFns + 1] = rawget(ch, "listen")
+            end
         end
     end
+    if H.gt and type(rawget(H.gt, "on")) == "function" then
+        probeFns[#probeFns + 1] = rawget(H.gt, "on")
+    end
+
+    local function shouldDropMoveTo(x, y)
+        if not Misc.State.godMode then return false end
+        if x == nil or y == nil then return true end
+        local sp = H.gt and H.gt.spawn
+        if sp and sp.X and sp.Y then
+            local p = Core.ReadPos()
+            local distSpawnNow = math.abs(p.x - sp.X) + math.abs(p.y - sp.Y)
+            local toSpawn = math.abs(x - sp.X) <= 1.8 and math.abs(y - sp.Y) <= 1.8
+            if toSpawn and distSpawnNow > 3 then return true end
+        end
+        return false
+    end
+
     for _, fn in ipairs(probeFns) do
         local uvs = guvs(fn)
         if type(uvs) == "table" then
@@ -2084,11 +2402,14 @@ local function hookIncomingGodNet()
                 if type(u) == "table" then
                     for k, handler in pairs(u) do
                         local kl = string.lower(tostring(k))
-                        if targetEvents[kl] then
+                        local isDmgEv = targetEvents[kl]
+                        local isMoveEv = (kl == "moveto")
+                        if isDmgEv or isMoveEv then
                             if type(handler) == "function" then
                                 local origH = handler
                                 u[k] = function(...)
-                                    if Misc.State.godMode then return end
+                                    if isDmgEv and Misc.State.godMode then return end
+                                    if isMoveEv and shouldDropMoveTo(...) then return end
                                     return origH(...)
                                 end
                             elseif type(handler) == "table" then
@@ -2096,7 +2417,8 @@ local function hookIncomingGodNet()
                                     if type(cb) == "function" then
                                         local origCb = cb
                                         handler[i] = function(...)
-                                            if Misc.State.godMode then return end
+                                            if isDmgEv and Misc.State.godMode then return end
+                                            if isMoveEv and shouldDropMoveTo(...) then return end
                                             return origCb(...)
                                         end
                                     end
@@ -2134,18 +2456,39 @@ function Misc.SetGodMode(enabled)
         end
     end
 
-    if Misc.State.godMode and gt then
+    if gt then
         pcall(inspectUpvalues, gt)
+        if type(rawget(gt, "respawn")) == "function" then
+            H.origGtRespawn = H.origGtRespawn or gt.respawn
+            gt.respawn = Misc.State.godMode and (function() return nil end) or H.origGtRespawn
+        end
+        if type(rawget(gt, "touchBlocks")) == "function" then
+            H.origTBHurt = H.origTBHurt or uv(gt.touchBlocks, 1)
+            H.origTBDie  = H.origTBDie  or uv(gt.touchBlocks, 2)
+            if Misc.State.godMode then
+                suv(gt.touchBlocks, 1, function() return false, false end)
+                suv(gt.touchBlocks, 2, function() return nil end)
+            else
+                if H.origTBHurt then suv(gt.touchBlocks, 1, H.origTBHurt) end
+                if H.origTBDie then suv(gt.touchBlocks, 2, H.origTBDie) end
+            end
+        end
+    end
+
+    if Misc.State.godMode then
         pcall(hookIncomingGodNet)
     end
 
-    -- Hook touchingHurt & die langsung di RenderStepped agar lava/spike tidak memicu burn/swirl/knockback
+    -- Hook touchingHurt, die & respawn di RenderStepped: HP tidak berkurang, tidak mati, tidak respawn
     if H.renderFn then
         if H.touchHurtIdx and H.origTouchHurt then
             suv(H.renderFn, H.touchHurtIdx, Misc.State.godMode and (function() return false, false end) or H.origTouchHurt)
         end
         if H.dieIdx and H.origDieFn then
             suv(H.renderFn, H.dieIdx, Misc.State.godMode and (function() return nil end) or H.origDieFn)
+        end
+        if H.respawnIdx and H.origRespawnFn then
+            suv(H.renderFn, H.respawnIdx, Misc.State.godMode and (function() return nil end) or H.origRespawnFn)
         end
     end
 
@@ -2184,16 +2527,147 @@ function Misc.SetGodMode(enabled)
                 if H.deadIdx then suv(H.renderFn, H.deadIdx, false) end
                 if H.hpIdx then suv(H.renderFn, H.hpIdx, 5) end
             end
-            if gt and not Misc.State.noClip and not H.touchHurtIdx then
-                local p = Core.ReadPos()
-                local f1, f2 = Core.GetItemInfo(Core.GetFG(p.tx, p.ty)), Core.GetItemInfo(Core.GetFG(p.tx, p.ty + 1))
-                gt.ghost = ((f1 and (f1.deadly or f1.hurts)) or (f2 and (f2.deadly or f2.hurts))) == true
+            if gt then
+                if gt.deadSince then gt.deadSince = nil end
+                if gt.dying then gt.dying = nil end
+                if not Misc.State.noClip and not H.touchHurtIdx then
+                    local p = Core.ReadPos()
+                    local f1, f2 = Core.GetItemInfo(Core.GetFG(p.tx, p.ty)), Core.GetItemInfo(Core.GetFG(p.tx, p.ty + 1))
+                    gt.ghost = ((f1 and (f1.deadly or f1.hurts)) or (f2 and (f2.deadly or f2.hurts))) == true
+                end
             end
         end)
     elseif gt and not Misc.State.noClip then
         gt.ghost = false
     end
     return Misc.State.godMode
+end
+
+-- Auto Follow Player (Scrollable Dropdown via Walk)
+local function extractFollowName(raw)
+    local s = trim(tostring(raw or ""))
+    if s == "" or s == "Tidak ada player lain" then return "" end
+    local bare = string.match(s, "^([^%(%[]+)")
+    return trim(bare or s)
+end
+
+function Misc.GetFollowCandidates()
+    Core.EnsureInit()
+    local out = {}
+    for _, op in ipairs(Core.GetInWorldPlayers(false)) do
+        local label = op.gameName
+        if op.isStaff then label = label .. " [MOD]" end
+        out[#out + 1] = label
+    end
+    table.sort(out)
+    if #out == 0 then out[1] = "Tidak ada player lain" end
+    return out
+end
+
+function Misc.SetFollowTarget(nameOrLabel)
+    local nm = extractFollowName(nameOrLabel)
+    Misc.State.followTarget = nm
+    Config.State.followTarget = nm
+    markConfigDirty()
+    return nm
+end
+
+function Misc.SetAutoFollow(enabled, targetName)
+    Core.EnsureInit()
+    if type(targetName) == "string" and targetName ~= "" then
+        Misc.SetFollowTarget(targetName)
+    end
+    Misc.State.autoFollow = enabled == true
+    Misc.State.followToken += 1
+    local tok = Misc.State.followToken
+
+    if not Misc.State.autoFollow then
+        Misc.State.followStatus = "Idle"
+        if UI then UI:SetValue("FollowStatusDisplay", "Idle") end
+        return false
+    end
+
+    if Misc.State.followTarget == "" then
+        local cands = Misc.GetFollowCandidates()
+        Misc.SetFollowTarget(cands[1])
+    end
+
+    Misc.State.followThread = task.spawn(function()
+        local function alive() return Misc.State.autoFollow and Misc.State.followToken == tok end
+        while alive() do
+            if evaluateSeems() then break end
+            local gt = H.gt
+            if not gt or (gt.name or "") == "" then
+                Misc.State.followStatus = "Belum masuk world..."
+                if UI then UI:SetValue("FollowStatusDisplay", Misc.State.followStatus) end
+                task.wait(0.35)
+            elseif Misc.State.followTarget == "" then
+                Misc.State.followStatus = "Pilih target player dulu"
+                if UI then UI:SetValue("FollowStatusDisplay", Misc.State.followStatus) end
+                task.wait(0.4)
+            else
+                local found = nil
+                local want = string.lower(Misc.State.followTarget)
+                for _, op in ipairs(Core.GetInWorldPlayers(false)) do
+                    local gn = string.lower(op.gameName or "")
+                    local rn = string.lower(op.rbxName or "")
+                    if gn == want or rn == want or string.find(gn, want, 1, true) then
+                        found = op
+                        break
+                    end
+                end
+                if not found or not found.tx or not found.ty then
+                    Misc.State.followStatus = "Mencari " .. Misc.State.followTarget .. " di world..."
+                    if UI then UI:SetValue("FollowStatusDisplay", Misc.State.followStatus) end
+                    task.wait(0.35)
+                else
+                    local cur = Core.ReadPos()
+                    local dist = math.abs(found.tx - cur.tx) + math.abs(found.ty - cur.ty)
+                    if dist <= 1 then
+                        Misc.State.followStatus = string.format("Dekat %s (%d,%d)", found.gameName, found.tx, found.ty)
+                        if UI then UI:SetValue("FollowStatusDisplay", Misc.State.followStatus) end
+                        task.wait(0.18)
+                    else
+                        local goalX, goalY = found.tx, found.ty
+                        local candidates = {
+                            { x = found.tx - 1, y = found.ty },
+                            { x = found.tx + 1, y = found.ty },
+                            { x = found.tx,     y = found.ty },
+                        }
+                        for _, cTile in ipairs(candidates) do
+                            if cTile.x >= 0 and cTile.x < gt.w and cTile.y >= 0 and cTile.y < gt.h and not Core.IsSolid(cTile.x, cTile.y) then
+                                goalX, goalY = cTile.x, cTile.y
+                                break
+                            end
+                        end
+                        local path = Packets.FindTilePath(cur.tx, cur.ty, goalX, goalY)
+                        if path and #path > 1 then
+                            Misc.State.followStatus = string.format("Walk ke %s (jarak %d)", found.gameName, dist)
+                            if UI then UI:SetValue("FollowStatusDisplay", Misc.State.followStatus) end
+                            local maxHops = math.min(#path, 5)
+                            local speed = 13.5
+                            local prevX, prevY = cur.tx, cur.ty
+                            for i = 2, maxHops do
+                                if not alive() or evaluateSeems() then break end
+                                local nd = path[i]
+                                local vx, vy = (nd.x - prevX) * speed, (nd.y - prevY) * speed
+                                local px, py = nd.x + 0.5, nd.y + 1
+                                Core.SetLocalCoords(px, py, vx, vy)
+                                Packets.SendRawMove(px, py, vx, vy, 2)
+                                prevX, prevY = nd.x, nd.y
+                                task.wait(0.075)
+                            end
+                        else
+                            Misc.State.followStatus = string.format("Jalur ke %s terhalang (%d,%d)", found.gameName, found.tx, found.ty)
+                            if UI then UI:SetValue("FollowStatusDisplay", Misc.State.followStatus) end
+                            task.wait(0.3)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    return true
 end
 
 function Misc.SetCollectState(enabled)
@@ -2279,7 +2753,7 @@ function Misc.SetAutoCollect(enabled, radius, stepEnabled)
                 Packets.Collect({
                     radius = S.autoCollectRadius,
                     stepMoveIfFar = stepAllowed,
-                    collectDelay = S.autoCollectDelay,
+                    collectDelay = 0,
                     shouldContinue = function()
                         return S.autoCollect and S.autoCollectToken == tok
                     end,
@@ -2288,7 +2762,7 @@ function Misc.SetAutoCollect(enabled, radius, stepEnabled)
                     Core.ClearStuckDropVisuals()
                 end
             end
-            task.wait(0.14)
+            task.wait(0.08)
         end
     end)
     return true
@@ -2316,20 +2790,21 @@ function PNB.GetBackpackBlocks(includeSeeds)
     local byId = {}
     for _, slot in ipairs(Core.GetBackpackSlots()) do
         local info = Core.GetItemInfo(slot.id)
-        local kind = info and info.kind or "block"
+        local isSeed = (info and (info.kind == "seed" or info.seed ~= nil)) or false
+        local kind = isSeed and "seed" or ((info and info.kind) or "block")
         local isWearOrTool = (slot.id == 18 or slot.id == 32 or slot.id == 112 or kind == "cloth" or kind == "tool" or (info and (info.cloth or info.tool)))
-        if info and not isWearOrTool then
-            if includeSeeds or kind ~= "seed" then
+        if not isWearOrTool then
+            if includeSeeds or not isSeed then
                 if byId[slot.id] then
                     byId[slot.id].count += (slot.n or 0)
                 else
                     byId[slot.id] = {
                         id = slot.id,
-                        name = info.name or ("Item#" .. slot.id),
+                        name = (info and info.name) or Core.GetItemName(slot.id),
                         count = slot.n or 0,
                         kind = kind,
-                        layer = info.background and 2 or 1,
-                        hits = info.hits or 3,
+                        layer = (info and info.background) and 2 or 1,
+                        hits = (info and info.hits) or 3,
                     }
                 end
             end
@@ -2510,9 +2985,39 @@ local function countSelectedPabrikTiles()
     return n
 end
 
+-- V5 #2: Kelompokkan tile terpilih yang saling tersambung horizontal menjadi 1 line (-----)
+function Pabrik.GetConnectedLines()
+    local rows = {}
+    for _, pt in pairs(Pabrik.State.selectedTiles) do
+        local y = pt.y
+        rows[y] = rows[y] or {}
+        rows[y][#rows[y] + 1] = pt.x
+    end
+    local lines = {}
+    local ys = {}
+    for y in pairs(rows) do ys[#ys + 1] = y end
+    table.sort(ys)
+    for _, y in ipairs(ys) do
+        local xs = rows[y]
+        table.sort(xs)
+        local xStart, xPrev = xs[1], xs[1]
+        for i = 2, #xs do
+            if xs[i] <= xPrev + 1 then
+                xPrev = xs[i]
+            else
+                lines[#lines + 1] = { y = y, x1 = xStart, x2 = xPrev, len = (xPrev - xStart + 1) }
+                xStart, xPrev = xs[i], xs[i]
+            end
+        end
+        lines[#lines + 1] = { y = y, x1 = xStart, x2 = xPrev, len = (xPrev - xStart + 1) }
+    end
+    return lines
+end
+
 local function setPabrikStatus(msg)
     Pabrik.State.status = msg
-    if UI then UI:SetValue("PabrikStatusDisplay", string.format("%s | Tiles: %d", msg, countSelectedPabrikTiles())) end
+    local lineCnt = #Pabrik.GetConnectedLines()
+    if UI then UI:SetValue("PabrikStatusDisplay", string.format("%s | Tiles: %d | Lines: %d", msg, countSelectedPabrikTiles(), lineCnt)) end
     if UIHooks.updateButtons then UIHooks.updateButtons() end
 end
 
@@ -2532,32 +3037,106 @@ function Pabrik.ToggleTile(tx, ty)
     return Pabrik.State.selectedTiles[k] ~= nil
 end
 
-function Pabrik.ToggleLine(ty)
+function Pabrik.ToggleLine(ty, refTx)
     Core.EnsureInit()
     local gt = H.gt
     ty = toInt(ty)
     if not gt or not ty or ty < 0 or ty >= gt.h - 1 then return false end
-    if Pabrik.State.selectedLines[ty] then
+    refTx = toInt(refTx)
+
+    -- Jika klik tepat pada segmen garis terpilih (-----), unselect seluruh segmen tersambung itu sebagai 1 line
+    if refTx and Pabrik.State.selectedTiles[tileKey(refTx, ty)] then
+        local lx, rx = refTx, refTx
+        while lx > 0 and Pabrik.State.selectedTiles[tileKey(lx - 1, ty)] do lx -= 1 end
+        while rx < gt.w - 1 and Pabrik.State.selectedTiles[tileKey(rx + 1, ty)] do rx += 1 end
+        for x = lx, rx do Pabrik.State.selectedTiles[tileKey(x, ty)] = nil end
+        local anyLeft = false
+        for x = 0, gt.w - 1 do
+            if Pabrik.State.selectedTiles[tileKey(x, ty)] then anyLeft = true; break end
+        end
+        if not anyLeft then Pabrik.State.selectedLines[ty] = nil end
+        setPabrikStatus(string.format("Hapus 1 Line Y=%d (%d..%d)", ty, lx, rx))
+        if UIHooks.refreshMap then UIHooks.refreshMap(true) end
+        return false
+    end
+
+    if not refTx and Pabrik.State.selectedLines[ty] then
         Pabrik.State.selectedLines[ty] = nil
         for x = 0, gt.w - 1 do Pabrik.State.selectedTiles[tileKey(x, ty)] = nil end
-    else
-        local added = 0
-        for x = 0, gt.w - 1 do
-            local bInfo = Core.GetItemInfo(Core.GetFG(x, ty + 1))
-            if bInfo and (bInfo.solid or bInfo.platform) and Core.CanEditTile(x, ty) then
-                local cId = Core.GetFG(x, ty)
-                local cInfo = Core.GetItemInfo(cId)
-                if cId == 0 or (cInfo and cInfo.kind == "seed") then
-                    Pabrik.State.selectedTiles[tileKey(x, ty)] = { x = x, y = ty }
-                    added += 1
-                end
+        setPabrikStatus("Hapus Line Y=" .. tostring(ty))
+        if UIHooks.refreshMap then UIHooks.refreshMap(true) end
+        return false
+    end
+
+    local function isEligible(x)
+        local bInfo = Core.GetItemInfo(Core.GetFG(x, ty + 1))
+        if not (bInfo and (bInfo.solid or bInfo.platform) and Core.CanEditTile(x, ty)) then return false end
+        local cId = Core.GetFG(x, ty)
+        local cInfo = Core.GetItemInfo(cId)
+        return cId == 0 or (cInfo and cInfo.kind == "seed")
+    end
+
+    -- Kumpulkan segmen horizontal yang saling terhubung (-----)
+    local runs, curRun = {}, nil
+    for x = 0, gt.w - 1 do
+        if isEligible(x) then
+            if not curRun then
+                curRun = { x1 = x, x2 = x }
+                runs[#runs + 1] = curRun
+            else
+                curRun.x2 = x
+            end
+        else
+            curRun = nil
+        end
+    end
+
+    if #runs == 0 then
+        setPabrikStatus("Tidak ada platform valid di Y=" .. tostring(ty))
+        return false
+    end
+
+    local targetRun = nil
+    if refTx then
+        local bestDist = math.huge
+        for _, r in ipairs(runs) do
+            if refTx >= r.x1 and refTx <= r.x2 then
+                targetRun = r
+                break
+            end
+            local d = math.min(math.abs(refTx - r.x1), math.abs(refTx - r.x2))
+            if d < bestDist then
+                bestDist = d
+                targetRun = r
             end
         end
-        if added > 0 then Pabrik.State.selectedLines[ty] = true end
     end
-    setPabrikStatus("Line Y=" .. tostring(ty))
+
+    if targetRun then
+        local alreadySelected = true
+        for x = targetRun.x1, targetRun.x2 do
+            if not Pabrik.State.selectedTiles[tileKey(x, ty)] then alreadySelected = false; break end
+        end
+        for x = targetRun.x1, targetRun.x2 do
+            Pabrik.State.selectedTiles[tileKey(x, ty)] = (not alreadySelected) and { x = x, y = ty } or nil
+        end
+        Pabrik.State.selectedLines[ty] = (not alreadySelected) or nil
+        setPabrikStatus(string.format("%s 1 Line Y=%d (%d..%d)", alreadySelected and "Off" or "Pilih", ty, targetRun.x1, targetRun.x2))
+        if UIHooks.refreshMap then UIHooks.refreshMap(true) end
+        return not alreadySelected
+    end
+
+    local added = 0
+    for _, r in ipairs(runs) do
+        for x = r.x1, r.x2 do
+            Pabrik.State.selectedTiles[tileKey(x, ty)] = { x = x, y = ty }
+            added += 1
+        end
+    end
+    if added > 0 then Pabrik.State.selectedLines[ty] = true end
+    setPabrikStatus("Pilih Line Y=" .. tostring(ty))
     if UIHooks.refreshMap then UIHooks.refreshMap(true) end
-    return Pabrik.State.selectedLines[ty] == true
+    return added > 0
 end
 
 function Pabrik.SetItem(idOrName)
@@ -2760,6 +3339,358 @@ function Pabrik.Toggle()
     else
         return Pabrik.Start()
     end
+end
+
+-- [DIRT FARM] Auto Break & Replace Non-Dirt -> Format Dirt Farm + Rotation World
+local DirtFarm = {
+    State = {
+        running = false, sessionToken = 0, thread = nil, status = "Idle",
+        breakDelay = 0.16, placeDelay = 0.12, collectDelay = 0.05,
+        oneHit = false, showHand = true, autoCollect = true, centerGap = true,
+        rotationText = "", rotationWorlds = {}, worldIdx = 1,
+        switchingWorld = false,
+    }
+}
+SYT_Logic.DirtFarm = DirtFarm
+
+local function setDfStatus(msg)
+    DirtFarm.State.status = msg
+    if UI then UI:SetValue("DfStatusDisplay", msg) end
+    if UIHooks.updateButtons then UIHooks.updateButtons() end
+end
+
+local function parseDfRotationList(rawText)
+    local out = {}
+    local seen = {}
+    for token in string.gmatch(tostring(rawText or ""), "([^,\n;|]+)") do
+        local w = string.upper(trim(token))
+        if w ~= "" and not seen[w] then
+            seen[w] = true
+            out[#out + 1] = w
+        end
+    end
+    return out
+end
+
+function DirtFarm.SetRotationWorlds(rawText)
+    DirtFarm.State.rotationText = tostring(rawText or "")
+    DirtFarm.State.rotationWorlds = parseDfRotationList(DirtFarm.State.rotationText)
+    Config.State.dfRotationWorlds = DirtFarm.State.rotationText
+    markConfigDirty()
+    return DirtFarm.State.rotationWorlds
+end
+
+local function resolveDirtId()
+    local info2 = Core.GetItemInfo(2)
+    if info2 and string.find(string.lower(info2.name or ""), "dirt") then return 2 end
+    local found = Core.FindItemByName("dirt")
+    return (found and found.id) or 2
+end
+
+local function buildDfBlueprint(gt)
+    local w, h = gt.w or 100, gt.h or 60
+    local doorX, doorY = gt.spawn and math.floor(gt.spawn.X) or math.floor(w / 2), gt.spawn and math.floor(gt.spawn.Y) or 23
+    for y = 0, h - 1 do
+        for x = 0, w - 1 do
+            local id = Core.GetFG(x, y)
+            if id == 6 then
+                doorX, doorY = x, y
+                break
+            elseif id > 0 then
+                local info = Core.GetItemInfo(id)
+                if info and (info.door or info.entrance) then
+                    doorX, doorY = x, y
+                    break
+                end
+            end
+        end
+    end
+
+    local bedrockTopY = h - 6
+    for y = h - 1, math.max(doorY + 4, 0), -1 do
+        local bCount = 0
+        for x = 0, w - 1 do
+            local id = Core.GetFG(x, y)
+            local info = id > 0 and Core.GetItemInfo(id) or nil
+            if id == 8 or (info and string.find(string.lower(info.name or ""), "bedrock", 1, true)) then
+                bCount += 1
+            end
+        end
+        if bCount >= math.floor(w * 0.65) then
+            bedrockTopY = y
+        elseif y < h - 1 then
+            break
+        end
+    end
+
+    local maxWorkY = clamp(bedrockTopY - 1, doorY + 2, h - 2)
+    local groundY = clamp(doorY + 1, 2, maxWorkY - 1)
+    local topY = 2
+    local midX = math.floor(w / 2)
+    local dirtId = resolveDirtId()
+
+    local function desiredAt(x, y)
+        if y < topY or y > maxWorkY then return nil end
+        local curId = Core.GetFG(x, y)
+        if curId == 6 or curId == 8 or Core.IsProtectedTile(curId) or not Core.CanEditTile(x, y) then
+            return nil
+        end
+        -- 2 blok ujung kiri & kanan selalu dibolongi lurus (air)
+        if x <= 1 or x >= w - 2 then return 0 end
+        -- Bolong tengah (2 kolom) agar mudah naik turun saat atas & bawah selesai
+        if DirtFarm.State.centerGap and (x == midX - 1 or x == midX) then return 0 end
+        -- Baris tepat di White Door & paling bawah tepat di atas bedrock tetap terbuka lurus
+        if y == doorY or y == maxWorkY then return 0 end
+
+        if y >= groundY then
+            -- Bagian Bawah: kelipatan 2 baris dari groundY = Dirt, selang-seling 1 baris Air lurus
+            return ((y - groundY) % 2 == 0) and dirtId or 0
+        else
+            -- Bagian Atas (y < doorY): kelipatan 2 ke atas = Place Dirt, selang-seling Air
+            return ((groundY - y) % 2 == 0) and dirtId or 0
+        end
+    end
+
+    return {
+        w = w, h = h, topY = topY, doorX = doorX, doorY = doorY,
+        groundY = groundY, maxWorkY = maxWorkY, midX = midX, dirtId = dirtId,
+        desiredAt = desiredAt,
+    }
+end
+
+local function moveNearDfTile(tx, ty, shouldContinueFn)
+    local cur = Core.ReadPos()
+    if math.max(math.abs(cur.tx - tx), math.abs(cur.ty - ty)) <= 4 then
+        return true
+    end
+    local gt = H.gt
+    local w, h = (gt and gt.w) or 100, (gt and gt.h) or 60
+    local candOffsets = {
+        { 0, -1 }, { 0, 1 }, { -1, 0 }, { 1, 0 },
+        { -2, 0 }, { 2, 0 }, { 0, -2 }, { 0, 2 },
+        { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 },
+    }
+    local goalX, goalY = tx, ty
+    for _, off in ipairs(candOffsets) do
+        local ax, ay = clamp(tx + off[1], 0, w - 1), clamp(ty + off[2], 0, h - 1)
+        if not Core.IsSolid(ax, ay) then
+            goalX, goalY = ax, ay
+            break
+        end
+    end
+    local ok = Packets.StepTeleport(goalX, goalY, 2, 0.065, shouldContinueFn)
+    if not ok then
+        GetcSkipper.EnsureRange(tx, ty, 4)
+    end
+    return true
+end
+
+local function dfBreakTile(tx, ty, aliveFn)
+    local S = DirtFarm.State
+    moveNearDfTile(tx, ty, aliveFn)
+    Packets.HitDamage({
+        tx = tx, ty = ty, layer = 1,
+        oneHit = S.oneHit, showHand = S.showHand,
+        hitDelay = S.breakDelay,
+    })
+    GetcSkipper.RandomizedWait(S.breakDelay, "act", aliveFn)
+    if S.autoCollect then
+        Packets.Collect({ radius = 5, collectDelay = S.collectDelay, shouldContinueFn = aliveFn })
+    end
+end
+
+local function dfPlaceDirt(tx, ty, dirtId, aliveFn)
+    local S = DirtFarm.State
+    if Core.CountItem(dirtId) <= 0 and S.autoCollect then
+        Packets.Collect({ radius = 6, stepMoveIfFar = true, collectDelay = S.collectDelay, shouldContinueFn = aliveFn })
+    end
+    if Core.CountItem(dirtId) <= 0 then
+        return false, "no_dirt"
+    end
+    moveNearDfTile(tx, ty, aliveFn)
+    Packets.Place({ tx = tx, ty = ty, itemId = dirtId, layer = 1, showHand = S.showHand })
+    GetcSkipper.RandomizedWait(S.placeDelay, "tile", aliveFn)
+    return true
+end
+
+function DirtFarm.Start()
+    Core.EnsureInit()
+    local gt = H.gt
+    if not gt or gt.name == "" then
+        setDfStatus("Belum masuk world!")
+        return false
+    end
+    if DirtFarm.State.running then return true end
+    DirtFarm.State.running = true
+    DirtFarm.State.switchingWorld = false
+    DirtFarm.State.sessionToken += 1
+    local tok = DirtFarm.State.sessionToken
+    local function alive() return DirtFarm.State.running and DirtFarm.State.sessionToken == tok end
+    if UIHooks.updateButtons then UIHooks.updateButtons() end
+
+    DirtFarm.State.thread = task.spawn(function()
+        while alive() do
+            if evaluateSeems() then break end
+            Core.EnsureInit()
+            gt = H.gt
+            if not gt or gt.name == "" then
+                setDfStatus("Menunggu world...")
+                task.wait(0.5)
+            else
+                local bp = buildDfBlueprint(gt)
+                local dirtId = bp.dirtId
+
+                -- 1. Kumpulkan semua tugas DF berurutan:
+                --    (A) Gali sisi 2 kiri/kanan + center + lorong air bawah kelipatan 2 + baris atas bedrock
+                --    (B) Ganti non-dirt (rock/lava) & isi celah di baris dirt bawah
+                --    (C) Bersihkan + Place Dirt baris atas (y < doorY) kelipatan 2 bottom-up
+                local digLowerTasks, fillLowerTasks, upperTasks = {}, {}, {}
+
+                for y = bp.doorY, bp.maxWorkY do
+                    local rev = ((y - bp.doorY) % 2 == 1)
+                    local xStart, xEnd, xStep = rev and (bp.w - 1) or 0, rev and 0 or (bp.w - 1), rev and -1 or 1
+                    for x = xStart, xEnd, xStep do
+                        local want = bp.desiredAt(x, y)
+                        if want ~= nil then
+                            local curId = Core.GetFG(x, y)
+                            if want == 0 and curId ~= 0 then
+                                digLowerTasks[#digLowerTasks + 1] = { x = x, y = y, op = "break" }
+                            elseif want == dirtId and curId ~= dirtId then
+                                fillLowerTasks[#fillLowerTasks + 1] = { x = x, y = y, op = (curId ~= 0) and "replace" or "place" }
+                            end
+                        end
+                    end
+                end
+
+                for y = bp.doorY - 1, bp.topY, -1 do
+                    local rev = ((bp.doorY - y) % 2 == 0)
+                    local xStart, xEnd, xStep = rev and (bp.w - 1) or 0, rev and 0 or (bp.w - 1), rev and -1 or 1
+                    for x = xStart, xEnd, xStep do
+                        local want = bp.desiredAt(x, y)
+                        if want ~= nil then
+                            local curId = Core.GetFG(x, y)
+                            if want == 0 and curId ~= 0 then
+                                digLowerTasks[#digLowerTasks + 1] = { x = x, y = y, op = "break" }
+                            elseif want == dirtId and curId ~= dirtId then
+                                upperTasks[#upperTasks + 1] = { x = x, y = y, op = (curId ~= 0) and "replace" or "place" }
+                            end
+                        end
+                    end
+                end
+
+                local totalTodo = #digLowerTasks + #fillLowerTasks + #upperTasks
+                if totalTodo == 0 then
+                    local curW = cleanWorldName(gt.name)
+                    local rot = DirtFarm.State.rotationWorlds
+                    local nextWorld = nil
+                    if #rot > 0 then
+                        for idx, wn in ipairs(rot) do
+                            if wn == curW and rot[idx + 1] then
+                                nextWorld = rot[idx + 1]
+                                break
+                            end
+                        end
+                        if not nextWorld then
+                            for _, wn in ipairs(rot) do
+                                if wn ~= curW then nextWorld = wn; break end
+                            end
+                        end
+                    end
+
+                    if nextWorld and nextWorld ~= curW and type(gt.enter) == "function" then
+                        setDfStatus(string.format("[%s] SELESAI -> Rotation ke %s", curW, nextWorld))
+                        emitNotify("SYT Dirt Farm", string.format("DF %s selesai! Pindah ke %s...", curW, nextWorld))
+                        if DirtFarm.State.autoCollect then
+                            Packets.Collect({ radius = 6, stepMoveIfFar = true, collectDelay = DirtFarm.State.collectDelay, shouldContinueFn = alive })
+                        end
+                        DirtFarm.State.switchingWorld = true
+                        pcall(gt.enter, nextWorld)
+                        local deadline = os.clock() + 12
+                        while alive() and os.clock() < deadline do
+                            local nowW = H.gt and cleanWorldName(H.gt.name) or ""
+                            if nowW == nextWorld then break end
+                            task.wait(0.25)
+                        end
+                        task.wait(1.0)
+                        pcall(SYT_Logic.Init, true)
+                        DirtFarm.State.switchingWorld = false
+                    else
+                        setDfStatus(string.format("Selesai! World %s 100%% Dirt Farm", curW))
+                        emitNotify("SYT Dirt Farm", "Dirt Farm selesai sempurna di world " .. curW)
+                        DirtFarm.State.running = false
+                        break
+                    end
+                else
+                    local activeQueue = (#digLowerTasks > 0 and digLowerTasks)
+                        or (#fillLowerTasks > 0 and fillLowerTasks)
+                        or upperTasks
+                    local phaseLabel = (#digLowerTasks > 0 and "Fase 1: Gali Pojok & Baris Bawah")
+                        or (#fillLowerTasks > 0 and "Fase 1b: Ubah Rock/Lava -> Dirt")
+                        or "Fase 2: Place Dirt Atas"
+
+                    for i, taskItem in ipairs(activeQueue) do
+                        if not alive() or evaluateSeems() then break end
+                        setDfStatus(string.format("%s (%d/%d | Sisa:%d) (%d,%d)", phaseLabel, i, #activeQueue, totalTodo - i + 1, taskItem.x, taskItem.y))
+                        local curId = Core.GetFG(taskItem.x, taskItem.y)
+                        if taskItem.op == "break" then
+                            if curId ~= 0 and not Core.IsProtectedTile(curId) then
+                                dfBreakTile(taskItem.x, taskItem.y, alive)
+                            end
+                        elseif taskItem.op == "replace" then
+                            if curId ~= 0 and curId ~= dirtId and not Core.IsProtectedTile(curId) then
+                                dfBreakTile(taskItem.x, taskItem.y, alive)
+                            end
+                            if Core.GetFG(taskItem.x, taskItem.y) == 0 then
+                                local okP = dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
+                                if not okP then
+                                    setDfStatus("Dirt di Backpack habis! Cari/ambil Dirt drops...")
+                                    task.wait(0.8)
+                                    break
+                                end
+                            end
+                        elseif taskItem.op == "place" then
+                            if Core.GetFG(taskItem.x, taskItem.y) == 0 then
+                                local okP = dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
+                                if not okP then
+                                    setDfStatus("Dirt di Backpack habis! Cari/ambil Dirt drops...")
+                                    task.wait(0.8)
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(0.05)
+        end
+
+        DirtFarm.State.switchingWorld = false
+        if DirtFarm.State.sessionToken == tok then
+            DirtFarm.State.running = false
+            DirtFarm.State.thread = nil
+            if DirtFarm.State.status == "Idle" or string.find(DirtFarm.State.status, "Fase", 1, true) then
+                setDfStatus("Stopped")
+            elseif UIHooks.updateButtons then
+                UIHooks.updateButtons()
+            end
+        end
+    end)
+    return true
+end
+
+function DirtFarm.Stop()
+    DirtFarm.State.running = false
+    DirtFarm.State.switchingWorld = false
+    DirtFarm.State.sessionToken += 1
+    setDfStatus("Stopped")
+end
+
+function DirtFarm.Toggle()
+    if DirtFarm.State.running then
+        DirtFarm.Stop()
+        return false
+    end
+    return DirtFarm.Start()
 end
 
 -- V4 [SET VISUALISASI]
@@ -3094,8 +4025,10 @@ end
 stopAllAutomationImpl = function(reason)
     PNB.Stop()
     Pabrik.Stop()
+    DirtFarm.Stop()
     Spam.Stop()
     stopRandomTp()
+    if Misc.State.autoFollow then Misc.SetAutoFollow(false) end
     if Misc.State.autoCollect then Misc.SetAutoCollect(false) end
     if Misc.State.fly then Misc.SetFly(false) end
     if Misc.State.noClip then Misc.SetNoClip(false) end
@@ -3103,6 +4036,7 @@ stopAllAutomationImpl = function(reason)
         UI:SetValue("ValidStatusDisplay", reason)
         setPNBStatus(reason)
         setPabrikStatus(reason)
+        setDfStatus(reason)
         setSpamStatus(reason)
     end
     if UIHooks.updateButtons then UIHooks.updateButtons() end
@@ -3167,6 +4101,16 @@ function Config.CaptureFromRuntime()
     C.skipperJMin        = GetcSkipper.State.jitterMin
     C.skipperJMax        = GetcSkipper.State.jitterMax
     C.gapTpDelay         = tpState.patrolDelay
+    C.followTarget       = Misc.State.followTarget
+
+    C.dfBreakDelay       = DirtFarm.State.breakDelay
+    C.dfPlaceDelay       = DirtFarm.State.placeDelay
+    C.dfCollectDelay     = DirtFarm.State.collectDelay
+    C.dfOneHit           = DirtFarm.State.oneHit
+    C.dfShowHand         = DirtFarm.State.showHand
+    C.dfAutoCollect      = DirtFarm.State.autoCollect
+    C.dfCenterGap        = DirtFarm.State.centerGap
+    C.dfRotationWorlds   = DirtFarm.State.rotationText
     return C
 end
 
@@ -3247,6 +4191,18 @@ function Config.ApplyRuntime(safeBoot)
     Misc.State.autoCleanDrops    = C.autoCleanDrops ~= false
     Misc.State.autoCollectRadius = clamp(toInt(C.autoCollectRadius, 5), 1, 6)
     Misc.State.autoCollectStep   = C.autoCollectStep == true
+    Misc.State.followTarget      = tostring(C.followTarget or "")
+
+    DirtFarm.State.breakDelay   = tonumber(C.dfBreakDelay) or 0.16
+    DirtFarm.State.placeDelay   = tonumber(C.dfPlaceDelay) or 0.12
+    DirtFarm.State.collectDelay = tonumber(C.dfCollectDelay) or 0.05
+    DirtFarm.State.oneHit       = C.dfOneHit == true
+    DirtFarm.State.showHand     = C.dfShowHand ~= false
+    DirtFarm.State.autoCollect  = C.dfAutoCollect ~= false
+    DirtFarm.State.centerGap    = C.dfCenterGap ~= false
+    if type(C.dfRotationWorlds) == "string" then
+        DirtFarm.SetRotationWorlds(C.dfRotationWorlds)
+    end
 
     -- Pastikan Safe Mode menjaga loop berbahaya OFF sementara fitur aman / non-safe dipulihkan
     if not safeBoot then
@@ -3260,7 +4216,7 @@ function Config.ApplyRuntime(safeBoot)
         if C.skipperUpdateItems then GetcSkipper.SetSkipUpdateItems(true) end
     else
         -- Safe ON: hanya pulihkan utilitas pasif yang aman jika aktif, semua loop tetap OFF
-        PNB.State.running, Pabrik.State.running, Spam.State.running, tpState.patrolOn = false, false, false, false
+        PNB.State.running, Pabrik.State.running, DirtFarm.State.running, Spam.State.running, tpState.patrolOn, Misc.State.autoFollow = false, false, false, false, false, false
         if C.fpsBoost then Misc.SetFpsBoost(true) end
         if C.fastRoulette then Misc.SetFastRoulette(true) end
         if C.collectState then Misc.SetCollectState(true) end
@@ -3456,8 +4412,8 @@ buildSYTMenuFn = function()
                 if UI.SetLetterSpacing then UI:SetLetterSpacing(val) end
             end)
 
-            local LayoutCard = r:Card("Window & Performance", nil, "Sliders", {
-                Subtitle = "Scale, FPS Boost, corners and menu hotkey"
+            local LayoutCard = r:Card("Window & Layout", nil, "Sliders", {
+                Subtitle = "Atur UI Scale, transparency, rounded borders & hotkey menu"
             })
             LayoutCard:Slider("UI Scale", "UIScalePct", 60, 130, math.floor((C.scale or 1) * 100), "%", function(val)
                 C.scale = val / 100
@@ -3466,9 +4422,6 @@ buildSYTMenuFn = function()
             end)
             LayoutCard:Slider("Transparency", "BgTransPct", 0, 55, 4, "%", function(val)
                 UI:SetTransparency(val / 100)
-            end)
-            LayoutCard:Toggle("FPS Boost (Remove BG & FX)", "HomeFPSBoost", C.fpsBoost == true, function(v)
-                Misc.SetFpsBoost(v)
             end)
             LayoutCard:Toggle("Rounded Borders", "RoundedState", true, function(v) UI:SetRounded(v) end)
             if LayoutCard.Keybind then
@@ -3505,42 +4458,22 @@ buildSYTMenuFn = function()
                     if UIHooks.refreshMap then UIHooks.refreshMap(true) end
                 end
             end)
-            ManualCard:Button("Step Teleport (Via Celah <= 5 Tile)", "STEP TP", "Teleports", function()
-                local ok, msg = Packets.WalkTeleport({ tx = tonumber(UI:GetValue("TpManualX")), ty = tonumber(UI:GetValue("TpManualY")), mode = "step", stepSize = 4 })
+            ManualCard:Button("Walk-Path Safe (Rekomendasi Jarak Jauh / Anti-Balik Base)", "WALK TP", "Teleports", function()
+                local ok, msg = Packets.WalkTeleport({ tx = tonumber(UI:GetValue("TpManualX")), ty = tonumber(UI:GetValue("TpManualY")), mode = "walk", speed = 13 })
+                UI:SetValue("ValidStatusDisplay", (ok and "[WALK] " or "[BLOCKED] ") .. tostring(msg))
+                if UIHooks.refreshMap then UIHooks.refreshMap(true) end
+            end)
+            ManualCard:Button("Step Teleport (Via Celah Auto-Pace Jarak Jauh)", "STEP TP", "Teleports", function()
+                local ok, msg = Packets.WalkTeleport({ tx = tonumber(UI:GetValue("TpManualX")), ty = tonumber(UI:GetValue("TpManualY")), mode = "step", stepSize = 2 })
                 UI:SetValue("ValidStatusDisplay", (ok and "[OK] " or "[INVALID] ") .. tostring(msg))
                 if UIHooks.refreshMap then UIHooks.refreshMap(true) end
             end)
-            ManualCard:Button("Direct Teleport (Valid)", "DIRECT TP", "Bolt", function()
+            ManualCard:Button("Direct Teleport (Dekat <=20 / Auto Walk Jauh)", "DIRECT TP", "Bolt", function()
                 local ok, msg = Packets.WalkTeleport({ tx = tonumber(UI:GetValue("TpManualX")), ty = tonumber(UI:GetValue("TpManualY")), mode = "direct" })
                 UI:SetValue("ValidStatusDisplay", (ok and "[OK] " or "[INVALID] ") .. tostring(msg))
                 if UIHooks.refreshMap then UIHooks.refreshMap(true) end
             end)
-
-            local SpamTpCard = c:Card("Spam Random Teleport (Via Celah)", nil, "Bolt", {
-                Subtitle = "Otomatis cari celah valid secara cepat + tombol Stop"
-            })
-            SpamTpCard:Slider("Jeda Step (detik)", "SpamTpDelaySec", 0.08, 2.0, C.gapTpDelay or 0.25, " s", function(v)
-                tpState.patrolDelay = math.max(0.08, tonumber(v) or 0.25)
-                C.gapTpDelay = tpState.patrolDelay
-                markConfigDirty()
-            end, 0.05)
-            SpamTpCard:Button("[GAP TP] Start / Stop Random Teleport", "TOGGLE", "Bolt", toggleRandomTp)
-            SpamTpCard:Button("Hentikan Random Teleport", "STOP TP", "Shield", function()
-                stopRandomTp()
-                UI:SetValue("ValidStatusDisplay", "Random Gap Teleport dihentikan.")
-            end)
-
-            local MapCard = c:Card("Peta World 2D Interaktif (Klik Mode Switch)", nil, "Visuals", {
-                Subtitle = "Kuning: Anda | Merah: Player lain | Cyan: Drop | Ungu: Pabrik | Oranye: BreakPos"
-            })
-            MapCard:Input("Embedded World Map", "__WORLD_MAP_ANCHOR__", "__WORLD_MAP_ANCHOR_KEY__", "__WORLD_MAP_ANCHOR_KEY__")
-        end),
-
-        right = right(function(r)
-            local NavCard = r:Card("Feature Tambahan • Navigasi", "Quick", "Teleports", {
-                Subtitle = "Pintasan arah cepat, White Door & kontrol mode peta"
-            })
-            NavCard:Button("TP ke Spawn / White Door", "SPAWN", "Bolt", function()
+            ManualCard:Button("TP ke Spawn / White Door", "SPAWN", "Teleports", function()
                 Core.EnsureInit()
                 local sp = H.gt and H.gt.spawn
                 if sp then
@@ -3549,25 +4482,21 @@ buildSYTMenuFn = function()
                     if UIHooks.refreshMap then UIHooks.refreshMap(true) end
                 end
             end)
-            NavCard:Button("Step Naik 3 Tile (W)", "UP -3", "Teleports", function()
-                local p = Core.ReadPos()
-                Packets.WalkTeleport({ tx = p.tx, ty = math.max(0, p.ty - 3), mode = "step", stepSize = 3 })
-                if UIHooks.refreshMap then UIHooks.refreshMap(true) end
-            end)
-            NavCard:Button("Step Kiri 4 Tile (A)", "LEFT -4", "Teleports", function()
-                local p = Core.ReadPos()
-                Packets.WalkTeleport({ tx = math.max(0, p.tx - 4), ty = p.ty, mode = "step", stepSize = 4 })
-                if UIHooks.refreshMap then UIHooks.refreshMap(true) end
-            end)
-            NavCard:Button("Step Kanan 4 Tile (D)", "RIGHT +4", "Teleports", function()
-                local p = Core.ReadPos()
-                local maxX = (H.gt and H.gt.w or 100) - 1
-                Packets.WalkTeleport({ tx = math.min(maxX, p.tx + 4), ty = p.ty, mode = "step", stepSize = 4 })
-                if UIHooks.refreshMap then UIHooks.refreshMap(true) end
-            end)
-            NavCard:Button("Render Ulang Peta Sekarang", "REDRAW", "Visuals", function()
-                if UIHooks.refreshMap then UIHooks.refreshMap(true) end
-            end)
+
+            local SpamTpCard = c:Card("Random Teleport (Via Celah)", nil, "Bolt", {
+                Subtitle = "Otomatis cari celah valid — klik tombol sekali lagi untuk STOP"
+            })
+            SpamTpCard:Slider("Jeda Step (detik)", "SpamTpDelaySec", 0.08, 2.0, C.gapTpDelay or 0.25, " s", function(v)
+                tpState.patrolDelay = math.max(0.08, tonumber(v) or 0.25)
+                C.gapTpDelay = tpState.patrolDelay
+                markConfigDirty()
+            end, 0.05)
+            SpamTpCard:Button("[GAP TP] Start / Stop Random Teleport", "TOGGLE", "Bolt", toggleRandomTp)
+
+            local MapCard = c:Card("Peta World 2D Interaktif (Klik Mode Switch)", nil, "Visuals", {
+                Subtitle = "Kuning Crosshair: Anda (YOU) | Merah: Player lain | Cyan: Drop | Ungu: Pabrik | Oranye: BreakPos"
+            })
+            MapCard:Input("Embedded World Map", "__WORLD_MAP_ANCHOR__", "__WORLD_MAP_ANCHOR_KEY__", "__WORLD_MAP_ANCHOR_KEY__")
         end)
     })
 
@@ -3591,14 +4520,35 @@ buildSYTMenuFn = function()
                 Misc.SetNoClip(on)
             end)
 
-            local SafetyMisc = c:Card("Seems & God Mode (Full Protection)", nil, "Shield", {
-                Subtitle = "God Mode kebal lava, burn swirl, knockback, die & effect serangan block/item"
+            local SafetyMisc = c:Card("Seems & True God Mode (Full Protection)", nil, "Shield", {
+                Subtitle = "HP selalu penuh (5), anti mati, anti respawn balik door, kebal lava/burn/knock"
             })
             SafetyMisc:Toggle("SEEMS (Auto Stop & Normal)", "MiscSeemsToggle", Misc.State.seems, function(on)
                 Misc.SetSeems(on)
             end)
-            SafetyMisc:Toggle("God Mode (Anti Lava/Swirl/Attack)", "MiscGodToggle", Misc.State.godMode, function(on)
+            SafetyMisc:Toggle("True God Mode (No HP Loss / Anti-Die & Respawn)", "MiscGodToggle", Misc.State.godMode, function(on)
                 Misc.SetGodMode(on)
+            end)
+
+            local FollowCard = c:Card("Auto Follow Player (Via Walk)", "New", "Player", {
+                Subtitle = "Dropdown scrollable daftar player di world — berjalan halus mengikuti target"
+            })
+            FollowCard:Input("Status Auto Follow", "FollowStatusDisplay", "Idle", Misc.State.followStatus or "Idle")
+            local initCands = Misc.GetFollowCandidates()
+            local defFollow = (Misc.State.followTarget ~= "" and Misc.State.followTarget) or initCands[1]
+            FollowCard:Dropdown("Pilih Player Target (Scroll)", "MiscFollowTarget", initCands, defFollow, function(v)
+                local chosen = Misc.SetFollowTarget(v)
+                if UI then UI:SetValue("FollowStatusDisplay", chosen ~= "" and ("Target: " .. chosen) or "Belum ada player lain") end
+            end)
+            FollowCard:Button("Refresh Daftar Player World", "REFRESH", "Player", function()
+                local list = Misc.GetFollowCandidates()
+                if UI and UI._DropRefresh and UI._DropRefresh.MiscFollowTarget then
+                    UI._DropRefresh.MiscFollowTarget(list)
+                end
+                if UI then UI:SetValue("FollowStatusDisplay", "Daftar di-refresh (" .. tostring(#list) .. ")") end
+            end)
+            FollowCard:Toggle("Auto Follow Player (Walk-Path)", "MiscFollowToggle", Misc.State.autoFollow, function(on)
+                Misc.SetAutoFollow(on, UI and UI:GetValue("MiscFollowTarget") or Misc.State.followTarget)
             end)
 
             local CollectCard = c:Card("Radius Auto Collect (360° Sekitar) & Visual Drop", "New", "Bolt", {
@@ -3656,30 +4606,6 @@ buildSYTMenuFn = function()
                 C.autoRerunSafe = on == true
                 markConfigDirty()
             end)
-            ExtraMisc:Button("Test Auto Rerun Menu Sekarang", "RERUN", "Bolt", function()
-                SYT_Logic.TriggerAutoRerun("Manual Rerun Test")
-            end)
-        end),
-
-        right = right(function(r)
-            local QuickMisc = r:Card("Feature Tambahan • Misc Quick", "Fast", "Shield", {
-                Subtitle = "Aksi cepat perbaikan visual drop, config & perlindungan"
-            })
-            QuickMisc:Button("Hapus Stuck Gem/Drop Visual", "CLEAN DROPS", "Visuals", function()
-                Core.ClearStuckDropVisuals()
-                emitNotify("Clean Drops", "Drop tersangkut dibersihkan.")
-            end)
-            QuickMisc:Button("Reset Penghitung Gems Session", "RESET GEMS", "Sliders", function()
-                Misc.State.comboGems = 0
-                Misc.State.sessionGems = 0
-                UI:SetValue("CollectGemsDisplay", "Get 0 Gems (Session: 0)")
-            end)
-            QuickMisc:Button("Test Design Popup Roulette", "PREVIEW 7", "Visuals", function()
-                showRoulettePopup(Core.GetInGameName(LP, true), 7, Core.ReadPos().tx, Core.ReadPos().ty)
-            end)
-            QuickMisc:Button("Simpan Semua Config Misc", "SAVE", "Bolt", function()
-                Config.Save(false)
-            end)
         end)
     })
 
@@ -3721,38 +4647,6 @@ buildSYTMenuFn = function()
             OptCard:Slider("Place Delay (ms)", "PnbPlaceMs", 30, 600, math.floor(PNB.State.placeDelay * 1000), " ms", function(v) PNB.State.placeDelay = v / 1000; markConfigDirty() end, 10)
             OptCard:Slider("Break Delay (ms)", "PnbBreakMs", 30, 600, math.floor(PNB.State.breakDelay * 1000), " ms", function(v) PNB.State.breakDelay = v / 1000; markConfigDirty() end, 10)
             OptCard:Slider("Collect Delay (ms)", "PnbCollectMs", 20, 400, math.floor(PNB.State.collectDelay * 1000), " ms", function(v) PNB.State.collectDelay = v / 1000; markConfigDirty() end, 10)
-        end),
-
-        right = right(function(r)
-            local PnbExt = r:Card("Feature Tambahan • PNB Presets", "Pad", "Combat", {
-                Subtitle = "Terapkan pola tile 5x5 & profil kecepatan secara instan"
-            })
-            PnbExt:Button("Pola: 1 Tile di Atas Kepala", "1 ATAS", "Teleports", function()
-                PNB.State.grid5x5 = { ["0,-1"] = true }
-                markConfigDirty()
-                if UIHooks.refreshPad5x5 then UIHooks.refreshPad5x5() end
-            end)
-            PnbExt:Button("Pola: 3 Tile di Atas (-1, 0, +1)", "3 ATAS", "Teleports", function()
-                PNB.State.grid5x5 = { ["-1,-1"] = true, ["0,-1"] = true, ["1,-1"] = true }
-                markConfigDirty()
-                if UIHooks.refreshPad5x5 then UIHooks.refreshPad5x5() end
-            end)
-            PnbExt:Button("Pola: Ring 8 Tile Sekitar", "RING 8", "Teleports", function()
-                PNB.State.grid5x5 = {}
-                for yy = -1, 1 do for xx = -1, 1 do if xx ~= 0 or yy ~= 0 then PNB.State.grid5x5[tileKey(xx, yy)] = true end end end
-                markConfigDirty()
-                if UIHooks.refreshPad5x5 then UIHooks.refreshPad5x5() end
-            end)
-            PnbExt:Button("Profil Speed: Cepat + Guard", "FAST", "Bolt", function()
-                PNB.State.placeDelay, PNB.State.breakDelay, PNB.State.collectDelay = 0.08, 0.14, 0.04
-                UI:SetValue("PnbPlaceMs", 80); UI:SetValue("PnbBreakMs", 140); UI:SetValue("PnbCollectMs", 40)
-                markConfigDirty()
-            end)
-            PnbExt:Button("Profil Speed: Safe Anti-Disconnect", "SAFE", "Shield", function()
-                PNB.State.placeDelay, PNB.State.breakDelay, PNB.State.collectDelay = 0.16, 0.22, 0.08
-                UI:SetValue("PnbPlaceMs", 160); UI:SetValue("PnbBreakMs", 220); UI:SetValue("PnbCollectMs", 80)
-                markConfigDirty()
-            end)
         end)
     })
 
@@ -3817,24 +4711,68 @@ buildSYTMenuFn = function()
             TileCard:Slider("Place Delay (ms)", "PabrikPlaceMs", 40, 600, math.floor(Pabrik.State.placeDelay * 1000), " ms", function(v) Pabrik.State.placeDelay = v / 1000; markConfigDirty() end, 10)
             TileCard:Slider("Break Delay (ms)", "PabrikBreakMs", 40, 600, math.floor(Pabrik.State.breakDelay * 1000), " ms", function(v) Pabrik.State.breakDelay = v / 1000; markConfigDirty() end, 10)
             TileCard:Slider("Collect Delay (ms)", "PabrikCollectMs", 20, 400, math.floor(Pabrik.State.collectDelay * 1000), " ms", function(v) Pabrik.State.collectDelay = v / 1000; markConfigDirty() end, 10)
-        end),
+        end)
+    })
 
-        right = right(function(r)
-            local PabExt = r:Card("Feature Tambahan • Pabrik Tools", "Farm", "AutoFarm", {
-                Subtitle = "Seleksi cepat beberapa baris & kontrol cepat BreakPos"
+    -- TAB 4B: [DIRT FARM] AUTO FORMAT DIRT FARM & ROTATION
+    feature("Active", "Dirt Farm")({
+        center = center(function(c)
+            c:Header("[DIRT FARM] Auto Builder & Rotation", "Gali pojok 2 kiri/kanan, ubah Lava/Rock -> Dirt, pola kelipatan 2 + Rotation World", "Active")
+
+            local DfStatCard = c:Card("Kontrol & Status Dirt Farm", nil, "Bolt", {
+                Subtitle = "Otomatis skip White Door, Bedrock & Locks; pindah ke Rotation DF saat selesai"
             })
-            PabExt:Button("Pilih 3 Line (Y-2, Y, Y+2)", "3 LINES", "Visuals", function()
-                local p = Core.ReadPos()
-                for _, dy in ipairs({ -2, 0, 2 }) do Pabrik.ToggleLine(p.ty + dy) end
+            DfStatCard:Input("Status Dirt Farm", "DfStatusDisplay", "Idle", DirtFarm.State.status or "Idle")
+            DfStatCard:Button("[DF] Start / Stop Dirt Farm", "TOGGLE", "Bolt", function()
+                DirtFarm.Toggle()
             end)
-            PabExt:Button("Pindah Break Pos ke Tile Terpilih Map", "USE MAP TP", "Teleports", function()
-                if tpState.selectedX and tpState.selectedY then
-                    Pabrik.SetBreakPos(tpState.selectedX, tpState.selectedY)
+
+            local DfRotCard = c:Card("Rotation DF (Auto Pindah World Saat Selesai)", nil, "Teleports", {
+                Subtitle = "Pisahkan nama world dengan koma (contoh: FARM1, FARM2, FARM3)"
+            })
+            DfRotCard:Input("Daftar World Rotation DF", "DfRotationInput", "WORLD1, WORLD2, WORLD3", DirtFarm.State.rotationText or "", function(txt)
+                DirtFarm.SetRotationWorlds(txt)
+            end)
+            DfRotCard:Button("Tambahkan World Saat Ini ke Rotation", "ADD WORLD", "Teleports", function()
+                Core.EnsureInit()
+                local curW = H.gt and cleanWorldName(H.gt.name) or ""
+                if curW == "" then return end
+                local list = DirtFarm.SetRotationWorlds(UI:GetValue("DfRotationInput") or DirtFarm.State.rotationText)
+                local exists = false
+                for _, w in ipairs(list) do if w == curW then exists = true; break end end
+                if not exists then
+                    list[#list + 1] = curW
+                    local joined = table.concat(list, ", ")
+                    DirtFarm.SetRotationWorlds(joined)
+                    UI:SetValue("DfRotationInput", joined)
+                    setDfStatus("Ditambahkan ke Rotation: " .. curW)
                 end
             end)
-            PabExt:Button("Hentikan Pabrik Sekarang", "STOP", "Shield", function()
-                Pabrik.Stop()
+            DfRotCard:Button("Masuk World Rotation Berikutnya", "NEXT WORLD", "Bolt", function()
+                Core.EnsureInit()
+                local gt = H.gt
+                local list = DirtFarm.SetRotationWorlds(UI:GetValue("DfRotationInput") or DirtFarm.State.rotationText)
+                if gt and #list > 0 and type(gt.enter) == "function" then
+                    local curW = cleanWorldName(gt.name)
+                    local nxt = list[1]
+                    for i, w in ipairs(list) do if w == curW and list[i + 1] then nxt = list[i + 1]; break end end
+                    if nxt and nxt ~= "" then
+                        setDfStatus("Masuk world: " .. nxt)
+                        pcall(gt.enter, nxt)
+                    end
+                end
             end)
+
+            local DfCfgCard = c:Card("Delay & Opsi Format Dirt Farm", nil, "Sliders", {
+                Subtitle = "Atur Break/Place/Collect delay dan opsi bolong tengah (Center Shaft)"
+            })
+            DfCfgCard:Slider("Break Delay (ms)", "DfBreakMs", 40, 600, math.floor(DirtFarm.State.breakDelay * 1000), " ms", function(v) DirtFarm.State.breakDelay = v / 1000; markConfigDirty() end, 10)
+            DfCfgCard:Slider("Place Delay (ms)", "DfPlaceMs", 40, 600, math.floor(DirtFarm.State.placeDelay * 1000), " ms", function(v) DirtFarm.State.placeDelay = v / 1000; markConfigDirty() end, 10)
+            DfCfgCard:Slider("Collect Delay (ms)", "DfCollectMs", 20, 400, math.floor(DirtFarm.State.collectDelay * 1000), " ms", function(v) DirtFarm.State.collectDelay = v / 1000; markConfigDirty() end, 10)
+            DfCfgCard:Toggle("1-Hit Mode (DF)", "DfOneHit", DirtFarm.State.oneHit, function(v) DirtFarm.State.oneHit = v; markConfigDirty() end)
+            DfCfgCard:Toggle("Show Hand (DF)", "DfShowHand", DirtFarm.State.showHand, function(v) DirtFarm.State.showHand = v; markConfigDirty() end)
+            DfCfgCard:Toggle("Auto Collect Drops (DF)", "DfAutoCollect", DirtFarm.State.autoCollect, function(v) DirtFarm.State.autoCollect = v; markConfigDirty() end)
+            DfCfgCard:Toggle("Center Shaft / Bolong Tengah (2 Kolom)", "DfCenterGap", DirtFarm.State.centerGap, function(v) DirtFarm.State.centerGap = v; markConfigDirty() end)
         end)
     })
 
@@ -3883,35 +4821,6 @@ buildSYTMenuFn = function()
                 Visual.Apply()
             end)
             VisCard:Button("Kembalikan Nama & Role Asli", "RESTORE", "Shield", function()
-                Visual.Restore()
-            end)
-        end),
-
-        right = right(function(r)
-            local VisPreset = r:Card("Feature Tambahan • Preset Roles", "Glow", "Visuals", {
-                Subtitle = "Pasang role + animasi efek game secara instan dalam 1 klik"
-            })
-            VisPreset:Button("Preset: Developer + Rainbow", "DEV", "Bolt", function()
-                Visual.State.role, Visual.State.effect, Visual.State.customTitle = "developer", "Rainbow Wave", "legend"
-                Visual.Apply()
-            end)
-            VisPreset:Button("Preset: Moderator + Creator", "MOD", "Shield", function()
-                Visual.State.role, Visual.State.effect, Visual.State.customTitle = "moderator", "Creator Tag", "cc"
-                Visual.Apply()
-            end)
-            VisPreset:Button("Preset: Sponsor Sparkle + Booster", "SPONSOR", "Visuals", function()
-                Visual.State.role, Visual.State.effect, Visual.State.customTitle, Visual.State.booster = "sponsor", "Sponsor Sparkle", "sponsor", true
-                Visual.Apply()
-            end)
-            VisPreset:Button("Preset: Supporter Wave + Legend", "SUPPORT", "Visuals", function()
-                Visual.State.role, Visual.State.effect, Visual.State.customTitle = "supporter", "Supporter Wave", "supporter"
-                Visual.Apply()
-            end)
-            VisPreset:Button("Preset: Royal Pulse Gold", "ROYAL", "Visuals", function()
-                Visual.State.role, Visual.State.effect, Visual.State.customTitle = "royal", "Royal Pulse", "royal"
-                Visual.Apply()
-            end)
-            VisPreset:Button("Reset ke Nama & Role Asli", "RESET", "Shield", function()
                 Visual.Restore()
             end)
         end)
@@ -3965,29 +4874,6 @@ buildSYTMenuFn = function()
                 GetcSkipper.State.maxRangeTiles = clamp(toInt(v, 5), 1, 5)
                 markConfigDirty()
             end, 1)
-        end),
-
-        right = right(function(r)
-            local ChatExt = r:Card("Feature Tambahan • Template & Guard", "Chat", "Chat", {
-                Subtitle = "Template cepat pesan & profil anti-rate-limit"
-            })
-            ChatExt:Button("Template: Promo Buy/Sell", "PROMO", "Bolt", function()
-                local sample = "BUY / SELL CHEAP ITEMS -> GO LINK / TRADE ME!"
-                Spam.State.text = sample
-                UI:SetValue("SpamTextInput", sample)
-                markConfigDirty()
-            end)
-            ChatExt:Button("Profil Guard: Ultra Aman (Delay Panjang)", "SAFE GUARD", "Shield", function()
-                GetcSkipper.State.enabled = true
-                GetcSkipper.State.jitterMin, GetcSkipper.State.jitterMax = 0.15, 0.55
-                Spam.State.delay = math.max(3.5, Spam.State.delay)
-                UI:SetValue("SpamDelaySec", Spam.State.delay)
-                markConfigDirty()
-            end)
-            ChatExt:Button("Reset Jitter Counter", "RESET", "Sliders", function()
-                GetcSkipper.State.jitterCount = 0
-                emitNotify("GetcSkipper", "Counter jitter di-reset ke 0.")
-            end)
         end)
     })
 
@@ -4043,10 +4929,11 @@ end
 -- Responsive Button Binder: sinkronkan teks & warna tombol Start/Stop otomatis
 local function scanResponsiveButtons()
     local specs = {
-        { prefix = "[PNB]",    getState = function() return PNB.State.running,    "STOP PNB",    "START PNB",    "[PNB] AKTIF (Klik untuk STOP)",    "[PNB] Start / Stop Engine" end },
-        { prefix = "[PABRIK]", getState = function() return Pabrik.State.running, "STOP PABRIK", "START PABRIK", "[PABRIK] AKTIF (Klik untuk STOP)", "[PABRIK] Start / Stop Auto" end },
-        { prefix = "[SPAM]",   getState = function() return Spam.State.running,   "STOP SPAM",   "START SPAM",   "[SPAM] AKTIF (Klik untuk STOP)",   "[SPAM] Start / Stop Chat" end },
-        { prefix = "[GAP TP]", getState = function() return tpState.patrolOn,     "STOP TP",     "START TP",     "[GAP TP] AKTIF (Klik untuk STOP)", "[GAP TP] Start / Stop Random Teleport" end },
+        { prefix = "[PNB]",    getState = function() return PNB.State.running,      "STOP PNB",    "START PNB",    "[PNB] AKTIF (Klik untuk STOP)",    "[PNB] Start / Stop Engine" end },
+        { prefix = "[PABRIK]", getState = function() return Pabrik.State.running,   "STOP PABRIK", "START PABRIK", "[PABRIK] AKTIF (Klik untuk STOP)", "[PABRIK] Start / Stop Auto" end },
+        { prefix = "[DF]",     getState = function() return DirtFarm.State.running, "STOP DF",     "START DF",     "[DF] AKTIF (Klik untuk STOP)",     "[DF] Start / Stop Dirt Farm" end },
+        { prefix = "[SPAM]",   getState = function() return Spam.State.running,     "STOP SPAM",   "START SPAM",   "[SPAM] AKTIF (Klik untuk STOP)",   "[SPAM] Start / Stop Chat" end },
+        { prefix = "[GAP TP]", getState = function() return tpState.patrolOn,       "STOP TP",     "START TP",     "[GAP TP] AKTIF (Klik untuk STOP)", "[GAP TP] Start / Stop Random Teleport" end },
     }
     for _, root in ipairs({ CoreGui, LP and LP:FindFirstChildOfClass("PlayerGui") }) do
         if root then
@@ -4162,20 +5049,98 @@ buildMountedCanvasesFn = function()
         mapView.Parent = rowContainer
 
         local mapCanvas = Instance.new("Frame")
-        mapCanvas.BackgroundColor3 = Color3.fromRGB(56, 134, 196)
+        mapCanvas.BackgroundColor3 = Color3.new(1, 1, 1)
         mapCanvas.BorderSizePixel = 0
+        mapCanvas.ZIndex = (mapView.ZIndex or 1) + 1
         mapCanvas.Parent = mapView
         Instance.new("UIStroke", mapCanvas).Color = Color3.fromRGB(70, 86, 114)
 
-        -- Lapisan Sky + Underground halus agar dunia tidak pernah tampak gelap kosong
+        -- Lapisan Sky + Underground halus (BackgroundColor3 putih agar UIGradient tampil murni tanpa gelap)
         local skyGrad = Instance.new("UIGradient", mapCanvas)
         skyGrad.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(56, 134, 196)),
-            ColorSequenceKeypoint.new(0.45, Color3.fromRGB(108, 178, 224)),
-            ColorSequenceKeypoint.new(0.46, Color3.fromRGB(48, 36, 30)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(28, 22, 20)),
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(64, 148, 214)),
+            ColorSequenceKeypoint.new(0.45, Color3.fromRGB(118, 190, 236)),
+            ColorSequenceKeypoint.new(0.46, Color3.fromRGB(54, 40, 32)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(30, 23, 20)),
         })
         skyGrad.Rotation = 90
+
+        -- Penanda top-layer permanen: Crosshair & Beacon Player ("YOU"), Tile Terpilih & BreakPos
+        local mZ = (mapCanvas.ZIndex or 2)
+        local crossH = Instance.new("Frame")
+        crossH.Size = UDim2.new(1, 0, 0, 1)
+        crossH.AnchorPoint = Vector2.new(0, 0.5)
+        crossH.BackgroundColor3 = Color3.fromRGB(250, 204, 21)
+        crossH.BackgroundTransparency = 0.55
+        crossH.BorderSizePixel = 0
+        crossH.ZIndex = mZ + 20
+        crossH.Parent = mapCanvas
+
+        local crossV = Instance.new("Frame")
+        crossV.Size = UDim2.new(0, 1, 1, 0)
+        crossV.AnchorPoint = Vector2.new(0.5, 0)
+        crossV.BackgroundColor3 = Color3.fromRGB(250, 204, 21)
+        crossV.BackgroundTransparency = 0.55
+        crossV.BorderSizePixel = 0
+        crossV.ZIndex = mZ + 20
+        crossV.Parent = mapCanvas
+
+        local selBox = Instance.new("Frame")
+        selBox.BackgroundColor3 = Color3.fromRGB(56, 189, 248)
+        selBox.BackgroundTransparency = 0.55
+        selBox.BorderSizePixel = 0
+        selBox.Visible = false
+        selBox.ZIndex = mZ + 21
+        selBox.Parent = mapCanvas
+        local selStroke = Instance.new("UIStroke", selBox)
+        selStroke.Color = Color3.new(1, 1, 1)
+        selStroke.Thickness = 1.6
+
+        local breakBox = Instance.new("Frame")
+        breakBox.BackgroundColor3 = Color3.fromRGB(249, 115, 22)
+        breakBox.BackgroundTransparency = 0.45
+        breakBox.BorderSizePixel = 0
+        breakBox.Visible = false
+        breakBox.ZIndex = mZ + 21
+        breakBox.Parent = mapCanvas
+        local breakStroke = Instance.new("UIStroke", breakBox)
+        breakStroke.Color = Color3.fromRGB(255, 237, 213)
+        breakStroke.Thickness = 1.4
+
+        local playerDot = Instance.new("Frame")
+        playerDot.AnchorPoint = Vector2.new(0.5, 0.5)
+        playerDot.Size = UDim2.fromOffset(10, 10)
+        playerDot.BackgroundColor3 = Color3.fromRGB(250, 204, 21)
+        playerDot.BorderSizePixel = 0
+        playerDot.ZIndex = mZ + 24
+        playerDot.Parent = mapCanvas
+        Instance.new("UICorner", playerDot).CornerRadius = UDim.new(1, 0)
+        local playerStroke = Instance.new("UIStroke", playerDot)
+        playerStroke.Color = Color3.new(1, 1, 1)
+        playerStroke.Thickness = 1.8
+
+        local youTag = Instance.new("TextLabel")
+        youTag.Size = UDim2.fromOffset(28, 12)
+        youTag.AnchorPoint = Vector2.new(0.5, 1)
+        youTag.BackgroundColor3 = Color3.fromRGB(15, 23, 42)
+        youTag.BackgroundTransparency = 0.12
+        youTag.BorderSizePixel = 0
+        youTag.Font = Enum.Font.Code
+        youTag.TextSize = 9
+        youTag.TextColor3 = Color3.fromRGB(250, 204, 21)
+        youTag.Text = "YOU"
+        youTag.ZIndex = mZ + 25
+        youTag.Parent = mapCanvas
+        Instance.new("UICorner", youTag).CornerRadius = UDim.new(0, 3)
+
+        local mapHitOverlay = Instance.new("TextButton")
+        mapHitOverlay.Size = UDim2.fromScale(1, 1)
+        mapHitOverlay.BackgroundTransparency = 1
+        mapHitOverlay.BorderSizePixel = 0
+        mapHitOverlay.Text = ""
+        mapHitOverlay.AutoButtonColor = false
+        mapHitOverlay.ZIndex = mZ + 28
+        mapHitOverlay.Parent = mapCanvas
 
         local worldHud = Instance.new("TextLabel")
         worldHud.Size = UDim2.new(0, 230, 0, 18)
@@ -4187,7 +5152,7 @@ buildMountedCanvasesFn = function()
         worldHud.TextSize = 10
         worldHud.TextColor3 = Color3.fromRGB(248, 250, 252)
         worldHud.Text = " WORLD: - | POS: (-, -) "
-        worldHud.ZIndex = (mapView.ZIndex or 1) + 12
+        worldHud.ZIndex = mZ + 32
         worldHud.Parent = mapView
         Instance.new("UICorner", worldHud).CornerRadius = UDim.new(0, 4)
 
@@ -4416,50 +5381,63 @@ buildMountedCanvasesFn = function()
             end
         end
 
-        -- 4. Auto Pabrik selected tiles (Purple) & breakPos (Orange)
-        for _, pt in pairs(Pabrik.State.selectedTiles) do
+        -- 4. Auto Pabrik connected horizontal lines (-----) (Purple) & breakPos (Orange)
+        for _, seg in ipairs(Pabrik.GetConnectedLines()) do
             used += 1
-            local f = getBox(used, 4, Color3.fromRGB(168, 85, 247), 0.25, false)
-            f.Position = UDim2.fromOffset(pt.x * px, pt.y * px)
-            f.Size = UDim2.fromOffset(math.max(2, px), math.max(2, px))
+            local f = getBox(used, 4, Color3.fromRGB(168, 85, 247), 0.12, false)
+            local hBar = (seg.len > 1) and math.max(3, px * 0.72) or math.max(3, px)
+            local yOff = (seg.len > 1) and (px - hBar) * 0.5 or 0
+            f.Position = UDim2.fromOffset(seg.x1 * px, seg.y * px + yOff)
+            f.Size = UDim2.fromOffset(math.max(3, seg.len * px), hBar)
         end
         if Pabrik.State.breakPos then
-            used += 1
-            local f = getBox(used, 5, Color3.fromRGB(249, 115, 22), 0.1, false)
-            f.Position = UDim2.fromOffset(Pabrik.State.breakPos.x * px, Pabrik.State.breakPos.y * px)
-            f.Size = UDim2.fromOffset(math.max(4, px), math.max(4, px))
+            breakBox.Visible = true
+            breakBox.Position = UDim2.fromOffset(Pabrik.State.breakPos.x * px, Pabrik.State.breakPos.y * px)
+            breakBox.Size = UDim2.fromOffset(math.max(6, px), math.max(6, px))
+        else
+            breakBox.Visible = false
         end
 
         -- 5. Selected TP tile (Cyan/Red)
         if tpState.selectedX and tpState.selectedY then
             local ok = Core.ValidateTile(tpState.selectedX, tpState.selectedY)
-            used += 1
-            local f = getBox(used, 5, ok and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(239, 68, 68), 0.1, false)
-            f.Position = UDim2.fromOffset(tpState.selectedX * px, tpState.selectedY * px)
-            f.Size = UDim2.fromOffset(math.max(4, px), math.max(4, px))
+            local col = ok and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(239, 68, 68)
+            selBox.Visible = true
+            selBox.BackgroundColor3 = col
+            local boxSz = math.max(7, px)
+            selBox.Position = UDim2.fromOffset((tpState.selectedX + 0.5) * px - boxSz * 0.5, (tpState.selectedY + 0.5) * px - boxSz * 0.5)
+            selBox.Size = UDim2.fromOffset(boxSz, boxSz)
+        else
+            selBox.Visible = false
         end
 
-        -- 6. Other in-world players (Red dot) + Self (Bright Yellow Marker)
+        -- 6. Other in-world players (Red dot) + Self (Crosshair + Bright Yellow Pin "YOU")
         for _, op in ipairs(Core.GetInWorldPlayers(false)) do
             if op.tx and op.ty then
                 used += 1
                 local f = getBox(used, 6, Color3.fromRGB(244, 63, 94), 0, true)
-                local dsz = math.max(4, px + 1)
+                local dsz = math.max(5, px + 1.5)
                 f.Position = UDim2.fromOffset(op.tx * px, op.ty * px)
                 f.Size = UDim2.fromOffset(dsz, dsz)
             end
         end
-        used += 1
-        local halo = getBox(used, 7, Color3.new(1, 1, 1), 0.35, true)
-        local hsz = math.max(7, px + 4)
-        halo.Position = UDim2.fromOffset(selfPos.tx * px - 1.5, selfPos.ty * px - 1.5)
-        halo.Size = UDim2.fromOffset(hsz, hsz)
 
-        used += 1
-        local dot = getBox(used, 8, Color3.fromRGB(250, 204, 21), 0, true)
-        local dsz = math.max(5, px + 1.5)
-        dot.Position = UDim2.fromOffset(selfPos.tx * px, selfPos.ty * px)
-        dot.Size = UDim2.fromOffset(dsz, dsz)
+        local pcx = (selfPos.tx + 0.5) * px
+        local pcy = (selfPos.ty + 0.5) * px
+        local dsz = math.max(9, px + 4)
+        crossH.Position = UDim2.fromOffset(0, pcy)
+        crossV.Position = UDim2.fromOffset(pcx, 0)
+        playerDot.Size = UDim2.fromOffset(dsz, dsz)
+        playerDot.Position = UDim2.fromOffset(pcx, pcy)
+        local cw = w * px
+        local tagX = clamp(pcx, 16, math.max(16, cw - 16))
+        if pcy < 18 then
+            youTag.AnchorPoint = Vector2.new(0.5, 0)
+            youTag.Position = UDim2.fromOffset(tagX, pcy + dsz * 0.5 + 2)
+        else
+            youTag.AnchorPoint = Vector2.new(0.5, 1)
+            youTag.Position = UDim2.fromOffset(tagX, pcy - dsz * 0.5 - 2)
+        end
 
         for i = used + 1, #mapPool do mapPool[i].Visible = false end
     end
@@ -4468,15 +5446,118 @@ buildMountedCanvasesFn = function()
         didFit = false
         renderMap(true)
     end)
-    rowContainer:GetPropertyChangedSignal("Visible"):Connect(function()
-        if rowContainer.Visible then
+    local function onTabShow()
+        if (not scroller or scroller.Visible) and rowContainer.Visible then
             fitMap()
             renderMap(true)
         end
+    end
+    rowContainer:GetPropertyChangedSignal("Visible"):Connect(onTabShow)
+    if scroller then scroller:GetPropertyChangedSignal("Visible"):Connect(onTabShow) end
+
+    -- Kalibrasi otomatis koordinat pointer (Mouse / Touch / Android Cutout / gethui) dari tombol kecil UI
+    local calib = { Mouse = {}, Touch = {} }
+    local function learnCalibFromBtn(btn, inp)
+        if not inp or not btn then return end
+        local okIn, tl = pcall(function() return GuiService:GetGuiInset() end)
+        if not okIn or not tl then return end
+        local key = (inp.UserInputType == Enum.UserInputType.Touch) and "Touch" or "Mouse"
+        local bp, bs = btn.AbsolutePosition, btn.AbsoluteSize
+        local px, py = inp.Position.X, inp.Position.Y
+        if tl.Y > bs.Y + 4 then
+            local rawIn = (py >= bp.Y - 3 and py <= bp.Y + bs.Y + 3)
+            local insIn = (py + tl.Y >= bp.Y - 3 and py + tl.Y <= bp.Y + bs.Y + 3)
+            if rawIn and not insIn then calib[key].dy = 0
+            elseif insIn and not rawIn then calib[key].dy = tl.Y end
+        end
+        if tl.X > bs.X + 4 then
+            local rawIn = (px >= bp.X - 3 and px <= bp.X + bs.X + 3)
+            local insIn = (px + tl.X >= bp.X - 3 and px + tl.X <= bp.X + bs.X + 3)
+            if rawIn and not insIn then calib[key].dx = 0
+            elseif insIn and not rawIn then calib[key].dx = tl.X end
+        end
+    end
+    local function attachCalib(b)
+        b.InputBegan:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+                learnCalibFromBtn(b, inp)
+            end
+        end)
+    end
+    for _, mb in pairs(modeBtns) do attachCalib(mb) end
+    attachCalib(fitBtn); attachCalib(zoomInBtn); attachCalib(zoomOutBtn); attachCalib(tpBtn)
+    task.defer(function()
+        local sg = mapView:FindFirstAncestorOfClass("ScreenGui")
+        if sg then
+            for _, d in ipairs(sg:GetDescendants()) do
+                if d:IsA("TextButton") and d ~= mapHitOverlay and d.AbsoluteSize.Y > 4 and d.AbsoluteSize.Y <= 52 then
+                    attachCalib(d)
+                end
+            end
+        end
     end)
 
+    local function resolvePointerScreenPos(inp)
+        local inpType = inp.UserInputType
+        local key = (inpType == Enum.UserInputType.Touch) and "Touch" or "Mouse"
+        local okIn, tl = pcall(function() return GuiService:GetGuiInset() end)
+        tl = (okIn and tl) or Vector2.zero
+        local sg = mapView:FindFirstAncestorOfClass("ScreenGui")
+        local sgPos = (sg and sg.AbsolutePosition) or Vector2.zero
+
+        local cx, cy = inp.Position.X, inp.Position.Y
+        if calib[key].dx ~= nil or calib[key].dy ~= nil then
+            local dx = (calib[key].dx ~= nil) and calib[key].dx or ((sg and sg.IgnoreGuiInset and sgPos.Magnitude < 2) and tl.X or 0)
+            local dy = (calib[key].dy ~= nil) and calib[key].dy or ((sg and sg.IgnoreGuiInset and sgPos.Magnitude < 2) and tl.Y or 0)
+            return cx + dx, cy + dy
+        end
+        if inpType == Enum.UserInputType.MouseButton1 then
+            local okMl, ml = pcall(function() return UserInputService:GetMouseLocation() end)
+            if okMl and ml then
+                local vp, vs = mapView.AbsolutePosition, mapView.AbsoluteSize
+                if ml.X >= vp.X - 6 and ml.X <= vp.X + vs.X + 6 and ml.Y >= vp.Y - 6 and ml.Y <= vp.Y + vs.Y + 6 then
+                    return ml.X, ml.Y
+                end
+            end
+        end
+        if sg and sg.IgnoreGuiInset and sgPos.Magnitude < 2 then
+            return cx + tl.X, cy + tl.Y
+        end
+        return cx, cy
+    end
+
+    local function handleMapTap(cx, cy)
+        local absPos, absSize = mapCanvas.AbsolutePosition, mapCanvas.AbsoluteSize
+        local maxW, maxH = (H.gt and H.gt.w) or 100, (H.gt and H.gt.h) or 60
+        local rx, ry = cx - absPos.X, cy - absPos.Y
+        if absSize.X <= 1 or absSize.Y <= 1 then return end
+        if rx < -6 or ry < -6 or rx > absSize.X + 6 or ry > absSize.Y + 6 then return end
+        local tx = clamp(math.floor((clamp(rx, 0, absSize.X - 0.01) / absSize.X) * maxW), 0, maxW - 1)
+        local ty = clamp(math.floor((clamp(ry, 0, absSize.Y - 0.01) / absSize.Y) * maxH), 0, maxH - 1)
+
+        if tpState.mapClickMode == "PABRIK_TILE" then
+            local added = Pabrik.ToggleTile(tx, ty)
+            infoLbl.Text = string.format("Pabrik Tile (%d, %d): %s", tx, ty, added and "ON" or "OFF")
+        elseif tpState.mapClickMode == "PABRIK_LINE" then
+            local added = Pabrik.ToggleLine(ty, tx)
+            infoLbl.Text = string.format("Pabrik Line Y=%d: %s", ty, added and "1 LINE CONNECTED" or "UNSELECTED")
+        elseif tpState.mapClickMode == "BREAK_POS" then
+            Pabrik.SetBreakPos(tx, ty)
+            infoLbl.Text = string.format("BreakPos diset -> (%d, %d)", tx, ty)
+        else
+            local ok, msg = Core.ValidateTile(tx, ty)
+            tpState.selectedX, tpState.selectedY = tx, ty
+            UI:SetValue("TpManualX", tostring(tx))
+            UI:SetValue("TpManualY", tostring(ty))
+            UI:SetValue("ValidStatusDisplay", msg)
+            infoLbl.Text = msg
+            infoLbl.TextColor3 = ok and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(239, 68, 68)
+        end
+        renderMap(true)
+    end
+
     local activeInput, moved, startScr, startPan, savedScroll = nil, false, nil, nil, nil
-    mapView.InputBegan:Connect(function(inp)
+    local function onMapDown(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
             activeInput, moved, startScr, startPan = inp, false, inp.Position, Vector2.new(mapPanX, mapPanY)
             scroller = scroller or rowContainer:FindFirstAncestorOfClass("ScrollingFrame")
@@ -4485,20 +5566,26 @@ buildMountedCanvasesFn = function()
                 scroller.ScrollingEnabled = false
             end
         end
-    end)
-    mapView.InputChanged:Connect(function(inp)
+    end
+    mapHitOverlay.InputBegan:Connect(onMapDown)
+    mapView.InputBegan:Connect(onMapDown)
+
+    local function onMapWheel(inp)
         if inp.UserInputType == Enum.UserInputType.MouseWheel then
             applyZoom(mapTilePx * (inp.Position.Z > 0 and 1.18 or (1 / 1.18)))
             renderMap(true)
         end
-    end)
+    end
+    mapHitOverlay.InputChanged:Connect(onMapWheel)
+    mapView.InputChanged:Connect(onMapWheel)
+
     UserInputService.InputChanged:Connect(function(inp)
         if not activeInput then return end
         local same = (activeInput.UserInputType == Enum.UserInputType.Touch and inp == activeInput)
             or (activeInput.UserInputType == Enum.UserInputType.MouseButton1 and inp.UserInputType == Enum.UserInputType.MouseMovement)
         if same and startScr and startPan then
             local d = inp.Position - startScr
-            if d.Magnitude > 6 then
+            if d.Magnitude > 14 then
                 moved = true
                 local s = getScale()
                 mapPanX, mapPanY = startPan.X + d.X / s, startPan.Y + d.Y / s
@@ -4509,47 +5596,12 @@ buildMountedCanvasesFn = function()
     UserInputService.InputEnded:Connect(function(inp)
         if not activeInput then return end
         if inp ~= activeInput and not (activeInput.UserInputType == Enum.UserInputType.MouseButton1 and inp.UserInputType == Enum.UserInputType.MouseButton1) then return end
-        local wasMoved, inpType = moved, inp.UserInputType
+        local wasMoved = moved
         activeInput = nil
         if scroller and savedScroll ~= nil then scroller.ScrollingEnabled = savedScroll; savedScroll = nil end
-        if not wasMoved and rowContainer.Visible and mapView.AbsoluteSize.X > 10 then
-            local cx, cy = inp.Position.X, inp.Position.Y
-            local sg = mapView:FindFirstAncestorOfClass("ScreenGui")
-            if sg and sg.IgnoreGuiInset then
-                if inpType == Enum.UserInputType.MouseButton1 then
-                    local okMl, ml = pcall(function() return UserInputService:GetMouseLocation() end)
-                    if okMl and ml then cx, cy = ml.X, ml.Y end
-                else
-                    local okIn, top = pcall(function() return GuiService:GetGuiInset() end)
-                    if okIn and top then cx += top.X; cy += top.Y end
-                end
-            end
-            local absPos, absSize = mapCanvas.AbsolutePosition, mapCanvas.AbsoluteSize
-            local maxW, maxH = (H.gt and H.gt.w) or 100, (H.gt and H.gt.h) or 60
-            local rx, ry = cx - absPos.X, cy - absPos.Y
-            if absSize.X <= 1 or absSize.Y <= 1 or rx < 0 or ry < 0 or rx >= absSize.X or ry >= absSize.Y then return end
-            local tx = clamp(math.floor((rx / absSize.X) * maxW), 0, maxW - 1)
-            local ty = clamp(math.floor((ry / absSize.Y) * maxH), 0, maxH - 1)
-
-            if tpState.mapClickMode == "PABRIK_TILE" then
-                local added = Pabrik.ToggleTile(tx, ty)
-                infoLbl.Text = string.format("Pabrik Tile (%d, %d): %s", tx, ty, added and "ON" or "OFF")
-            elseif tpState.mapClickMode == "PABRIK_LINE" then
-                local added = Pabrik.ToggleLine(ty)
-                infoLbl.Text = string.format("Pabrik Line Y=%d: %s", ty, added and "SELECTED" or "UNSELECTED")
-            elseif tpState.mapClickMode == "BREAK_POS" then
-                Pabrik.SetBreakPos(tx, ty)
-                infoLbl.Text = string.format("BreakPos diset -> (%d, %d)", tx, ty)
-            else
-                local ok, msg = Core.ValidateTile(tx, ty)
-                tpState.selectedX, tpState.selectedY = tx, ty
-                UI:SetValue("TpManualX", tostring(tx))
-                UI:SetValue("TpManualY", tostring(ty))
-                UI:SetValue("ValidStatusDisplay", msg)
-                infoLbl.Text = msg
-                infoLbl.TextColor3 = ok and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(239, 68, 68)
-            end
-            renderMap(true)
+        if not wasMoved and (not scroller or scroller.Visible) and rowContainer.Visible and mapView.AbsoluteSize.X > 10 then
+            local cx, cy = resolvePointerScreenPos(inp)
+            handleMapTap(cx, cy)
         end
     end)
 
@@ -4568,6 +5620,7 @@ end)
 
 -- B. MOUNT 2: VISUAL BACKPACK ITEM SELECTOR WITH REAL ITEM SPRITES (__BP_ITEM_ANCHOR_KEY__)
 mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
+    local scroller = rowContainer:FindFirstAncestorOfClass("ScrollingFrame")
     local topBar = Instance.new("Frame")
     topBar.Size = UDim2.new(1, -12, 0, 24)
     topBar.Position = UDim2.fromOffset(6, 5)
@@ -4579,13 +5632,13 @@ mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
     local rebuildBP
     for i, m in ipairs({ "BLOCK", "SEED", "ALL" }) do
         local b = Instance.new("TextButton")
-        b.Size = UDim2.new(0.28, -4, 1, 0)
-        b.Position = UDim2.new((i - 1) * 0.29, 0, 0, 0)
+        b.Size = UDim2.new(0.24, -3, 1, 0)
+        b.Position = UDim2.new((i - 1) * 0.25, 0, 0, 0)
         b.BorderSizePixel = 0
         b.Font = Enum.Font.GothamBold
         b.TextSize = 10
-        b.Text = m
         b.Parent = topBar
+        b.Text = m
         Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
         b.MouseButton1Click:Connect(function()
             filterMode = m
@@ -4593,6 +5646,17 @@ mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
         end)
         filterBtns[m] = b
     end
+
+    local bpCountLbl = Instance.new("TextLabel")
+    bpCountLbl.Size = UDim2.new(0.25, 0, 1, 0)
+    bpCountLbl.Position = UDim2.new(0.75, 0, 0, 0)
+    bpCountLbl.BackgroundTransparency = 1
+    bpCountLbl.Font = Enum.Font.Code
+    bpCountLbl.TextSize = 10
+    bpCountLbl.TextXAlignment = Enum.TextXAlignment.Right
+    bpCountLbl.TextColor3 = Color3.fromRGB(148, 163, 184)
+    bpCountLbl.Text = "0 item"
+    bpCountLbl.Parent = topBar
 
     local scroll = Instance.new("ScrollingFrame")
     scroll.Size = UDim2.new(1, -12, 1, -36)
@@ -4602,6 +5666,7 @@ mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
     scroll.ScrollBarThickness = 4
     scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.ZIndex = (rowContainer.ZIndex or 1) + 2
     scroll.Parent = rowContainer
     Instance.new("UIStroke", scroll).Color = Color3.fromRGB(45, 55, 72)
 
@@ -4622,15 +5687,18 @@ mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
             if ch:IsA("TextButton") then ch:Destroy() end
         end
         local items = PNB.GetBackpackBlocks(filterMode ~= "BLOCK")
+        local shownCount = 0
         for _, it in ipairs(items) do
             local show = (filterMode == "ALL") or (filterMode == "SEED" and it.kind == "seed") or (filterMode == "BLOCK" and it.kind ~= "seed")
             if show then
+                shownCount += 1
                 local isSel = (PNB.State.selectedBlockId == it.id) or (Pabrik.State.blockId == it.id) or (Pabrik.State.seedId == it.id)
                 local cell = Instance.new("TextButton")
                 cell.Text = ""
                 cell.AutoButtonColor = false
                 cell.BackgroundColor3 = isSel and Color3.fromRGB(22, 48, 68) or Color3.fromRGB(19, 24, 34)
                 cell.BorderSizePixel = 0
+                cell.ZIndex = (scroll.ZIndex or 3) + 1
                 cell.Parent = scroll
                 Instance.new("UICorner", cell).CornerRadius = UDim.new(0, 6)
                 local st = Instance.new("UIStroke", cell)
@@ -4642,6 +5710,7 @@ mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
                 iconHolder.AnchorPoint = Vector2.new(0.5, 0)
                 iconHolder.Position = UDim2.new(0.5, 0, 0, 6)
                 iconHolder.BackgroundTransparency = 1
+                iconHolder.ZIndex = cell.ZIndex + 1
                 iconHolder.Parent = cell
                 Core.AttachItemSprite(iconHolder, it.id, 34)
 
@@ -4654,6 +5723,7 @@ mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
                 cntLbl.TextXAlignment = Enum.TextXAlignment.Right
                 cntLbl.TextColor3 = Color3.fromRGB(250, 204, 21)
                 cntLbl.Text = "x" .. tostring(it.count)
+                cntLbl.ZIndex = cell.ZIndex + 4
                 cntLbl.Parent = cell
 
                 local nameLbl = Instance.new("TextLabel")
@@ -4666,6 +5736,7 @@ mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
                 nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
                 nameLbl.TextColor3 = Color3.fromRGB(226, 232, 240)
                 nameLbl.Text = string.format("%s [%d]", it.name, it.id)
+                nameLbl.ZIndex = cell.ZIndex + 4
                 nameLbl.Parent = cell
 
                 cell.MouseButton1Click:Connect(function()
@@ -4682,9 +5753,24 @@ mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
                 end)
             end
         end
+        bpCountLbl.Text = shownCount > 0 and (tostring(shownCount) .. " item") or "Kosong"
     end
     UIHooks.refreshBP = rebuildBP
+    if scroller then
+        scroller:GetPropertyChangedSignal("Visible"):Connect(function()
+            if scroller.Visible then rebuildBP() end
+        end)
+    end
     task.delay(0.4, rebuildBP)
+    task.delay(1.5, function()
+        local inv = Core.GetLiveInventory()
+        if inv and typeof(inv.changed) == "Instance" and inv.changed:IsA("BindableEvent") then
+            inv.changed.Event:Connect(function()
+                task.defer(rebuildBP)
+            end)
+        end
+        rebuildBP()
+    end)
 end)
 
 -- C. MOUNT 3: 5x5 CENTER-PLAYER TILE SELECTOR PAD (__PAD_5X5_ANCHOR_KEY__)
@@ -4870,11 +5956,11 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
     local gt = H.gt
     local curWorld = gt and cleanWorldName(gt.name) or ""
 
-    -- Sinkronkan perubahan world: reset semua fitur auto ke OFF + Lock Names re-apply
+    -- Sinkronkan perubahan world: reset semua fitur auto ke OFF + Lock Names re-apply (kecuali Rotation DF)
     if curWorld ~= Visual.State.lastWorldName then
         local prev = Visual.State.lastWorldName
         Visual.State.lastWorldName = curWorld
-        if prev ~= "" then
+        if prev ~= "" and not DirtFarm.State.switchingWorld then
             stopAllAutomationImpl("Pindah world -> Otomasi OFF")
         end
         if curWorld ~= "" then
@@ -4896,6 +5982,7 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
             if UI then UI:SetValue("LivePosDisplay", liveStr) end
             if Visual.State.tilesName then Visual.Apply() end
             if UIHooks.refreshPad5x5 then UIHooks.refreshPad5x5() end
+            if UIHooks.refreshMap then UIHooks.refreshMap(true) end
         end
         if UIHooks.sidebarNameLbl and UIHooks.sidebarNameLbl.Parent then
             UIHooks.sidebarNameLbl.Text = Core.GetInGameName(LP, true)
@@ -4909,7 +5996,7 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
     if (now - lastSlowTick) >= 1.5 then
         lastSlowTick = now
         if not H.gt or not H.ItemDB or not H.Net or not H.inv or not H.others then pcall(SYT_Logic.Init) end
-        if not buttonMap["[PNB]"] or not buttonMap["[PABRIK]"] or not buttonMap["[SPAM]"] or not buttonMap["[GAP TP]"] or not UIHooks.sidebarNameLbl then
+        if not buttonMap["[PNB]"] or not buttonMap["[PABRIK]"] or not buttonMap["[DF]"] or not buttonMap["[SPAM]"] or not buttonMap["[GAP TP]"] or not UIHooks.sidebarNameLbl then
             scanResponsiveButtons()
             UIHooks.updateButtons()
         end
@@ -4925,6 +6012,15 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
             for _, p in ipairs(plrs) do nms[#nms + 1] = p.gameName .. (p.isStaff and "[MOD]" or "") end
             UI:SetValue("LiveInGameAccount", string.format("%s | World: %s", Core.GetInGameName(LP, true), tostring(gt.name)))
             UI:SetValue("LiveWorldPlayers", #nms > 0 and table.concat(nms, ", ") or "-")
+
+            local fCands = Misc.GetFollowCandidates()
+            local fHash = table.concat(fCands, "|")
+            if fHash ~= Misc.State.lastFollowHash then
+                Misc.State.lastFollowHash = fHash
+                if UI._DropRefresh and UI._DropRefresh.MiscFollowTarget then
+                    UI._DropRefresh.MiscFollowTarget(fCands)
+                end
+            end
         end
         if Config.dirty and Config.State.autoSave then
             Config.Save(true)

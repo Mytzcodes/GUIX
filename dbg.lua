@@ -16,7 +16,7 @@ assert(httpRequest, "[SYPHUS DEBUGGER] Executor requires HTTP request capability
 local DebuggerState = {
     ServerEndpoint = "http://100.90.69.99:8080", -- Tailscale IPv4:8080 or https://your-node.ts.net
     IsRunning      = false,
-    DecompileMode  = false, -- false = FAST TRANSFER (Bytecode + Source), true = FULL DECOMPILE (Dedup + Guard)
+    ExportMode     = 1, -- 1 = FULL SOURCE (SMART), 2 = GAME ONLY (NO PLAYERMOD), 3 = FAST BYTECODE ONLY
     SessionID      = "NONE",
     TotalScripts   = 0,
     SentScripts    = 0,
@@ -189,10 +189,10 @@ ModeBtn.Size = UDim2.new(1, -20, 0, 28)
 ModeBtn.Position = UDim2.new(0, 10, 0, 150)
 ModeBtn.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
 ModeBtn.BorderSizePixel = 0
-ModeBtn.TextColor3 = Color3.fromRGB(56, 189, 248)
+ModeBtn.TextColor3 = Color3.fromRGB(52, 211, 153)
 ModeBtn.Font = Enum.Font.Code
 ModeBtn.TextSize = 12
-ModeBtn.Text = "MODE: FAST TRANSFER (BYTECODE + SRC)"
+ModeBtn.Text = "MODE: FULL SOURCE (SMART)"
 ModeBtn.AutoButtonColor = true
 ModeBtn.ZIndex = 2
 local ModeCorner = Instance.new("UICorner")
@@ -335,12 +335,31 @@ local function isClientRunnableScript(inst)
     return false
 end
 
-local function gatherAllMapScripts()
+local hasBytecodeFn = (type(getscriptbytecode) == "function")
+
+local function isRobloxBuiltinScript(inst)
+    local ok, full = pcall(function() return inst:GetFullName() end)
+    if not ok or type(full) ~= "string" then
+        return false
+    end
+    if full:find("PlayerScripts%.PlayerModule", 1)
+        or full:find("PlayerScripts%.RbxCharacterSounds", 1)
+        or full:find("PlayerScripts%.ChatScript", 1)
+        or full:find("PlayerScripts%.BubbleChat", 1)
+        or full:find("^CoreGui%.")
+        or full:find("^CorePackages%.")
+    then
+        return true
+    end
+    return false
+end
+
+local function gatherAllMapScripts(skipBuiltins)
     local list = {}
     local seen = {}
 
     for _, inst in ipairs(game:GetDescendants()) do
-        if isClientRunnableScript(inst) then
+        if isClientRunnableScript(inst) and (not skipBuiltins or not isRobloxBuiltinScript(inst)) then
             seen[inst] = true
             table.insert(list, inst)
         end
@@ -350,7 +369,7 @@ local function gatherAllMapScripts()
     if type(getnilinstances) == "function" then
         pcall(function()
             for _, inst in ipairs(getnilinstances()) do
-                if isClientRunnableScript(inst) and not seen[inst] then
+                if isClientRunnableScript(inst) and not seen[inst] and (not skipBuiltins or not isRobloxBuiltinScript(inst)) then
                     seen[inst] = true
                     table.insert(list, inst)
                 end
@@ -375,7 +394,7 @@ local function extractScriptData(scr, decompCache, allowDecompile)
     end)
 
     -- 2. Grab raw bytecode (instant C-side call)
-    if type(getscriptbytecode) == "function" then
+    if hasBytecodeFn then
         pcall(function()
             local bc = getscriptbytecode(scr)
             if bc and #bc > 0 then
@@ -385,9 +404,11 @@ local function extractScriptData(scr, decompCache, allowDecompile)
         end)
     end
 
-    -- 3. Optional decompile() ONLY in FULL DECOMPILE mode, with dedup cache & crash size guard
+    -- 3. Smart decompile: skip if empty bytecode, reuse cached bytecode, guard >256KB
     if allowDecompile and rawSrc == "" and type(decompile) == "function" then
-        if bcRaw ~= "" and decompCache[bcRaw] ~= nil then
+        if hasBytecodeFn and bcRaw == "" then
+            rawSrc = ""
+        elseif bcRaw ~= "" and decompCache[bcRaw] ~= nil then
             rawSrc = decompCache[bcRaw]
         elseif #bcRaw <= MAX_DECOMP_BYTES then
             pcall(function()
@@ -523,7 +544,9 @@ local function startExportPipeline()
         ProgressFill.Size = UDim2.new(0, 0, 1, 0)
         ProgressText.Text = "Progress: 0 / 0 (0%)"
 
-        local scripts = gatherAllMapScripts()
+        local skipBuiltins = (DebuggerState.ExportMode == 2)
+        local allowDecompile = (DebuggerState.ExportMode ~= 3)
+        local scripts = gatherAllMapScripts(skipBuiltins)
         DebuggerState.TotalScripts = #scripts
         DebuggerState.SentScripts = 0
         DebuggerState.FailedScripts = 0
@@ -566,7 +589,7 @@ local function startExportPipeline()
         local producerDone = false
         local activeWorkers = 0
         local decompCache = {}
-        local allowDecompile = DebuggerState.DecompileMode
+        local lastStatusAt = os.clock()
 
         for w = 1, MAX_WORKERS do
             activeWorkers += 1
@@ -622,6 +645,17 @@ local function startExportPipeline()
                 src = "-- [[ EMPTY OR PROTECTED SCRIPT: " .. sPath .. " ]]"
             end
 
+            if os.clock() - lastStatusAt >= 0.25 then
+                StatusLabel.Text = string.format(
+                    "Extract %d/%d | Uploaded %d/%d",
+                    idx,
+                    DebuggerState.TotalScripts,
+                    DebuggerState.SentScripts,
+                    DebuggerState.TotalScripts
+                )
+                lastStatusAt = os.clock()
+            end
+
             local item = {
                 session_id   = DebuggerState.SessionID,
                 place_id     = game.PlaceId,
@@ -675,12 +709,15 @@ end
 
 ModeBtn.MouseButton1Click:Connect(function()
     if DebuggerState.IsRunning then return end
-    DebuggerState.DecompileMode = not DebuggerState.DecompileMode
-    if DebuggerState.DecompileMode then
-        ModeBtn.Text = "MODE: FULL DECOMPILE (DEDUP + GUARD)"
+    DebuggerState.ExportMode = (DebuggerState.ExportMode % 3) + 1
+    if DebuggerState.ExportMode == 1 then
+        ModeBtn.Text = "MODE: FULL SOURCE (SMART)"
+        ModeBtn.TextColor3 = Color3.fromRGB(52, 211, 153)
+    elseif DebuggerState.ExportMode == 2 then
+        ModeBtn.Text = "MODE: GAME ONLY (NO PLAYERMOD)"
         ModeBtn.TextColor3 = Color3.fromRGB(251, 191, 36)
     else
-        ModeBtn.Text = "MODE: FAST TRANSFER (BYTECODE + SRC)"
+        ModeBtn.Text = "MODE: FAST BYTECODE ONLY"
         ModeBtn.TextColor3 = Color3.fromRGB(56, 189, 248)
     end
 end)

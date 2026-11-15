@@ -120,24 +120,94 @@ local function patchR8FrameworkSource(raw)
         'MainWindow%.Parent = ScreenGui',
         'Self.MainWindow = MainWindow\n    MainWindow.Parent = ScreenGui'
     )
+    -- V3 Layout Fix: Perkecil header sidebar agar seluruh 8 fitur muncul langsung & CanvasSize sinkron otomatis di PC/Mobile
+    patched = string.gsub(
+        patched,
+        'LogoHolder%.Size = UDim2%.new%(1, 0, 0, 138%)',
+        'LogoHolder.Size = UDim2.new(1, 0, 0, 94)'
+    )
+    patched = string.gsub(
+        patched,
+        'BrandLogo%.Size = UDim2%.fromOffset%(58, 58%)%s*\n(%s*)BrandLogo%.Position = UDim2%.new%(0%.5, 0, 0, 36%)',
+        'BrandLogo.Size = UDim2.fromOffset(38, 38)\n%1BrandLogo.Position = UDim2.new(0.5, 0, 0, 23)'
+    )
+    patched = string.gsub(
+        patched,
+        'fallbackCrest%.Position = UDim2%.new%(0%.5, 0, 0, 36%)',
+        'fallbackCrest.Position = UDim2.new(0.5, 0, 0, 23)'
+    )
+    patched = string.gsub(
+        patched,
+        'BrandMainTitle%.Size = UDim2%.new%(1, %-20, 0, 28%)%s*\n(%s*)BrandMainTitle%.Position = UDim2%.new%(0, 10, 0, 72%)%s*\n(%s*)BrandMainTitle%.BackgroundTransparency = 1%s*\n(%s*)BrandMainTitle%.Font = Enum%.Font%.GothamBlack%s*\n(%s*)BrandMainTitle%.TextSize = 22',
+        'BrandMainTitle.Size = UDim2.new(1, -20, 0, 22)\n%1BrandMainTitle.Position = UDim2.new(0, 10, 0, 46)\n%2BrandMainTitle.BackgroundTransparency = 1\n%3BrandMainTitle.Font = Enum.Font.GothamBlack\n%4BrandMainTitle.TextSize = 18'
+    )
+    patched = string.gsub(
+        patched,
+        'BrandSubLbl%.Size = UDim2%.new%(1, %-20, 0, 18%)%s*\n(%s*)BrandSubLbl%.Position = UDim2%.new%(0, 10, 0, 102%)%s*\n(%s*)BrandSubLbl%.BackgroundTransparency = 1%s*\n(%s*)BrandSubLbl%.Font = Enum%.Font%.GothamBold%s*\n(%s*)BrandSubLbl%.TextSize = 13',
+        'BrandSubLbl.Size = UDim2.new(1, -20, 0, 16)\n%1BrandSubLbl.Position = UDim2.new(0, 10, 0, 69)\n%2BrandSubLbl.BackgroundTransparency = 1\n%3BrandSubLbl.Font = Enum.Font.GothamBold\n%4BrandSubLbl.TextSize = 11'
+    )
+    patched = string.gsub(
+        patched,
+        'NavDivider%.Position = UDim2%.new%(0, 12, 0, 130%)',
+        'NavDivider.Position = UDim2.new(0, 12, 0, 90)'
+    )
+    patched = string.gsub(
+        patched,
+        'local NavScroll = Instance%.new%("ScrollingFrame"%)%s*\n%s*NavScroll%.Position = UDim2%.new%(0, 12, 0, 138%)%s*\n%s*NavScroll%.Size = UDim2%.new%(1, %-24, 1, %-216%)%s*\n%s*NavScroll%.BackgroundTransparency = 1%s*\n%s*NavScroll%.BorderSizePixel = 0%s*\n%s*NavScroll%.ScrollBarThickness = 2%s*\n%s*NavScroll%.AutomaticCanvasSize = Enum%.AutomaticSize%.Y%s*\n%s*NavScroll%.CanvasSize = UDim2%.new%(0, 0, 0, 0%)%s*\n%s*NavScroll%.Parent = LeftSidebar%s*\n%s*BindTheme%(NavScroll, "ScrollBarImageColor3", "Accent"%)%s*\n%s*local NavPad = Instance%.new%("UIPadding"%)%s*\n%s*NavPad%.PaddingTop = UDim%.new%(0, 4%)%s*\n%s*NavPad%.PaddingLeft = UDim%.new%(0, 2%)%s*\n%s*NavPad%.PaddingRight = UDim%.new%(0, 4%)%s*\n%s*NavPad%.PaddingBottom = UDim%.new%(0, 12%)%s*\n%s*NavPad%.Parent = NavScroll%s*\n%s*local NavLayout = Instance%.new%("UIListLayout"%)%s*\n%s*NavLayout%.Padding = UDim%.new%(0, 8%)%s*\n%s*NavLayout%.SortOrder = Enum%.SortOrder%.LayoutOrder%s*\n%s*NavLayout%.Parent = NavScroll',
+        'local NavScroll = Instance.new("ScrollingFrame")\n    NavScroll.Position = UDim2.new(0, 12, 0, 96)\n    NavScroll.Size = UDim2.new(1, -24, 1, -172)\n    NavScroll.BackgroundTransparency = 1\n    NavScroll.BorderSizePixel = 0\n    NavScroll.ClipsDescendants = true\n    NavScroll.ScrollingEnabled = true\n    NavScroll.ScrollingDirection = Enum.ScrollingDirection.Y\n    NavScroll.ScrollBarThickness = 4\n    NavScroll.AutomaticCanvasSize = Enum.AutomaticSize.None\n    NavScroll.CanvasSize = UDim2.new(0, 0, 0, 340)\n    NavScroll.Parent = LeftSidebar\n    BindTheme(NavScroll, "ScrollBarImageColor3", "Accent")\n    local NavPad = Instance.new("UIPadding")\n    NavPad.PaddingTop = UDim.new(0, 2)\n    NavPad.PaddingLeft = UDim.new(0, 2)\n    NavPad.PaddingRight = UDim.new(0, 4)\n    NavPad.PaddingBottom = UDim.new(0, 8)\n    NavPad.Parent = NavScroll\n    local NavLayout = Instance.new("UIListLayout")\n    NavLayout.Padding = UDim.new(0, 4)\n    NavLayout.SortOrder = Enum.SortOrder.LayoutOrder\n    NavLayout.Parent = NavScroll\n    local function SyncNavCanvas()\n        local sc = (WindowScale and WindowScale.Scale > 0.1) and WindowScale.Scale or 1\n        local estH = 10\n        local cnt = 0\n        for _, ch in ipairs(NavScroll:GetChildren()) do\n            if ch:IsA("GuiObject") then\n                estH = estH + ch.Size.Y.Offset\n                cnt = cnt + 1\n            end\n        end\n        if cnt > 1 then estH = estH + (cnt - 1) * 4 end\n        local absH = math.ceil(NavLayout.AbsoluteContentSize.Y / sc) + 12\n        NavScroll.CanvasSize = UDim2.fromOffset(0, math.max(estH, absH))\n    end\n    Self.LeftSidebar = LeftSidebar\n    Self.NavScroll = NavScroll\n    Self.SyncNavCanvas = SyncNavCanvas\n    TrackConn(NavLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(SyncNavCanvas))\n    TrackConn(NavScroll.ChildAdded:Connect(function() task.defer(SyncNavCanvas) end))\n    TrackConn(WindowScale:GetPropertyChangedSignal("Scale"):Connect(function() task.defer(SyncNavCanvas) end))'
+    )
+    patched = string.gsub(
+        patched,
+        'local function CreateScrollPage%(parent%)%s*\n%s*local Page = Instance%.new%("ScrollingFrame"%)%s*\n%s*Page%.Size = UDim2%.fromScale%(1, 1%)%s*\n%s*Page%.BackgroundTransparency = 1%s*\n%s*Page%.BorderSizePixel = 0%s*\n%s*Page%.ScrollBarThickness = 3%s*\n%s*Page%.AutomaticCanvasSize = Enum%.AutomaticSize%.Y%s*\n%s*Page%.CanvasSize = UDim2%.new%(0, 0, 0, 0%)%s*\n%s*Page%.Visible = false%s*\n%s*Page%.Parent = parent%s*\n%s*BindTheme%(Page, "ScrollBarImageColor3", "Accent"%)%s*\n%s*local Pad = Instance%.new%("UIPadding"%)%s*\n%s*Pad%.PaddingTop = UDim%.new%(0, 16%)%s*\n%s*Pad%.PaddingBottom = UDim%.new%(0, 26%)%s*\n%s*Pad%.PaddingLeft = UDim%.new%(0, 16%)%s*\n%s*Pad%.PaddingRight = UDim%.new%(0, 20%)%s*\n%s*Pad%.Parent = Page%s*\n%s*local Layout = Instance%.new%("UIListLayout"%)%s*\n%s*Layout%.Padding = UDim%.new%(0, 14%)%s*\n%s*Layout%.SortOrder = Enum%.SortOrder%.LayoutOrder%s*\n%s*Layout%.Parent = Page%s*\n%s*return Page',
+        'local function CreateScrollPage(parent)\n        local Page = Instance.new("ScrollingFrame")\n        Page.Size = UDim2.fromScale(1, 1)\n        Page.BackgroundTransparency = 1\n        Page.BorderSizePixel = 0\n        Page.ClipsDescendants = true\n        Page.ScrollingEnabled = true\n        Page.ScrollingDirection = Enum.ScrollingDirection.Y\n        Page.ScrollBarThickness = 4\n        Page.AutomaticCanvasSize = Enum.AutomaticSize.None\n        Page.CanvasSize = UDim2.new(0, 0, 0, 0)\n        Page.Visible = false\n        Page.Parent = parent\n        BindTheme(Page, "ScrollBarImageColor3", "Accent")\n        local Pad = Instance.new("UIPadding")\n        Pad.PaddingTop = UDim.new(0, 16)\n        Pad.PaddingBottom = UDim.new(0, 26)\n        Pad.PaddingLeft = UDim.new(0, 16)\n        Pad.PaddingRight = UDim.new(0, 20)\n        Pad.Parent = Page\n        local Layout = Instance.new("UIListLayout")\n        Layout.Padding = UDim.new(0, 14)\n        Layout.SortOrder = Enum.SortOrder.LayoutOrder\n        Layout.Parent = Page\n        local function SyncPageCanvas()\n            local sc = (WindowScale and WindowScale.Scale > 0.1) and WindowScale.Scale or 1\n            local absH = math.ceil(Layout.AbsoluteContentSize.Y / sc)\n            Page.CanvasSize = UDim2.fromOffset(0, math.max(0, absH + 46))\n        end\n        TrackConn(Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(SyncPageCanvas))\n        TrackConn(Page.ChildAdded:Connect(function() task.defer(SyncPageCanvas) end))\n        TrackConn(Page:GetPropertyChangedSignal("Visible"):Connect(function()\n            if Page.Visible then task.defer(SyncPageCanvas) end\n        end))\n        TrackConn(WindowScale:GetPropertyChangedSignal("Scale"):Connect(function() task.defer(SyncPageCanvas) end))\n        return Page'
+    )
+    patched = string.gsub(
+        patched,
+        'function Self:Category%(catLabel%)%s*\n(%s*)local Lbl = Instance%.new%("TextLabel"%)%s*\n(%s*)Lbl%.Size = UDim2%.new%(1, %-12, 0, 28%)%s*\n(%s*)Lbl%.BackgroundTransparency = 1%s*\n(%s*)Lbl%.Font = Enum%.Font%.GothamBlack%s*\n(%s*)Lbl%.TextSize = 13',
+        'function Self:Category(catLabel)\n%1local Lbl = Instance.new("TextLabel")\n%2Lbl.Size = UDim2.new(1, -12, 0, 20)\n%3Lbl.BackgroundTransparency = 1\n%4Lbl.Font = Enum.Font.GothamBlack\n%5Lbl.TextSize = 11'
+    )
+    patched = string.gsub(
+        patched,
+        'local NavBtn = Instance%.new%("TextButton"%)%s*\n(%s*)NavBtn%.Size = UDim2%.new%(1, 0, 0, 48%)',
+        'local NavBtn = Instance.new("TextButton")\n%1NavBtn.Size = UDim2.new(1, 0, 0, 29)'
+    )
+    patched = string.gsub(
+        patched,
+        'NameLbl%.Font = Enum%.Font%.GothamBold%s*\n(%s*)NameLbl%.Text = name%s*\n(%s*)NameLbl%.TextSize = 17',
+        'NameLbl.Font = Enum.Font.GothamBold\n%1NameLbl.Text = name\n%2NameLbl.TextSize = 14'
+    )
+    patched = string.gsub(
+        patched,
+        'table%.insert%(Self%.Features, FeatureObj%)',
+        'table.insert(Self.Features, FeatureObj)\n        if type(Self.SyncNavCanvas) == "function" then Self.SyncNavCanvas() end'
+    )
+    patched = string.gsub(
+        patched,
+        'SyncRightPanelVisibility%(%)%s*\n(%s*)end%s*\n(%s*)return FeatureObj',
+        'SyncRightPanelVisibility()\n%1    if type(Self.SyncNavCanvas) == "function" then task.defer(Self.SyncNavCanvas) end\n%1end\n%2return FeatureObj'
+    )
     return patched
 end
 
 local function loadR8Framework(forceReload)
     local env = (type(getgenv) == "function" and select(2, pcall(getgenv))) or _G
+    if type(env) == "table" then
+        env.__SYT_R8_LOADER_V2 = nil
+        env.__SYT_R8_SOURCE_V2 = nil
+    end
     if not forceReload and type(cachedR8Loader) == "function" then
         return cachedR8Loader()
     end
     if not forceReload and type(env) == "table" then
-        if type(env.__SYT_R8_LOADER_V2) == "function" then
-            cachedR8Loader = env.__SYT_R8_LOADER_V2
-            if type(env.__SYT_R8_SOURCE_V2) == "string" then
-                cachedR8Source = env.__SYT_R8_SOURCE_V2
+        if type(env.__SYT_R8_LOADER_V3) == "function" then
+            cachedR8Loader = env.__SYT_R8_LOADER_V3
+            if type(env.__SYT_R8_SOURCE_V3) == "string" then
+                cachedR8Source = env.__SYT_R8_SOURCE_V3
             end
             return cachedR8Loader()
         end
-        if type(env.__SYT_R8_SOURCE_V2) == "string" and #env.__SYT_R8_SOURCE_V2 > 128 then
-            cachedR8Source = env.__SYT_R8_SOURCE_V2
+        if type(env.__SYT_R8_SOURCE_V3) == "string" and #env.__SYT_R8_SOURCE_V3 > 128 then
+            cachedR8Source = env.__SYT_R8_SOURCE_V3
         end
     end
     if not cachedR8Source or forceReload then
@@ -156,14 +226,14 @@ local function loadR8Framework(forceReload)
         assert(okFetch and type(rawScript) == "string" and #rawScript > 128, "[SYT] Gagal mengunduh r&8_dv.lua: " .. tostring(fetchErr or "timeout/kosong"))
         cachedR8Source = patchR8FrameworkSource(rawScript)
         if type(env) == "table" then
-            env.__SYT_R8_SOURCE_V2 = cachedR8Source
+            env.__SYT_R8_SOURCE_V3 = cachedR8Source
         end
     end
     local loader, loadErr = loadstring(cachedR8Source)
     assert(type(loader) == "function", "[SYT] Compile error r&8_dv: " .. tostring(loadErr))
     cachedR8Loader = loader
     if type(env) == "table" then
-        env.__SYT_R8_LOADER_V2 = loader
+        env.__SYT_R8_LOADER_V3 = loader
     end
     return cachedR8Loader()
 end
@@ -265,8 +335,8 @@ local function safeInitSYTWindow(theme, scale, startHidden)
         cachedR8Source = nil
         local env = (type(getgenv) == "function" and select(2, pcall(getgenv))) or _G
         if type(env) == "table" then
-            env.__SYT_R8_LOADER_V2 = nil
-            env.__SYT_R8_SOURCE_V2 = nil
+            env.__SYT_R8_LOADER_V3 = nil
+            env.__SYT_R8_SOURCE_V3 = nil
         end
         task.wait(0.1)
     end
@@ -303,6 +373,7 @@ local MY_SCRIPT_TOKEN = ((getEnv().__SYT_SCRIPT_TOKEN or 0) + 1)
 getEnv().__SYT_SCRIPT_TOKEN = MY_SCRIPT_TOKEN
 do
     local env = getEnv()
+    pcall(function() game:GetService("RunService"):UnbindFromRenderStep("SYT_FlyStep") end)
     for _, k in ipairs({ "__SYT_WATCHER_CONN", "__SYT_FLY_CONN", "__SYT_ROULETTE_CONN" }) do
         if env[k] then
             pcall(function() env[k]:Disconnect() end)
@@ -991,7 +1062,7 @@ function Core.ShouldBlockMoveTo(gx, gy)
         if (nearSpawnTarget and playerFarFromSpawn) or jumpDist > 1.8 or flyOn or godOn then
             H.blockedMoveToCount = (H.blockedMoveToCount or 0) + 1
             H.lastBlockedMoveToAt = os.clock()
-            if Core.GetStopOrNoSendMode() == "stop" then
+            if not flyOn and Core.GetStopOrNoSendMode() == "stop" then
                 H.stopMoveUntil = math.max(H.stopMoveUntil or 0, os.clock() + 0.35)
                 H.autoMove = nil
             end
@@ -1009,26 +1080,6 @@ end
 
 function Core.InstallAntiBackGuard()
     local gt, net = H.gt, H.Net
-    -- Layer 1: Guard gt.goTo agar server MoveTo / rollback tidak menarik posisi mundur ke BasePath/Spawn
-    if gt and type(rawget(gt, "goTo")) == "function" and H.goToGuardedFor ~= gt then
-        local origGoTo = gt.goTo
-        H.origGtGoTo = origGoTo
-        H.goToGuardedFor = gt
-        gt.goTo = function(gx, gy, ...)
-            if Core.ShouldBlockMoveTo(tonumber(gx), tonumber(gy)) then
-                local cur = Core.ReadPos()
-                Core.SetLocalCoords(cur.x, cur.y, 0, 0)
-                H.antiBackAnchor = { x = cur.x, y = cur.y, t = os.clock() }
-                return nil
-            end
-            if type(gx) == "number" and type(gy) == "number" then
-                H.lastSentMove = { x = gx, y = gy, vx = 0, vy = 0, flags = 2, t = os.clock() }
-                H.antiBackAnchor = { x = gx, y = gy, t = os.clock() }
-            end
-            return origGoTo(gx, gy, ...)
-        end
-    end
-
     local dmgEvents = { ForceDie = true, Died = true, Knocked = true, Burned = true, Impulse = true, Hurt = true }
     local function wrapGuardFn(evKey, origFn)
         if type(origFn) ~= "function" then return origFn end
@@ -1037,8 +1088,12 @@ function Core.InstallAntiBackGuard()
         local isDmg = dmgEvents[evKey] == true
         local wrapper = function(a1, a2, ...)
             local ms = SYT_Logic.Misc and SYT_Logic.Misc.State
-            if isMove and Core.ShouldBlockMoveTo(tonumber(a1) or (type(a1) == "table" and tonumber(a1.x)), tonumber(a2) or (type(a1) == "table" and tonumber(a1.y))) then
-                return nil
+            if isMove then
+                local mx = tonumber(a1) or (type(a1) == "table" and tonumber(a1.x or a1.X or a1[1]))
+                local my = tonumber(a2) or (type(a1) == "table" and tonumber(a1.y or a1.Y or a1[2]))
+                if Core.ShouldBlockMoveTo(mx, my) then
+                    return nil
+                end
             end
             if isDmg and ms and (ms.godMode == true or (Core.IsAntiBackActive() and (evKey == "Knocked" or evKey == "Impulse"))) then
                 return nil
@@ -1050,24 +1105,50 @@ function Core.InstallAntiBackGuard()
         return wrapper
     end
 
-    -- Layer 2: Guard WorldRemotes OnClientEvent via getconnections (aman untuk executor mobile/PC)
-    local wr = ReplicatedStorage:FindFirstChild("WorldRemotes")
-    if wr and type(getconnections) == "function" then
-        for evKey, _ in pairs({ MoveTo = true, ForceDie = true, Died = true, Knocked = true, Burned = true, Impulse = true, Hurt = true }) do
-            local re = wr:FindFirstChild(evKey)
-            if re and re:IsA("RemoteEvent") then
-                local okC, conns = pcall(getconnections, re.OnClientEvent)
-                if okC and type(conns) == "table" then
-                    for _, c in ipairs(conns) do
-                        local fn = type(c) == "table" and (c.Function or c["function"]) or nil
-                        if type(fn) == "function" and not H.antiBackWrappedConns[fn] then
-                            local wrapped = wrapGuardFn(evKey, fn)
-                            if type(c.Disable) == "function" then
-                                local okDis = pcall(function() c:Disable() end)
-                                if okDis then
-                                    re.OnClientEvent:Connect(wrapped)
-                                end
-                            end
+    -- Layer 1: Guard gt.goTo & gt.on agar server MoveTo / listener world baru tidak menarik posisi ke BasePath/Spawn
+    if gt and H.goToGuardedFor ~= gt then
+        H.goToGuardedFor = gt
+        if type(rawget(gt, "goTo")) == "function" then
+            local origGoTo = gt.goTo
+            H.origGtGoTo = origGoTo
+            gt.goTo = function(gx, gy, ...)
+                if Core.ShouldBlockMoveTo(tonumber(gx), tonumber(gy)) then
+                    local cur = Core.ReadPos()
+                    Core.SetLocalCoords(cur.x, cur.y, 0, 0)
+                    H.antiBackAnchor = { x = cur.x, y = cur.y, t = os.clock() }
+                    return nil
+                end
+                if type(gx) == "number" and type(gy) == "number" then
+                    H.lastSentMove = { x = gx, y = gy, vx = 0, vy = 0, flags = 2, t = os.clock() }
+                    H.antiBackAnchor = { x = gx, y = gy, t = os.clock() }
+                end
+                return origGoTo(gx, gy, ...)
+            end
+        end
+        if type(rawget(gt, "on")) == "function" then
+            local origGtOn = gt.on
+            H.origGtOn = origGtOn
+            gt.on = function(evName, cb, ...)
+                if type(cb) == "function" and (evName == "MoveTo" or dmgEvents[evName]) then
+                    cb = wrapGuardFn(evName, cb)
+                end
+                return origGtOn(evName, cb, ...)
+            end
+        end
+    end
+
+    local function hookRemoteEventConn(evKey, re)
+        if not re or not re:IsA("RemoteEvent") or type(getconnections) ~= "function" then return end
+        local okC, conns = pcall(getconnections, re.OnClientEvent)
+        if okC and type(conns) == "table" then
+            for _, c in ipairs(conns) do
+                local fn = type(c) == "table" and (c.Function or c["function"]) or nil
+                if type(fn) == "function" and not H.antiBackWrappedConns[fn] then
+                    local wrapped = wrapGuardFn(evKey, fn)
+                    if type(c.Disable) == "function" then
+                        local okDis = pcall(function() c:Disable() end)
+                        if okDis then
+                            re.OnClientEvent:Connect(wrapped)
                         end
                     end
                 end
@@ -1075,25 +1156,78 @@ function Core.InstallAntiBackGuard()
         end
     end
 
-    -- Layer 3: Guard ByteNet packet listener upvalues pada H.Net (moveTo, forceDie, knocked, burned, impulse, hurt, died)
+    -- Layer 2: Guard WorldRemotes OnClientEvent via getconnections + hook ChildAdded jika rejoin world
+    local targetEvSet = { MoveTo = true, ForceDie = true, Died = true, Knocked = true, Burned = true, Impulse = true, Hurt = true }
+    local wr = ReplicatedStorage:FindFirstChild("WorldRemotes")
+    if wr then
+        for evKey, _ in pairs(targetEvSet) do
+            hookRemoteEventConn(evKey, wr:FindFirstChild(evKey))
+        end
+        if H.wrChildHookedFor ~= wr then
+            H.wrChildHookedFor = wr
+            wr.ChildAdded:Connect(function(ch)
+                if targetEvSet[ch.Name] then
+                    task.defer(function()
+                        hookRemoteEventConn(ch.Name, ch)
+                    end)
+                end
+            end)
+        end
+    end
+
+    -- Layer 3: Guard ByteNet getListeners() + listen() + net.on() + upvalue tables pada H.Net
     if type(net) == "table" then
+        if type(rawget(net, "on")) == "function" and H.netOnGuardedFor ~= net then
+            local origNetOn = net.on
+            H.netOnGuardedFor = net
+            H.origNetOn = origNetOn
+            net.on = function(evName, cb, ...)
+                if type(cb) == "function" and (evName == "MoveTo" or dmgEvents[evName]) then
+                    cb = wrapGuardFn(evName, cb)
+                end
+                return origNetOn(evName, cb, ...)
+            end
+        end
         local netMap = {
             moveTo = "MoveTo", moveto = "MoveTo",
             forceDie = "ForceDie", forcedie = "ForceDie",
             knocked = "Knocked", burned = "Burned", impulse = "Impulse", hurt = "Hurt", died = "Died",
         }
+        H.wrappedPktListen = H.wrappedPktListen or {}
         for pktName, evKey in pairs(netMap) do
             local pktObj = rawget(net, pktName)
-            if type(pktObj) == "table" and type(pktObj.listen) == "function" then
-                local uvs = guvs(pktObj.listen)
-                if type(uvs) == "table" then
-                    for _, uval in pairs(uvs) do
-                        if type(uval) == "table" and #uval > 0 then
-                            for idx, lfn in ipairs(uval) do
-                                if type(lfn) == "function" and not H.antiBackWrappedConns[lfn] then
-                                    uval[idx] = wrapGuardFn(evKey, lfn)
+            if type(pktObj) == "table" then
+                if type(pktObj.getListeners) == "function" then
+                    local okL, listeners = pcall(pktObj.getListeners)
+                    if okL and type(listeners) == "table" then
+                        for idx, lfn in ipairs(listeners) do
+                            if type(lfn) == "function" and not H.antiBackWrappedConns[lfn] then
+                                listeners[idx] = wrapGuardFn(evKey, lfn)
+                            end
+                        end
+                    end
+                end
+                if type(pktObj.listen) == "function" then
+                    local uvs = guvs(pktObj.listen)
+                    if type(uvs) == "table" then
+                        for _, uval in pairs(uvs) do
+                            if type(uval) == "table" and #uval > 0 then
+                                for idx, lfn in ipairs(uval) do
+                                    if type(lfn) == "function" and not H.antiBackWrappedConns[lfn] then
+                                        uval[idx] = wrapGuardFn(evKey, lfn)
+                                    end
                                 end
                             end
+                        end
+                    end
+                    if not H.wrappedPktListen[pktObj] then
+                        local origListen = pktObj.listen
+                        H.wrappedPktListen[pktObj] = true
+                        pktObj.listen = function(cb, ...)
+                            if type(cb) == "function" then
+                                cb = wrapGuardFn(evKey, cb)
+                            end
+                            return origListen(cb, ...)
                         end
                     end
                 end
@@ -1142,32 +1276,34 @@ function Core.SanitizeOutboundMove(pkt, fromBot, forceBypass)
         return { x = am.x, y = am.y, vx = am.vx or 0, vy = am.vy or 0, flags = am.flags or 2, t = ts }
     end
 
-    -- Bila mode Stop aktif karena rollback baru saja terdeteksi, tahan paket liar hingga aman kembali
-    if stopNoSend == "stop" and now < (H.stopMoveUntil or 0) and not forceBypass then
+    -- Bila mode Stop aktif karena rollback baru saja terdeteksi (di luar Fly aktif), tahan paket liar hingga aman kembali
+    local flyActive = (ms and ms.fly == true)
+    if not flyActive and stopNoSend == "stop" and now < (H.stopMoveUntil or 0) and not forceBypass then
         H.lastActionBlockedAt = now
         H.lastActionBlockedReason = "stop_move_guard"
         return nil, "stop_move_guard"
     end
 
     -- Ketika SteppedAnchor Fly memegang kontrol terbang, tahan broadcast Others.lua yang mengirim vy/ungrounded liar
-    if ms and ms.fly and ms.flyMethod ~= "GhostHybrid" and not fromBot and not forceBypass then
+    if flyActive and ms.flyMethod ~= "GhostHybrid" and not fromBot and not forceBypass then
         return nil, "fly_anchor_owns_move"
     end
 
-    if ms and ms.fly and ms.flyAntiBasePath ~= false and not forceBypass then
-        vx = (ms.flyMethod ~= "GhostHybrid") and 0 or clamp(vx, -7.2, 7.2)
-        vy = (ms.flyMethod ~= "GhostHybrid") and 0 or clamp(vy, -19.8, 19.8)
+    if flyActive and ms.flyAntiBasePath ~= false and not forceBypass then
+        vx = clamp(vx, -18.0, 18.0)
+        vy = clamp(vy, -22.0, 24.0)
         local facingBit = (math.floor(flags) % 2 == 1) and 1 or 0
-        flags = facingBit + 2
+        local groundedBit = (ms.flyMethod ~= "GhostHybrid") and ((math.floor(flags) % 4 >= 2) and 2 or 0) or ((math.abs(vy) < 0.08) and 2 or ((math.floor(flags) % 4 >= 2) and 2 or 0))
+        flags = facingBit + groundedBit
     end
 
-    -- Validasi step delta terhadap paket Move terakhir agar tidak memicu server BasePath rollback (> 3.6 tile hop)
+    -- Validasi step delta terhadap paket Move terakhir agar tidak memicu server BasePath rollback
     local prev = H.lastSentMove
     if antiBack and not forceBypass and prev and (now - (prev.t or 0)) < 3.0 then
         local dx = px - prev.x
         local dy = py - prev.y
         local absDx, absDy = math.abs(dx), math.abs(dy)
-        if not fromBot and (absDx > 6.5 or absDy > 6.5) then
+        if not flyActive and not fromBot and (absDx > 6.5 or absDy > 6.5) then
             if stopNoSend == "stop" then
                 H.stopMoveUntil = now + 0.30
             end
@@ -1175,14 +1311,23 @@ function Core.SanitizeOutboundMove(pkt, fromBot, forceBypass)
             H.lastActionBlockedReason = "no_send_huge_delta"
             return nil, "no_send_huge_delta"
         end
-        local capH, capV = 3.55, 3.35
+        local capH = flyActive and 1.45 or 3.55
+        local capV = flyActive and 1.55 or 3.35
         if absDx > capH or absDy > capV then
-            px = prev.x + clamp(dx, -capH, capH)
-            py = prev.y + clamp(dy, -capV, capV)
-            vx = 0
-            vy = 0
-            local facingBit = (math.floor(flags) % 2 == 1) and 1 or 0
-            flags = facingBit + 2
+            local cdx = clamp(dx, -capH, capH)
+            local cdy = clamp(dy, -capV, capV)
+            px = prev.x + cdx
+            py = prev.y + cdy
+            if flyActive then
+                local dtPrev = math.max(0.055, now - (prev.t or now))
+                vx = clamp(cdx / dtPrev, -18.0, 18.0)
+                vy = clamp(cdy / dtPrev, -22.0, 24.0)
+            else
+                vx = 0
+                vy = 0
+                local facingBit = (math.floor(flags) % 2 == 1) and 1 or 0
+                flags = facingBit + 2
+            end
         end
     end
 
@@ -2424,6 +2569,24 @@ function Packets.FindTilePath(sx, sy, gx, gy, allowHazard)
     return runBfs(true)
 end
 
+-- Kompresi segmen lurus (horizontal/vertikal) agar Walk cepat & kontinu tanpa berhenti tiap 1 tile
+local function compressWalkPath(path)
+    if type(path) ~= "table" or #path <= 2 then return path end
+    local out = { path[1] }
+    local prevDx = path[2].x - path[1].x
+    local prevDy = path[2].y - path[1].y
+    for i = 3, #path do
+        local dx = path[i].x - path[i - 1].x
+        local dy = path[i].y - path[i - 1].y
+        if dx ~= prevDx or dy ~= prevDy then
+            out[#out + 1] = path[i - 1]
+            prevDx, prevDy = dx, dy
+        end
+    end
+    out[#out + 1] = path[#path]
+    return out
+end
+
 -- Helper pergerakan kontinu sub-tile sinkron penuh dengan Game.lua & Server Growblox (Anti-Back + Stop/No-Send)
 local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn, moveOpts)
     Core.EnsureInit()
@@ -2433,6 +2596,8 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
     local antiBack = Core.IsAntiBackActive() or (moveOpts.noValidateBack == true)
     local stopMode = Core.GetStopOrNoSendMode()
     local noDelay = (moveOpts.noDelay == true) or (moveOpts.noDelay ~= false and gs.enabled and gs.longRangeNoDelay == true)
+    local fastWalk = (moveOpts.fastWalk == true) or ((not noDelay) and ((tonumber(speedH) or 0) > 7.4))
+    local noSnap = (moveOpts.noSnap == true) or (not noDelay)
     local noValidateBack = (moveOpts.noValidateBack == true) or (moveOpts.noValidateBack ~= false and gs.enabled and gs.noValidateBack == true) or antiBack
     if noValidateBack then
         pcall(Core.InstallAntiBackGuard)
@@ -2448,29 +2613,42 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
     tx = clamp(math.floor(tx), 0, gt.w - 1)
     ty = clamp(math.floor(ty), 0, gt.h - 1)
 
-    local sH = noDelay and clamp(tonumber(speedH) or 13.5, 6.0, 22.0) or clamp(tonumber(speedH) or 6.9, 4.5, 7.2)
-    local sV = noDelay and clamp(tonumber(speedV) or 16.0, 8.0, 24.0) or clamp(tonumber(speedV) or 11.5, 5.5, 14.0)
+    local sH = noDelay and clamp(tonumber(speedH) or 13.5, 6.0, 22.0)
+        or (fastWalk and clamp(tonumber(speedH) or 12.0, 4.8, 16.0) or clamp(tonumber(speedH) or 6.9, 4.5, 7.4))
+    local sV = noDelay and clamp(tonumber(speedV) or 16.0, 8.0, 24.0)
+        or (fastWalk and clamp(tonumber(speedV) or 15.0, 6.0, 20.0) or clamp(tonumber(speedV) or 11.5, 5.5, 14.0))
     local maxAttempts = noValidateBack and 1 or 2
     local facing = 1
-    local tickSec = noDelay and 0.048 or 0.067 -- aman agar setiap step paket <= 3.4 tile
+    -- Cadence Net.move mendekati sendState Others.lua (0.050s-0.067s) agar delta per paket tetap sub-tile
+    local tickSec = noDelay and 0.048 or (fastWalk and 0.050 or 0.067)
 
     for attempt = 1, maxAttempts do
         local startT = os.clock()
         local blockedBefore = H.blockedMoveToCount or 0
         local cur = Core.ReadPos()
-        if cur.tx == tx and cur.ty == ty then
+        if cur.tx == tx and cur.ty == ty and not moveOpts.customPath then
             return true, string.format("Walk-Path OK -> (%d, %d)", tx, ty)
         end
-        local path = Packets.FindTilePath(cur.tx, cur.ty, tx, ty)
-        if not path or #path <= 1 then
+        local rawPath = (attempt == 1 and type(moveOpts.customPath) == "table" and #moveOpts.customPath >= 1)
+            and moveOpts.customPath
+            or Packets.FindTilePath(cur.tx, cur.ty, tx, ty)
+        if not rawPath or #rawPath == 0 then
             return false, "Jalur tertutup blok (No-Send Guard)"
         end
-        -- Jika node terakhir solid, hentikan di node terbuka terakhir
-        if Core.IsSolid(path[#path].x, path[#path].y) then
+        local path = {}
+        for idxP, nd in ipairs(rawPath) do path[idxP] = { x = nd.x, y = nd.y } end
+        if #path > 1 and Core.IsSolid(path[#path].x, path[#path].y) then
             table.remove(path, #path)
-            if #path <= 1 then
+            if #path == 0 then
                 return false, "Target solid tanpa celah terdekat"
             end
+        end
+        if #path <= 1 then
+            local dst = path[1] or { x = tx, y = ty }
+            if cur.tx == dst.x and cur.ty == dst.y then
+                return true, string.format("Walk-Path OK -> (%d, %d)", dst.x, dst.y)
+            end
+            return false, "Target solid tanpa celah terdekat"
         end
 
         H.moveConn = H.moveConn and (pcall(function() H.moveConn:Disconnect() end) and nil) or nil
@@ -2478,12 +2656,28 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
         if math.abs(curPx - (path[1].x + 0.5)) > 1.2 or math.abs(curPy - (path[1].y + 1)) > 1.2 then
             curPx, curPy = path[1].x + 0.5, path[1].y + 1
         end
+
+        -- Selaraskan ke tengah tile awal sebelum meluncur di segmen lurus agar hitbox tidak menyerempet tembok
+        local compressed = compressWalkPath(path)
+        if (math.abs(curPx - (path[1].x + 0.5)) > 0.16 or math.abs(curPy - (path[1].y + 1)) > 0.16) then
+            local alignPath = { { x = path[1].x, y = path[1].y }, { x = path[1].x, y = path[1].y } }
+            for k = 2, #compressed do alignPath[#alignPath + 1] = compressed[k] end
+            path = alignPath
+        else
+            path = compressed
+        end
+
         local initFl, initFc = computeMoveFlags(curPx, curPy, 0, 0, facing)
         facing = initFc
         H.autoMove = { x = curPx, y = curPy, vx = 0, vy = 0, flags = antiBack and ((facing > 0 and 1 or 0) + 2) or initFl }
         H.moveConn = RunService.RenderStepped:Connect(function()
             local am = H.autoMove
             if am then
+                if am.fromX and am.t1 and am.t1 > am.t0 then
+                    local alpha = clamp((os.clock() - am.t0) / (am.t1 - am.t0), 0, 1)
+                    am.x = am.fromX + (am.toX - am.fromX) * alpha
+                    am.y = am.fromY + (am.toY - am.fromY) * alpha
+                end
                 Core.SetLocalCoords(am.x, am.y, am.vx, am.vy)
             end
         end)
@@ -2502,64 +2696,76 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
             local n = path[i]
             local destX, destY = n.x + 0.5, n.y + 1
             local segDx, segDy = destX - curPx, destY - curPy
-            local isHoriz = math.abs(segDx) >= math.abs(segDy)
-            local speed = isHoriz and sH or sV
             local dist = math.sqrt(segDx * segDx + segDy * segDy)
-            local maxSub = noDelay and math.min(3.2, math.max(0.85, speed * tickSec)) or math.max(0.25, speed * tickSec)
-            local subSteps = math.max(1, math.ceil(dist / maxSub))
-            local stepDt = math.max(tickSec, (dist / subSteps) / speed)
-            local segVx = noDelay and 0 or clamp(segDx / math.max(0.04, subSteps * stepDt), -7.2, 7.2)
-            local segVy = noDelay and 0 or clamp(segDy / math.max(0.04, subSteps * stepDt), -18.0, 18.0)
+            if dist >= 0.02 then
+                local isHoriz = math.abs(segDx) >= math.abs(segDy)
+                local speed = isHoriz and sH or sV
+                -- Batasi step per paket <= 0.85 tile saat Fast Walk agar server selalu menerimanya sebagai Walk legal
+                local maxSub = noDelay and math.min(3.2, math.max(0.85, speed * tickSec))
+                    or (fastWalk and math.min(0.85, math.max(0.45, speed * tickSec)) or math.max(0.25, speed * tickSec))
+                local subSteps = math.max(1, math.ceil(dist / maxSub))
+                local stepDt = math.max(tickSec, (dist / subSteps) / speed)
+                local totalSegSec = math.max(0.04, subSteps * stepDt)
+                local segVx = noDelay and 0 or clamp(segDx / totalSegSec, -18.0, 18.0)
+                local segVy = noDelay and 0 or clamp(segDy / totalSegSec, -22.0, 22.0)
 
-            for s = 1, subSteps do
-                if type(shouldContinueFn) == "function" and not shouldContinueFn() then
-                    cancelled = true
-                    break
-                end
-                local tFrac = s / subSteps
-                local nx = curPx + segDx * tFrac
-                local ny = curPy + segDy * tFrac
-                local fl, fc = computeMoveFlags(nx, ny, segVx, segVy, facing)
-                if antiBack or noValidateBack then
-                    if segDx > 0.02 then fc = 1 elseif segDx < -0.02 then fc = -1 end
-                    fl = (fc > 0 and 1 or 0) + 2
-                end
-                facing = fc
-                H.autoMove = { x = nx, y = ny, vx = segVx, vy = segVy, flags = fl }
-                Core.SetLocalCoords(nx, ny, segVx, segVy)
-                local okSent, sendMsg = Packets.SendRawMove(nx, ny, segVx, segVy, fl)
-                if not okSent and (stopMode == "stop" or stopMode == "nosend") and sendMsg ~= "fly_anchor_owns_move" then
-                    aborted = true
-                    stopReason = tostring(sendMsg or "no_send_abort")
-                    break
-                end
-                task.wait(stepDt)
-                if stopMode == "stop" and ((H.blockedMoveToCount or 0) > blockedBefore or (H.lastBlockedMoveToAt or 0) >= startT) then
-                    aborted = true
-                    stopReason = "stopped_anti_back"
-                    break
-                end
-                if type(gt.state) == "function" or (H.stateObj and type(H.stateObj.state) == "function") then
-                    local chk = Core.ReadPos()
-                    if (math.abs(chk.x - nx) + math.abs(chk.y - ny)) > 3.6 then
-                        if stopMode == "stop" then
-                            Core.SetLocalCoords(curPx, curPy, 0, 0)
-                            Packets.SendRawMove(curPx, curPy, 0, 0, (facing > 0 and 1 or 0) + 2, { t = 65535 })
-                            aborted = true
-                            stopReason = "stopped_desync_hold"
-                            break
-                        elseif noValidateBack then
-                            Core.SetLocalCoords(nx, ny, 0, 0)
-                            Packets.SendRawMove(nx, ny, 0, 0, fl)
-                        else
-                            aborted = true
-                            break
+                local prevX, prevY = curPx, curPy
+                for s = 1, subSteps do
+                    if type(shouldContinueFn) == "function" and not shouldContinueFn() then
+                        cancelled = true
+                        break
+                    end
+                    local tFrac = s / subSteps
+                    local nx = curPx + segDx * tFrac
+                    local ny = curPy + segDy * tFrac
+                    local fl, fc = computeMoveFlags(nx, ny, segVx, segVy, facing)
+                    if antiBack or noValidateBack then
+                        if segDx > 0.02 then fc = 1 elseif segDx < -0.02 then fc = -1 end
+                        fl = (fc > 0 and 1 or 0) + 2
+                    end
+                    facing = fc
+                    local nowStep = os.clock()
+                    H.autoMove = {
+                        fromX = prevX, fromY = prevY, toX = nx, toY = ny,
+                        x = prevX, y = prevY, vx = segVx, vy = segVy, flags = fl,
+                        t0 = nowStep, t1 = nowStep + stepDt,
+                    }
+                    Core.SetLocalCoords(nx, ny, segVx, segVy)
+                    local okSent, sendMsg = Packets.SendRawMove(nx, ny, segVx, segVy, fl)
+                    if not okSent and (stopMode == "stop" or stopMode == "nosend") and sendMsg ~= "fly_anchor_owns_move" then
+                        aborted = true
+                        stopReason = tostring(sendMsg or "no_send_abort")
+                        break
+                    end
+                    prevX, prevY = nx, ny
+                    task.wait(stepDt)
+                    if stopMode == "stop" and ((H.blockedMoveToCount or 0) > blockedBefore or (H.lastBlockedMoveToAt or 0) >= startT) then
+                        aborted = true
+                        stopReason = "stopped_anti_back"
+                        break
+                    end
+                    if type(gt.state) == "function" or (H.stateObj and type(H.stateObj.state) == "function") then
+                        local chk = Core.ReadPos()
+                        if (math.abs(chk.x - nx) + math.abs(chk.y - ny)) > 3.6 then
+                            if stopMode == "stop" then
+                                Core.SetLocalCoords(curPx, curPy, 0, 0)
+                                Packets.SendRawMove(curPx, curPy, 0, 0, (facing > 0 and 1 or 0) + 2)
+                                aborted = true
+                                stopReason = "stopped_desync_hold"
+                                break
+                            elseif noValidateBack then
+                                Core.SetLocalCoords(nx, ny, segVx, segVy)
+                                Packets.SendRawMove(nx, ny, segVx, segVy, fl)
+                            else
+                                aborted = true
+                                break
+                            end
                         end
                     end
                 end
+                if aborted or cancelled then break end
+                curPx, curPy = destX, destY
             end
-            if aborted or cancelled then break end
-            curPx, curPy = destX, destY
         end
 
         if H.moveConn then
@@ -2578,13 +2784,18 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
             local fFlags = (antiBack or noValidateBack) and ((facing > 0 and 1 or 0) + 2) or computeMoveFlags(fx, fy, 0, 0, facing)
             H.autoMove = { x = fx, y = fy, vx = 0, vy = 0, flags = fFlags }
             Core.SetLocalCoords(fx, fy, 0, 0)
-            Packets.SendRawMove(fx, fy, 0, 0, fFlags, { t = 65535 })
-            if not noDelay then task.wait(0.055) end
-            Packets.SendRawMove(fx, fy, 0, 0, fFlags, { t = 65535 })
+            if noSnap then
+                -- Walk normal memakai timestamp non-snap (bukan t=65535) agar tidak terdeteksi TP
+                Packets.SendRawMove(fx, fy, 0, 0, fFlags)
+            else
+                Packets.SendRawMove(fx, fy, 0, 0, fFlags, { t = 65535 })
+                if not noDelay then task.wait(0.055) end
+                Packets.SendRawMove(fx, fy, 0, 0, fFlags, { t = 65535 })
+            end
             H.autoMove = nil
             local fin = Core.ReadPos()
             if noValidateBack or (math.abs(fin.tx - finNode.x) + math.abs(fin.ty - finNode.y)) <= 2 then
-                return true, string.format("%s -> (%d, %d)", noDelay and "Anti-Back Sync OK" or "Server Walk OK", finNode.x, finNode.y)
+                return true, string.format("%s -> (%d, %d)", fastWalk and "Fast Walk OK" or (noDelay and "Anti-Back Sync OK" or "Server Walk OK"), finNode.x, finNode.y)
             end
             aborted = true
         else
@@ -2596,8 +2807,9 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
         end
 
         if aborted and attempt < maxAttempts then
-            sH, sV = 6.5, 9.5
-            task.wait(0.18)
+            sH, sV = 6.9, 10.5
+            fastWalk = false
+            task.wait(0.14)
         end
     end
 
@@ -2609,11 +2821,18 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
         or string.format("Tertahan aman di (%d, %d) - Anti-Back / Stop Guard", f.tx, f.ty)
 end
 
--- Metode Rekomendasi Jarak Jauh: Walk-Path aman anti rubberband/balik ke base
-function Packets.WalkPathTo(tx, ty, speedTilesPerSec, shouldContinueFn)
+-- Metode Rekomendasi Jarak Jauh: Walk-Path cepat & mulus tanpa sentinel TP 65535
+function Packets.WalkPathTo(tx, ty, speedTilesPerSec, shouldContinueFn, moveOpts)
     local req = tonumber(speedTilesPerSec) or 6.9
-    -- Clamp kecepatan horizontal <= 7.2 t/s default physics Growblox agar server selalu terima
-    return executeServerSyncedPath(tx, ty, clamp(req, 4.8, 7.2), 11.5, shouldContinueFn, { noDelay = false })
+    local mOpts = type(moveOpts) == "table" and moveOpts or {}
+    local opts = {
+        noDelay = mOpts.noDelay == true,
+        fastWalk = (mOpts.fastWalk ~= nil) and (mOpts.fastWalk == true) or (req > 7.4),
+        noSnap = (mOpts.noSnap == nil) and true or (mOpts.noSnap == true),
+        noValidateBack = mOpts.noValidateBack,
+        customPath = mOpts.customPath,
+    }
+    return executeServerSyncedPath(tx, ty, clamp(req, 4.8, 16.0), math.max(12.0, clamp(req * 1.25, 11.5, 20.0)), shouldContinueFn, opts)
 end
 
 function Packets.StepTeleport(tx, ty, stepSize, stepDelay, shouldContinueFn)
@@ -2793,18 +3012,21 @@ function Packets.FindStandCandidates(tx, ty, maxRange)
     return out
 end
 
--- Navigasi Walk Murni (khusus Dirt Farm: anti-teleport, berjalan penuh mengikuti path valid)
-function Packets.MoveWalkNear(tx, ty, maxRange, shouldContinueFn, walkSpeed)
-    local r = toInt(maxRange, 4) or 4
+-- Navigasi Walk Murni (khusus Dirt Farm & Fast Walk: anti-teleport, berjalan cepat mengikuti path valid)
+function Packets.MoveWalkNear(tx, ty, maxRange, shouldContinueFn, walkSpeed, actionKind)
+    local r = toInt(maxRange, 2) or 2
     local cur = Core.ReadPos()
-    if r == 0 then
+    if actionKind then
+        if Core.IsInActionReach(tx, ty, actionKind, cur) then return true, "in_reach" end
+    elseif r == 0 then
         if cur.tx == tx and cur.ty == ty then return true, "at_target" end
     elseif math.max(math.abs(cur.tx - tx), math.abs(cur.ty - ty)) <= r then
         return true, "in_range"
     end
-    local spd = clamp(tonumber(walkSpeed) or 7.0, 4.8, 7.2)
+    local spd = clamp(tonumber(walkSpeed) or 11.5, 4.8, 16.0)
+    local walkOpts = { fastWalk = spd > 7.4, noSnap = true }
     if r == 0 and not Core.IsSolid(tx, ty) then
-        local okW, msgW = Packets.WalkPathTo(tx, ty, spd, shouldContinueFn)
+        local okW, msgW = Packets.WalkPathTo(tx, ty, spd, shouldContinueFn, walkOpts)
         if okW then return true, msgW end
     end
     local cands = Packets.FindStandCandidates(tx, ty, r)
@@ -2818,12 +3040,16 @@ function Packets.MoveWalkNear(tx, ty, maxRange, shouldContinueFn, walkSpeed)
             return false, "cancelled"
         end
         local c = cands[i]
-        local okW, msgW = Packets.WalkPathTo(c.x, c.y, spd, shouldContinueFn)
-        local chk = Core.ReadPos()
-        if okW or math.max(math.abs(chk.tx - tx), math.abs(chk.ty - ty)) <= r then
-            return true, msgW or "walk_ok"
+        if (not actionKind) or Core.IsInActionReach(tx, ty, actionKind, { x = c.x + 0.5, y = c.y + 1 }) then
+            walkOpts.customPath = c.path
+            local okW, msgW = Packets.WalkPathTo(c.x, c.y, spd, shouldContinueFn, walkOpts)
+            local chk = Core.ReadPos()
+            if (actionKind and Core.IsInActionReach(tx, ty, actionKind, chk))
+                or (not actionKind and (okW or math.max(math.abs(chk.tx - tx), math.abs(chk.ty - ty)) <= r)) then
+                return true, msgW or "walk_ok"
+            end
+            lastMsg = msgW or lastMsg
         end
-        lastMsg = msgW or lastMsg
     end
     return false, lastMsg
 end
@@ -2916,7 +3142,8 @@ function Packets.EnsureActionReach(tx, ty, kind, shouldContinueFn, opts)
     end
 
     if opts.preferWalk == true then
-        Packets.WalkPathTo(gx, gy, opts.walkSpeed or 7.0, shouldContinueFn)
+        local wspd = tonumber(opts.walkSpeed) or 11.0
+        Packets.WalkPathTo(gx, gy, wspd, shouldContinueFn, { fastWalk = wspd > 7.4, noSnap = true })
     elseif opts.preferHybrid == true then
         Packets.MoveHybrid(gx, gy, 0, shouldContinueFn, opts)
     else
@@ -3804,7 +4031,7 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
                 local dx, dy = math.floor(nextDrop.x), math.floor(nextDrop.y)
                 local movedOk = false
                 if opts.preferWalk == true then
-                    movedOk = Packets.MoveWalkNear(dx, dy, 2, shouldContinueFn, 7.0)
+                    movedOk = Packets.MoveWalkNear(dx, dy, 2, shouldContinueFn, tonumber(opts.walkSpeed) or 12.0)
                 elseif opts.preferHybrid == true then
                     movedOk = Packets.MoveHybrid(dx, dy, 2, shouldContinueFn, { stepSize = 3, stepDelay = math.max(0.048, delay) })
                 else
@@ -3848,33 +4075,47 @@ local Misc = {
 SYT_Logic.Misc = Misc
 
 -- Metode Fly Baru (SteppedAnchor): visual tetap halus & terlihat player lain via sync <= 3.4 tile/0.082s + grounded flags (anti BasePath rollback)
+local function unbindFlyRenderStep()
+    pcall(RunService.UnbindFromRenderStep, RunService, "SYT_FlyStep")
+end
+
 function Core.StartSteppedAnchorFly()
     local gt = H.gt
     if not gt then return false end
+    unbindFlyRenderStep()
+    pcall(Core.InstallAntiBackGuard)
+    if type(SYT_Logic.InstallNetGuard) == "function" then
+        pcall(SYT_Logic.InstallNetGuard)
+    end
+
     local p0 = Core.ReadPos()
     local visX, visY = p0.x, p0.y
     local syncX, syncY = p0.x, p0.y
     local lastSyncAt = os.clock()
+    local lastGuardAt = lastSyncAt
+    local lastTouchScanAt = 0
     local facing = 1
-    local blockedBefore = H.blockedMoveToCount or 0
 
-    -- Cari tombol sentuh mobile GameGui bila user bermain di executor mobile (Delta / Codex)
     local touchBtns = { left = {}, right = {}, up = {}, down = {} }
-    pcall(function()
-        local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
-        local gg = pg and pg:FindFirstChild("GameGui")
-        if gg then
-            for _, d in ipairs(gg:GetDescendants()) do
-                if d:IsA("GuiButton") and d.Visible then
-                    local nm = string.lower(d.Name)
-                    if string.find(nm, "left", 1, true) then table.insert(touchBtns.left, d)
-                    elseif string.find(nm, "right", 1, true) then table.insert(touchBtns.right, d)
-                    elseif string.find(nm, "jump", 1, true) or string.find(nm, "up", 1, true) then table.insert(touchBtns.up, d)
-                    elseif string.find(nm, "down", 1, true) or string.find(nm, "crouch", 1, true) then table.insert(touchBtns.down, d) end
+    local function scanTouchBtns()
+        touchBtns = { left = {}, right = {}, up = {}, down = {} }
+        pcall(function()
+            local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
+            local gg = pg and pg:FindFirstChild("GameGui")
+            if gg then
+                for _, d in ipairs(gg:GetDescendants()) do
+                    if d:IsA("GuiButton") and d.Visible then
+                        local nm = string.lower(d.Name)
+                        if string.find(nm, "left", 1, true) then table.insert(touchBtns.left, d)
+                        elseif string.find(nm, "right", 1, true) then table.insert(touchBtns.right, d)
+                        elseif string.find(nm, "jump", 1, true) or string.find(nm, "up", 1, true) then table.insert(touchBtns.up, d)
+                        elseif string.find(nm, "down", 1, true) or string.find(nm, "crouch", 1, true) then table.insert(touchBtns.down, d) end
+                    end
                 end
             end
-        end
-    end)
+        end)
+    end
+    scanTouchBtns()
 
     local function anyTouchDown(list)
         for _, b in ipairs(list) do
@@ -3891,18 +4132,27 @@ function Core.StartSteppedAnchorFly()
     H.antiBackAnchor = { x = visX, y = visY, t = lastSyncAt }
     Packets.SendRawMove(syncX, syncY, 0, 0, (facing > 0 and 1 or 0) + 2)
 
-    H.flyConn = RunService.RenderStepped:Connect(function(dt)
-        if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then
-            if H.flyConn then H.flyConn:Disconnect(); H.flyConn = nil end
-            return
-        end
-        if not Misc.State.fly or Misc.State.flyMethod == "GhostHybrid" or H.gt ~= gt then
-            if H.flyConn then H.flyConn:Disconnect(); H.flyConn = nil end
+    local alive = true
+    RunService:BindToRenderStep("SYT_FlyStep", Enum.RenderPriority.Last.Value + 20, function(dt)
+        if not alive or getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN or not Misc.State.fly or Misc.State.flyMethod == "GhostHybrid" or H.gt ~= gt then
+            alive = false
+            unbindFlyRenderStep()
+            if H.flyConn then H.flyConn = nil end
             return
         end
 
         gt.ghost = true
         gt.stuckAt = nil
+        local now = os.clock()
+        if (now - lastGuardAt) >= 1.5 then
+            lastGuardAt = now
+            pcall(Core.InstallAntiBackGuard)
+        end
+        if (#touchBtns.left + #touchBtns.right + #touchBtns.up) == 0 and (now - lastTouchScanAt) >= 1.5 then
+            lastTouchScanAt = now
+            scanTouchBtns()
+        end
+
         local frameDt = clamp(tonumber(dt) or 0.016, 0.004, 0.08)
         local speed = clamp(tonumber(Misc.State.flySpeed) or 14, 6, 45)
         local ceilY = clamp(tonumber(Misc.State.flyMaxCeilingY) or 0.25, 0.15, 0.95)
@@ -3917,21 +4167,24 @@ function Core.StartSteppedAnchorFly()
             if UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.Down) or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or anyTouchDown(touchBtns.down) then mvY += 1 end
         end
 
+        -- Mobile / Virtual Joystick Fallback: tangkap input kecil dari engine Game.lua, tolak snap/teleport > 1.25 tile
+        if mvX == 0 and mvY == 0 and not H.autoMove then
+            local raw = Core.ReadPos()
+            local engDx, engDy = raw.x - visX, raw.y - visY
+            local engDist = math.abs(engDx) + math.abs(engDy)
+            if engDist > 0.002 and engDist <= 1.25 then
+                mvX, mvY = engDx, engDy
+            end
+        end
+
         if mvX ~= 0 then facing = (mvX > 0) and 1 or -1 end
         local mag = math.sqrt(mvX * mvX + mvY * mvY)
         if mag > 0 then
             mvX, mvY = mvX / mag, mvY / mag
         end
 
-        -- Mode Stop: jika rollback sempat tertahan atau visual terpaut > 6.5 tile di depan server anchor, tahan sebentar agar server anchor menyusul halus
-        local now = os.clock()
-        if Core.GetStopOrNoSendMode() == "stop" and ((H.blockedMoveToCount or 0) > blockedBefore) then
-            blockedBefore = H.blockedMoveToCount or 0
-            visX, visY = syncX, syncY
-        elseif Core.GetStopOrNoSendMode() == "stop" and (math.abs(visX - syncX) > 6.5 or math.abs(visY - syncY) > 6.5) then
-            visX = syncX + clamp(visX - syncX, -5.0, 5.0)
-            visY = syncY + clamp(visY - syncY, -5.0, 5.0)
-        elseif not H.autoMove then
+        -- Anti-Rollback Fly: visual posisi bebas bergerak di segala ketinggian & jarak (> 6 tile aman tanpa ditarik mundur)
+        if not H.autoMove then
             visX = clamp(visX + mvX * speed * frameDt, 0.5, maxX)
             visY = clamp(visY + mvY * speed * frameDt, ceilY, maxY)
         else
@@ -3942,20 +4195,36 @@ function Core.StartSteppedAnchorFly()
         H.flyLastValidPos = { x = visX, y = visY, vx = 0, vy = 0, t = now }
         H.antiBackAnchor = { x = visX, y = visY, t = now }
 
-        -- Sync server secara stepped <= 3.4 tile per interval >= 0.082s dengan vx=0, vy=0, flags=grounded (visible ke player lain + anti-rollback)
-        local dH = math.abs(visX - syncX)
-        local dV = math.abs(visY - syncY)
+        -- Sync server smooth sesuai ritme 15Hz Growblox (~0.067s) dengan step <= 1.05 H / 1.22 V & vx/vy konsisten
+        local dH = visX - syncX
+        local dV = visY - syncY
+        local absDH, absDV = math.abs(dH), math.abs(dV)
         local elapsed = now - lastSyncAt
-        local needStep = (dH >= 0.04 or dV >= 0.04) and (elapsed >= 0.082 or ((dH >= 3.2 or dV >= 3.0) and elapsed >= 0.068))
-        local needKeepAlive = (elapsed >= 0.65)
+        local needStep = (absDH >= 0.03 or absDV >= 0.03) and elapsed >= 0.067
+        local needKeepAlive = elapsed >= 0.75
         if needStep or needKeepAlive then
-            syncX = syncX + clamp(visX - syncX, -3.4, 3.4)
-            syncY = syncY + clamp(visY - syncY, -3.1, 3.1)
-            local fl = (facing > 0 and 1 or 0) + 2
-            Packets.SendRawMove(syncX, syncY, 0, 0, fl)
+            local stepDx = clamp(dH, -1.05, 1.05)
+            local stepDy = clamp(dV, -1.22, 1.22)
+            syncX = syncX + stepDx
+            syncY = syncY + stepDy
+            local safeDt = math.max(0.055, elapsed)
+            local svx = (absDH >= 0.03) and clamp(stepDx / safeDt, -16.0, 16.0) or 0
+            local svy = (absDV >= 0.03) and clamp(stepDy / safeDt, -20.0, 22.0) or 0
+            local onGround = Core.IsSolid(math.floor(syncX), math.floor(syncY + 0.05))
+            local groundedBit = (onGround or math.abs(svy) < 1.2) and 2 or 0
+            local fl = (facing > 0 and 1 or 0) + groundedBit
+            Packets.SendRawMove(syncX, syncY, svx, svy, fl)
             lastSyncAt = now
         end
     end)
+
+    H.flyConn = {
+        Disconnect = function()
+            alive = false
+            unbindFlyRenderStep()
+        end
+    }
+    getEnv().__SYT_FLY_CONN = H.flyConn
     return true
 end
 
@@ -3964,6 +4233,7 @@ function Misc.SetFly(enabled, speed)
     Core.EnsureMoveHook()
     Misc.State.fly = enabled == true
     if type(speed) == "number" then Misc.State.flySpeed = clamp(speed, 6, 45) end
+    unbindFlyRenderStep()
     if H.flyConn then H.flyConn:Disconnect(); H.flyConn = nil end
     local gt = H.gt
     if not gt then return false end
@@ -4029,7 +4299,9 @@ function Misc.SetFly(enabled, speed)
         -- Cegah snapback tiba-tiba ke BasePath / Spawn oleh anti-warp internal client
         if Misc.State.flyAntiBasePath ~= false and last and (os.clock() - (last.t or 0)) < 2.0 then
             local jumpDist = math.abs(cur.x - last.x) + math.abs(cur.y - last.y)
-            if jumpDist > 4.2 and not H.autoMove then
+            local sp = g.spawn
+            local pulledToSpawn = sp and sp.X and sp.Y and (math.abs(cur.x - sp.X) + math.abs(cur.y - sp.Y) <= 2.4) and (math.abs(last.x - sp.X) + math.abs(last.y - sp.Y) > 3.2)
+            if (jumpDist > 5.8 or pulledToSpawn) and not H.autoMove then
                 Core.SetLocalCoords(last.x, last.y, 0, 0)
                 Packets.SendRawMove(last.x, last.y, 0, 0, 2)
                 return
@@ -4520,8 +4792,8 @@ function Misc.SetNoClip(enabled)
 end
 
 local function hookIncomingNetGuard()
-    if H.netGodHooked then return end
     H.netGodHooked = true
+    H.antiBackWrappedConns = H.antiBackWrappedConns or {}
     local targetEvents = {
         knocked = true, impulse = true, forcedie = true, burned = true, useonplayerfx = true, hurt = true,
     }
@@ -4555,9 +4827,10 @@ local function hookIncomingNetGuard()
         local distPull = math.abs(x - p.x) + math.abs(y - p.y)
         local sp = H.gt and H.gt.spawn
         local toSpawn = sp and sp.X and sp.Y and (math.abs(x - sp.X) <= 2.2 and math.abs(y - sp.Y) <= 2.2) and ((math.abs(p.x - sp.X) + math.abs(p.y - sp.Y)) > 3)
-        -- Saat Fly Anti-BasePath aktif, atau Skipper Non-Validate-Back sedang bergerak / ditarik rollback ke Spawn/Base: tolak moveTo rollback
-        if flyGuard and distPull > 2.0 then
-            Packets.SendRawMove(p.x, p.y, 0, 0, 2)
+        -- Saat Fly Anti-BasePath aktif, tolak semua MoveTo rollback tanpa mengirim paket balikan yang mengganggu SteppedAnchor
+        if flyGuard then
+            H.blockedMoveToCount = (H.blockedMoveToCount or 0) + 1
+            H.lastBlockedMoveToAt = os.clock()
             return true
         end
         if skipperGuard and (H.autoMove ~= nil or toSpawn or (os.clock() - (H.lastTileAt or 0)) < 1.8) and distPull > 2.0 then
@@ -4568,6 +4841,18 @@ local function hookIncomingNetGuard()
             return true
         end
         return false
+    end
+
+    local function wrapNetHandler(isDmgEv, isMoveEv, origFn)
+        if type(origFn) ~= "function" or H.antiBackWrappedConns[origFn] then return origFn end
+        local w = function(...)
+            if isDmgEv and Misc.State.godMode then return end
+            if isMoveEv and shouldDropMoveTo(...) then return end
+            return origFn(...)
+        end
+        H.antiBackWrappedConns[origFn] = w
+        H.antiBackWrappedConns[w] = w
+        return w
     end
 
     for _, fn in ipairs(probeFns) do
@@ -4581,21 +4866,11 @@ local function hookIncomingNetGuard()
                         local isMoveEv = (kl == "moveto")
                         if isDmgEv or isMoveEv then
                             if type(handler) == "function" then
-                                local origH = handler
-                                u[k] = function(...)
-                                    if isDmgEv and Misc.State.godMode then return end
-                                    if isMoveEv and shouldDropMoveTo(...) then return end
-                                    return origH(...)
-                                end
+                                u[k] = wrapNetHandler(isDmgEv, isMoveEv, handler)
                             elseif type(handler) == "table" then
                                 for i, cb in pairs(handler) do
                                     if type(cb) == "function" then
-                                        local origCb = cb
-                                        handler[i] = function(...)
-                                            if isDmgEv and Misc.State.godMode then return end
-                                            if isMoveEv and shouldDropMoveTo(...) then return end
-                                            return origCb(...)
-                                        end
+                                        handler[i] = wrapNetHandler(isDmgEv, isMoveEv, cb)
                                     end
                                 end
                             end
@@ -5703,11 +5978,11 @@ function Pabrik.Toggle()
     end
 end
 
--- [DIRT FARM] Auto Break & Replace Non-Dirt -> Format Dirt Farm + Rotation World
+-- [DIRT FARM] Auto Walk + Break & Replace Non-Dirt -> Format Dirt Farm + Rotation World
 local DirtFarm = {
     State = {
         running = false, sessionToken = 0, thread = nil, status = "Idle",
-        breakDelay = 0.16, placeDelay = 0.12, collectDelay = 0.05,
+        breakDelay = 0.14, placeDelay = 0.12, collectDelay = 0.04, walkSpeed = 12,
         oneHit = false, showHand = true, autoCollect = true, centerGap = true,
         rotationText = "", rotationWorlds = {}, worldIdx = 1,
         switchingWorld = false,
@@ -5820,78 +6095,402 @@ local function buildDfBlueprint(gt)
     }
 end
 
-local function moveNearDfTile(tx, ty, shouldContinueFn)
-    return Packets.MoveWalkNear(tx, ty, 4, shouldContinueFn, 7.0)
+local moveNearDfTile, dfQuickCollectNear
+do
+    local function dfIsBreakableBlocking(tx, ty)
+        local gt = H.gt
+        if not gt or tx < 0 or tx >= gt.w or ty < 0 or ty >= gt.h then return false, false end
+        local id = Core.GetFG(tx, ty)
+        if id == 0 then return false, false end
+        local info = Core.GetItemInfo(id)
+        local solid = Core.IsSolid(tx, ty)
+        local godMode = SYT_Logic.Misc and SYT_Logic.Misc.State and SYT_Logic.Misc.State.godMode == true
+        local hazard = info and (info.deadly == true or info.hurts == true) and not godMode
+        if not solid and not hazard then
+            return false, false
+        end
+        local breakable = (not Core.IsProtectedTile(id)) and Core.CanEditTile(tx, ty)
+        return true, breakable, info
+    end
+
+    local function dfCanActFromStand(tx, ty, actionKind, itemInfo, standPos)
+        if not Core.IsInActionReach(tx, ty, actionKind, standPos) then return false end
+        if actionKind == "build" and itemInfo then
+            return Core.CanPlaceBodyOk(tx, ty, itemInfo, standPos)
+        end
+        return true
+    end
+
+    -- Weighted A*: pilih jalan terbuka paling pendek, atau tembus blok breakable jika jalur terhalang / memutar jauh
+    local function findDfDigPath(sx, sy, targetX, targetY, actionKind, itemInfo)
+        local gt = H.gt
+        if not gt then return nil end
+        local w, h = gt.w or 100, gt.h or 60
+        sx, sy = clamp(math.floor(sx), 0, w - 1), clamp(math.floor(sy), 0, h - 1)
+        targetX, targetY = clamp(math.floor(targetX), 0, w - 1), clamp(math.floor(targetY), 0, h - 1)
+
+        local startStand = { x = sx + 0.5, y = sy + 1 }
+        if not dfIsBreakableBlocking(sx, sy) and dfCanActFromStand(targetX, targetY, actionKind, itemInfo, startStand) then
+            return { { x = sx, y = sy } }
+        end
+
+        local heapKeys, heapF, heapSz = {}, {}, 0
+        local function heapPush(k, f)
+            heapSz += 1
+            local i = heapSz
+            while i > 1 do
+                local p = math.floor(i / 2)
+                if heapF[p] <= f then break end
+                heapKeys[i], heapF[i] = heapKeys[p], heapF[p]
+                i = p
+            end
+            heapKeys[i], heapF[i] = k, f
+        end
+        local function heapPop()
+            local topK, topF = heapKeys[1], heapF[1]
+            local lastK, lastF = heapKeys[heapSz], heapF[heapSz]
+            heapKeys[heapSz], heapF[heapSz] = nil, nil
+            heapSz -= 1
+            if heapSz >= 1 then
+                local i = 1
+                while true do
+                    local l, r = i * 2, i * 2 + 1
+                    if l > heapSz then break end
+                    local c = (r <= heapSz and heapF[r] < heapF[l]) and r or l
+                    if heapF[c] >= lastF then break end
+                    heapKeys[i], heapF[i] = heapKeys[c], heapF[c]
+                    i = c
+                end
+                heapKeys[i], heapF[i] = lastK, lastF
+            end
+            return topK, topF
+        end
+
+        local startKey = sy * w + sx
+        local gScore, cameFrom, closed = { [startKey] = 0 }, { [startKey] = -1 }, {}
+        local function heuristic(x, y)
+            return math.max(0, math.abs(x - targetX) - 2) + math.max(0, math.abs(y - targetY) - 2)
+        end
+        heapPush(startKey, heuristic(sx, sy))
+
+        local dirs = { { 1, 0 }, { -1, 0 }, { 0, -1 }, { 0, 1 } }
+        local expansions = 0
+        while heapSz > 0 and expansions < 7500 do
+            local curK = heapPop()
+            if not closed[curK] then
+                closed[curK] = true
+                expansions += 1
+                local cx, cy = curK % w, math.floor(curK / w)
+                if curK ~= startKey then
+                    local standPos = { x = cx + 0.5, y = cy + 1 }
+                    if dfCanActFromStand(targetX, targetY, actionKind, itemInfo, standPos) then
+                        local rev, ptr = {}, curK
+                        while ptr and ptr ~= -1 do
+                            rev[#rev + 1] = { x = ptr % w, y = math.floor(ptr / w) }
+                            ptr = cameFrom[ptr]
+                        end
+                        local path = {}
+                        for i = #rev, 1, -1 do path[#path + 1] = rev[i] end
+                        return path
+                    end
+                end
+
+                local curG = gScore[curK]
+                for _, d in ipairs(dirs) do
+                    local nx, ny = cx + d[1], cy + d[2]
+                    if nx >= 0 and nx < w and ny >= 0 and ny < h then
+                        local nk = ny * w + nx
+                        if not closed[nk] then
+                            local blocking, breakable, info = dfIsBreakableBlocking(nx, ny)
+                            if (not blocking) or breakable then
+                                local stepCost = 1.0
+                                if blocking then
+                                    local hits = math.max(1, toInt(info and info.hits, 3))
+                                    stepCost = 2.6 + hits * 0.4
+                                end
+                                local ng = curG + stepCost
+                                if not gScore[nk] or ng < gScore[nk] then
+                                    gScore[nk] = ng
+                                    cameFrom[nk] = curK
+                                    heapPush(nk, ng + heuristic(nx, ny))
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local function dfBreakObstacles(obsList, aliveFn)
+        if #obsList == 0 then return false end
+        local S = DirtFarm.State
+        local dfHitGap = math.max(0.08, tonumber(S.breakDelay) or 0.14)
+        Packets.BreakBlocksParallel(obsList, {
+            threads = 3, layer = 1, oneHit = S.oneHit,
+            hitDelay = dfHitGap, showHand = S.showHand,
+            showVisual = true, noLocalMirror = false,
+            verifyBreak = true, autoRange = false, shouldContinue = aliveFn,
+        })
+        for _ = 1, 3 do
+            if type(aliveFn) == "function" and not aliveFn() then break end
+            local rem = {}
+            for _, bt in ipairs(obsList) do
+                if Core.GetFG(bt.tx, bt.ty) ~= 0 and not Core.IsProtectedTile(Core.GetFG(bt.tx, bt.ty)) then
+                    rem[#rem + 1] = bt
+                end
+            end
+            if #rem == 0 then break end
+            Packets.BreakVerified(rem, {
+                threads = 3, layer = 1, oneHit = false,
+                hitDelay = math.max(0.10, dfHitGap), showHand = S.showHand,
+                showVisual = true, noLocalMirror = true,
+                autoRange = false, shouldContinue = aliveFn,
+            })
+        end
+        for _, bt in ipairs(obsList) do
+            if Core.GetFG(bt.tx, bt.ty) ~= 0 then
+                return false
+            end
+        end
+        return true
+    end
+
+    dfQuickCollectNear = function(aliveFn)
+        local S = DirtFarm.State
+        if not S.autoCollect then return end
+        local gt = H.gt
+        if not gt or type(gt.dropList) ~= "function" then return end
+        local okD, drops = pcall(gt.dropList)
+        if not okD or type(drops) ~= "table" or #drops == 0 then return end
+        local pos = Core.ReadPos()
+        local now = os.clock()
+        local hasReadyNear = false
+        for i = 1, #drops do
+            local d = drops[i]
+            if type(d) == "table" and d.uid and d.x and d.y and (d.n or 0) > 0 and (d.readyAt or 0) <= now then
+                local distBody = math.max(math.abs(d.x - pos.x), math.abs(d.y - (pos.y - 0.5)))
+                if distBody <= 4.55 and (d.id == 112 or Core.GetItemRoom(d.id) > 0) then
+                    hasReadyNear = true
+                    break
+                end
+            end
+        end
+        if hasReadyNear then
+            Packets.Collect({
+                radius = 4.55, stepMoveIfFar = false, preferWalk = true,
+                walkSpeed = clamp(tonumber(S.walkSpeed) or 12, 6, 16),
+                collectDelay = tonumber(S.collectDelay) or 0.04,
+                shouldContinue = aliveFn,
+            })
+        end
+    end
+
+    -- Walk + Break murni untuk Dirt Farm (zero TP, zero masuk blok solid sebelum hancur di server)
+    moveNearDfTile = function(tx, ty, shouldContinueFn, actionKind, itemInfo)
+        local S = DirtFarm.State
+        local kind = actionKind or "break"
+        local walkSpd = clamp(tonumber(S.walkSpeed) or 12, 6, 16)
+        local cur = Core.ReadPos()
+        if dfCanActFromStand(tx, ty, kind, itemInfo, cur) then
+            return true, "in_reach"
+        end
+
+        for _ = 1, 3 do
+            if type(shouldContinueFn) == "function" and not shouldContinueFn() then
+                return false, "cancelled"
+            end
+            cur = Core.ReadPos()
+            if dfCanActFromStand(tx, ty, kind, itemInfo, cur) then
+                return true, "in_reach"
+            end
+            local path = findDfDigPath(cur.tx, cur.ty, tx, ty, kind, itemInfo)
+            if not path or #path == 0 then
+                return false, "unreachable"
+            end
+
+            local idx = 1
+            local needReroute = false
+            while idx < #path do
+                if type(shouldContinueFn) == "function" and not shouldContinueFn() then
+                    return false, "cancelled"
+                end
+                if dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos()) then
+                    return true, "walk_in_reach"
+                end
+
+                local blockIdx = nil
+                for k = idx + 1, #path do
+                    if dfIsBreakableBlocking(path[k].x, path[k].y) then
+                        blockIdx = k
+                        break
+                    end
+                end
+
+                local openEnd = blockIdx and (blockIdx - 1) or #path
+                if openEnd > idx then
+                    local openSlice = {}
+                    for k = idx, openEnd do openSlice[#openSlice + 1] = path[k] end
+                    local dst = path[openEnd]
+                    local okW = Packets.WalkPathTo(dst.x, dst.y, walkSpd, shouldContinueFn, {
+                        fastWalk = walkSpd > 7.4, noSnap = true, customPath = openSlice,
+                    })
+                    idx = openEnd
+                    if dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos()) then
+                        return true, "walk_in_reach"
+                    end
+                    local afterPos = Core.ReadPos()
+                    if not okW and (math.abs(afterPos.tx - dst.x) + math.abs(afterPos.ty - dst.y)) > 1 then
+                        needReroute = true
+                        break
+                    end
+                end
+
+                if not blockIdx then break end
+
+                if dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos()) then
+                    return true, "walk_in_reach"
+                end
+
+                local obsBatch = {}
+                local posNow = Core.ReadPos()
+                local lim = math.min(#path, blockIdx + 4)
+                for k = blockIdx, lim do
+                    local nd = path[k]
+                    local blk, brk = dfIsBreakableBlocking(nd.x, nd.y)
+                    if blk then
+                        if brk and Core.IsInActionReach(nd.x, nd.y, "break", posNow) then
+                            obsBatch[#obsBatch + 1] = { tx = nd.x, ty = nd.y, layer = 1 }
+                            if #obsBatch >= 3 then break end
+                        elseif #obsBatch == 0 then
+                            needReroute = true
+                            break
+                        end
+                    end
+                end
+                if needReroute or #obsBatch == 0 then
+                    needReroute = true
+                    break
+                end
+
+                dfBreakObstacles(obsBatch, shouldContinueFn)
+                if dfIsBreakableBlocking(path[blockIdx].x, path[blockIdx].y) then
+                    needReroute = true
+                    break
+                end
+                if dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos()) then
+                    return true, "walk_break_in_reach"
+                end
+            end
+
+            if dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos()) then
+                return true, "walk_break_ok"
+            end
+            if not needReroute then break end
+        end
+
+        local finOk = dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos())
+        return finOk, finOk and "walk_break_ok" or "out_of_reach"
+    end
 end
 
 local function dfBreakBatch(tasksBatch, aliveFn)
     if #tasksBatch == 0 then return 0 end
     local S = DirtFarm.State
     local first = tasksBatch[1]
-    local okM = moveNearDfTile(first.x, first.y, aliveFn)
+    local okM = moveNearDfTile(first.x, first.y, aliveFn, "break")
     if not okM then return -1 end
 
-    local cur = Core.ReadPos()
-    local execList = {}
+    local pendingList = {}
     for _, t in ipairs(tasksBatch) do
-        if math.max(math.abs(cur.tx - t.x), math.abs(cur.ty - t.y)) <= 4 then
-            execList[#execList + 1] = { tx = t.x, ty = t.y, layer = 1 }
+        local cid = Core.GetFG(t.x, t.y)
+        if cid ~= 0 and not Core.IsProtectedTile(cid) and Core.CanEditTile(t.x, t.y) then
+            pendingList[#pendingList + 1] = { tx = t.x, ty = t.y, layer = 1 }
         end
-        if #execList >= 3 then break end
+    end
+    if #pendingList == 0 then return 0 end
+
+    local dfHitGap = math.max(0.08, tonumber(S.breakDelay) or 0.14)
+    local cur = Core.ReadPos()
+    local execList, outReachList = {}, {}
+    for _, bt in ipairs(pendingList) do
+        if Core.IsInActionReach(bt.tx, bt.ty, "break", cur) and #execList < 3 then
+            execList[#execList + 1] = bt
+        else
+            outReachList[#outReachList + 1] = bt
+        end
     end
     if #execList == 0 then
-        execList[1] = { tx = first.x, ty = first.y, layer = 1 }
+        execList[1] = pendingList[1]
     end
 
-    local dfHitGap = math.max(0.14, tonumber(S.breakDelay) or 0.16)
-    Packets.BreakBlocksParallel(execList, {
-        threads = 3, layer = 1, oneHit = S.oneHit,
-        hitDelay = dfHitGap, showHand = S.showHand,
-        showVisual = true, noLocalMirror = false,
-        autoRange = false, shouldContinue = aliveFn,
-    })
-
-    for _ = 1, 3 do
-        if type(aliveFn) == "function" and not aliveFn() then break end
-        local rem = {}
-        for _, bt in ipairs(execList) do
-            if Core.GetFG(bt.tx, bt.ty) ~= 0 and not Core.IsProtectedTile(Core.GetFG(bt.tx, bt.ty)) then
-                rem[#rem + 1] = bt
-            end
-        end
-        if #rem == 0 then break end
-        Packets.BreakVerified(rem, {
-            threads = 3, layer = 1, oneHit = false,
-            hitDelay = math.max(0.15, dfHitGap), showHand = S.showHand,
+    local function runBreakSet(listToBreak)
+        if #listToBreak == 0 then return end
+        Packets.BreakBlocksParallel(listToBreak, {
+            threads = 3, layer = 1, oneHit = S.oneHit,
+            hitDelay = dfHitGap, showHand = S.showHand,
             showVisual = true, noLocalMirror = false,
-            autoRange = false, shouldContinue = aliveFn,
+            verifyBreak = true, autoRange = false, shouldContinue = aliveFn,
         })
+        for _ = 1, 3 do
+            if type(aliveFn) == "function" and not aliveFn() then break end
+            local rem = {}
+            for _, bt in ipairs(listToBreak) do
+                if Core.GetFG(bt.tx, bt.ty) ~= 0 and not Core.IsProtectedTile(Core.GetFG(bt.tx, bt.ty)) then
+                    rem[#rem + 1] = bt
+                end
+            end
+            if #rem == 0 then break end
+            Packets.BreakVerified(rem, {
+                threads = 3, layer = 1, oneHit = false,
+                hitDelay = math.max(0.10, dfHitGap), showHand = S.showHand,
+                showVisual = true, noLocalMirror = true,
+                autoRange = false, shouldContinue = aliveFn,
+            })
+        end
+    end
+
+    runBreakSet(execList)
+    -- Jika ada tile dalam batch yang belum masuk jangkauan punch, Walk+Break mendekat lalu lanjut pecahkan
+    if #outReachList > 0 and (type(aliveFn) ~= "function" or aliveFn()) then
+        local nxt = outReachList[1]
+        if moveNearDfTile(nxt.tx, nxt.ty, aliveFn, "break") then
+            local pos2 = Core.ReadPos()
+            local followList = {}
+            for _, bt in ipairs(outReachList) do
+                if Core.GetFG(bt.tx, bt.ty) ~= 0 and Core.IsInActionReach(bt.tx, bt.ty, "break", pos2) then
+                    followList[#followList + 1] = bt
+                end
+            end
+            runBreakSet(followList)
+        end
     end
 
     local brokenCount = 0
-    for _, bt in ipairs(execList) do
+    for _, bt in ipairs(pendingList) do
         if Core.GetFG(bt.tx, bt.ty) == 0 then
             brokenCount += 1
         end
     end
-    if S.autoCollect and (type(aliveFn) ~= "function" or aliveFn()) then
-        Packets.Collect({ radius = 5, preferWalk = true, collectDelay = S.collectDelay, shouldContinue = aliveFn })
-    end
+    dfQuickCollectNear(aliveFn)
     return brokenCount
 end
 
 local function dfPlaceDirt(tx, ty, dirtId, aliveFn)
     local S = DirtFarm.State
+    local walkSpd = clamp(tonumber(S.walkSpeed) or 12, 6, 16)
     if Core.CountItem(dirtId) <= 0 and S.autoCollect then
-        Packets.Collect({ radius = 10, filterId = dirtId, stepMoveIfFar = true, preferWalk = true, collectDelay = S.collectDelay, shouldContinue = aliveFn })
+        Packets.Collect({ radius = 10, filterId = dirtId, stepMoveIfFar = true, preferWalk = true, walkSpeed = walkSpd, collectDelay = S.collectDelay, shouldContinue = aliveFn })
         if Core.CountItem(dirtId) <= 0 then
-            Packets.Collect({ radius = 8, stepMoveIfFar = true, preferWalk = true, collectDelay = S.collectDelay, shouldContinue = aliveFn })
+            Packets.Collect({ radius = 8, stepMoveIfFar = true, preferWalk = true, walkSpeed = walkSpd, collectDelay = S.collectDelay, shouldContinue = aliveFn })
         end
     end
     if Core.CountItem(dirtId) <= 0 then
         return false, "no_dirt"
     end
-    local okM = moveNearDfTile(tx, ty, aliveFn)
+    local dirtInfo = Core.GetItemInfo(dirtId)
+    local okM = moveNearDfTile(tx, ty, aliveFn, "build", dirtInfo)
     if not okM then return false, "unreachable" end
     local okP, msgP = Packets.PlaceVerified(tx, ty, dirtId, 1, {
         showHand = S.showHand, delay = 0, noLocalMirror = false,
@@ -6024,7 +6623,7 @@ function DirtFarm.Start()
                         setDfStatus(string.format("[%s] SELESAI -> Rotation ke %s", curW, nextWorld))
                         emitNotify("SYT Dirt Farm", string.format("DF %s selesai! Pindah ke %s...", curW, nextWorld))
                         if DirtFarm.State.autoCollect then
-                            Packets.Collect({ radius = 8, stepMoveIfFar = true, preferWalk = true, collectDelay = DirtFarm.State.collectDelay, shouldContinue = alive })
+                            Packets.Collect({ radius = 8, stepMoveIfFar = true, preferWalk = true, walkSpeed = clamp(tonumber(DirtFarm.State.walkSpeed) or 12, 6, 16), collectDelay = DirtFarm.State.collectDelay, shouldContinue = alive })
                         end
                         DirtFarm.State.switchingWorld = true
                         pcall(gt.enter, nextWorld)
@@ -6542,8 +7141,9 @@ local function menuIsReady()
     local sg = getActiveMenuGui()
     if not sg or not sg.Parent then return false end
     if UI and UI.MainWindow and not UI.MainWindow.Parent then return false end
+    if not UI or type(UI.Features) ~= "table" or #UI.Features < 8 then return false end
     local okCnt, cnt = pcall(function() return #sg:GetDescendants() end)
-    return okCnt and cnt > 80
+    return okCnt and cnt > 140
 end
 
 local function allCanvasesReady()
@@ -6574,6 +7174,9 @@ local function enforceSingleActiveFeatureTab()
     end
     if type(UI.SyncRightPanelVisibility) == "function" then
         pcall(UI.SyncRightPanelVisibility, UI)
+    end
+    if type(UI.SyncNavCanvas) == "function" then
+        pcall(UI.SyncNavCanvas)
     end
 end
 
@@ -7128,6 +7731,7 @@ buildSYTMenuFn = function()
             local DfCfgCard = c:Card("Delay & Opsi Format Dirt Farm", nil, "Sliders", {
                 Subtitle = "Skip otomatis White Door, Bedrock & Locks"
             })
+            DfCfgCard:Slider("Walk Speed (DF)", "DfWalkSpeed", 6, 16, math.floor((DirtFarm.State.walkSpeed or 12) + 0.5), " t/s", function(v) DirtFarm.State.walkSpeed = v end, 1)
             DfCfgCard:Slider("Break Delay (ms)", "DfBreakMs", 40, 600, math.floor(DirtFarm.State.breakDelay * 1000), " ms", function(v) DirtFarm.State.breakDelay = v / 1000 end, 10)
             DfCfgCard:Slider("Place Delay (ms)", "DfPlaceMs", 40, 600, math.floor(DirtFarm.State.placeDelay * 1000), " ms", function(v) DirtFarm.State.placeDelay = v / 1000 end, 10)
             DfCfgCard:Slider("Collect Delay (ms)", "DfCollectMs", 20, 400, math.floor(DirtFarm.State.collectDelay * 1000), " ms", function(v) DirtFarm.State.collectDelay = v / 1000 end, 10)
@@ -7147,7 +7751,7 @@ buildSYTMenuFn = function()
             DfCtrl:Input("Status Dirt Farm", "DfStatusDisplay", "Idle", DirtFarm.State.status or "Idle")
 
             local DfGuide = r:Card("Alur Kerja DF Otomatis", "Info", "Shield", {
-                Subtitle = "1) Gali pojok kiri & kanan | 2) Ubah non-Dirt jadi Dirt | 3) Buat line selang 2 | 4) Pindah ke Rotation World berikutnya"
+                Subtitle = "1) Walk cepat + Auto-Break jalur | 2) Gali pojok & line selang 2 | 3) Ubah non-Dirt jadi Dirt | 4) Auto Rotation World"
             })
             DfGuide:Button("Bersihkan Drops DF Sekitar", "COLLECT", "Bolt", function()
                 Packets.Collect({ radius = 8, stepMoveIfFar = false, collectDelay = 0 })
@@ -7295,6 +7899,9 @@ buildSYTMenuFn = function()
 
     if type(buildMountedCanvasesFn) == "function" then
         buildMountedCanvasesFn()
+    end
+    if UI and type(UI.SyncNavCanvas) == "function" then
+        pcall(UI.SyncNavCanvas)
     end
 end
 
@@ -8421,6 +9028,11 @@ do
             local sg = getActiveMenuGui()
             if sg and sg.Parent and menuIsReady() then
                 sg.Enabled = true
+                task.defer(function()
+                    if UI and type(UI.SyncNavCanvas) == "function" then
+                        pcall(UI.SyncNavCanvas)
+                    end
+                end)
                 pcall(scanResponsiveButtons)
                 pcall(UIHooks.updateButtons)
                 if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
@@ -8496,6 +9108,8 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
             task.delay(0.08, function()
                 if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
                 pcall(SYT_Logic.Init, true)
+                pcall(Core.InstallAntiBackGuard)
+                pcall(hookIncomingNetGuard)
                 if Visual.State.lockNames then Visual.Apply() end
                 if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
                 if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end

@@ -299,7 +299,7 @@ local function base64Encode(data)
     end
 
     local len = #data
-    local out = table.create(math.ceil(len / 3))
+    local out = {}
     local idx = 1
     for i = 1, len, 3 do
         local b1, b2, b3 = data:byte(i, i + 2)
@@ -309,7 +309,7 @@ local function base64Encode(data)
         local c3 = math.floor(n / 64) % 64
         local c4 = n % 64
         out[idx] = B64_LUT[c1] .. B64_LUT[c2] .. (b2 and B64_LUT[c3] or "=") .. (b3 and B64_LUT[c4] or "=")
-        idx += 1
+        idx = idx + 1
     end
     return table.concat(out)
 end
@@ -381,6 +381,22 @@ local function gatherAllMapScripts(skipBuiltins)
     return list
 end
 
+local function sanitizeText(s)
+    if type(s) ~= "string" then
+        return ""
+    end
+    -- Strip null bytes so JSON/C strings never truncate
+    return (s:gsub("%z", ""))
+end
+
+local function sanitizeAsciiUtf8(s)
+    if type(s) ~= "string" then
+        return ""
+    end
+    -- Strip non-ASCII / invalid UTF-8 bytes as fallback when JSONEncode rejects a string
+    return (s:gsub("[%z\128-\255]", "?"))
+end
+
 local function extractScriptData(scr, decompCache, allowDecompile)
     local rawSrc = ""
     local bcRaw = ""
@@ -388,8 +404,9 @@ local function extractScriptData(scr, decompCache, allowDecompile)
 
     -- 1. Try direct .Source property (instant)
     pcall(function()
-        if scr.Source and #scr.Source > 0 then
-            rawSrc = scr.Source
+        local s = scr.Source
+        if type(s) == "string" and s:match("%S") then
+            rawSrc = sanitizeText(s)
         end
     end)
 
@@ -397,27 +414,25 @@ local function extractScriptData(scr, decompCache, allowDecompile)
     if hasBytecodeFn then
         pcall(function()
             local bc = getscriptbytecode(scr)
-            if bc and #bc > 0 then
+            if type(bc) == "string" and #bc > 0 then
                 bcRaw = bc
                 bcB64 = base64Encode(bc)
             end
         end)
     end
 
-    -- 3. Smart decompile: skip if empty bytecode, reuse cached bytecode, guard >256KB
+    -- 3. Smart decompile with dedup cache & >256KB crash guard
     if allowDecompile and rawSrc == "" and type(decompile) == "function" then
-        if hasBytecodeFn and bcRaw == "" then
-            rawSrc = ""
-        elseif bcRaw ~= "" and decompCache[bcRaw] ~= nil then
+        if bcRaw ~= "" and decompCache[bcRaw] ~= nil then
             rawSrc = decompCache[bcRaw]
         elseif #bcRaw <= MAX_DECOMP_BYTES then
             pcall(function()
                 local dec = decompile(scr)
-                if dec and #dec > 0 then
-                    rawSrc = dec
+                if type(dec) == "string" and dec:match("%S") then
+                    rawSrc = sanitizeText(dec)
                 end
             end)
-            if bcRaw ~= "" then
+            if bcRaw ~= "" and rawSrc ~= "" then
                 decompCache[bcRaw] = rawSrc
             end
         else
@@ -451,7 +466,7 @@ local function updateProgressUI(sent, total, failed, startTime)
     end
 end
 
-local function sendBatchWithRetry(endpoint, sessionID, placeID, totalScripts, items)
+local function encodeBatchSafe(sessionID, placeID, totalScripts, items)
     local okJson, body = pcall(function()
         return HttpService:JSONEncode({
             session_id = sessionID,
@@ -460,6 +475,31 @@ local function sendBatchWithRetry(endpoint, sessionID, placeID, totalScripts, it
             scripts    = items,
         })
     end)
+    if okJson and type(body) == "string" then
+        return true, body
+    end
+
+    -- Fallback: sanitize invalid UTF-8 in source/path fields and retry
+    for _, item in ipairs(items) do
+        item.source = sanitizeAsciiUtf8(item.source)
+        item.script_path = sanitizeAsciiUtf8(item.script_path)
+    end
+    local okRetry, bodyRetry = pcall(function()
+        return HttpService:JSONEncode({
+            session_id = sessionID,
+            place_id   = placeID,
+            total      = totalScripts,
+            scripts    = items,
+        })
+    end)
+    if okRetry and type(bodyRetry) == "string" then
+        return true, bodyRetry
+    end
+    return false, nil
+end
+
+local function sendBatchWithRetry(endpoint, sessionID, placeID, totalScripts, items)
+    local okJson, body = encodeBatchSafe(sessionID, placeID, totalScripts, items)
     if not okJson then
         return false, "json_encode_err"
     end
@@ -592,7 +632,7 @@ local function startExportPipeline()
         local lastStatusAt = os.clock()
 
         for w = 1, MAX_WORKERS do
-            activeWorkers += 1
+            activeWorkers = activeWorkers + 1
             task.spawn(function()
                 while true do
                     if not DebuggerState.IsRunning then
@@ -609,9 +649,9 @@ local function startExportPipeline()
                             batch
                         )
                         if ok then
-                            DebuggerState.SentScripts += #batch
+                            DebuggerState.SentScripts = DebuggerState.SentScripts + #batch
                         else
-                            DebuggerState.FailedScripts += #batch
+                            DebuggerState.FailedScripts = DebuggerState.FailedScripts + #batch
                         end
                         updateProgressUI(
                             DebuggerState.SentScripts,
@@ -625,7 +665,7 @@ local function startExportPipeline()
                         task.wait(0.02)
                     end
                 end
-                activeWorkers -= 1
+                activeWorkers = activeWorkers - 1
             end)
         end
 
@@ -668,7 +708,7 @@ local function startExportPipeline()
             }
 
             table.insert(currentBatch, item)
-            currentBytes += #src + #bcB64 + #sPath + 128
+            currentBytes = currentBytes + #src + #bcB64 + #sPath + 128
 
             if #currentBatch >= BATCH_MAX_COUNT or currentBytes >= BATCH_MAX_BYTES then
                 while #batchQueue >= MAX_QUEUE_DEPTH and DebuggerState.IsRunning do

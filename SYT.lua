@@ -553,6 +553,19 @@ local H = {
     goAckYIdx        = nil,
     skillsObj        = nil,
     origHandPower    = nil,
+    origSkills       = nil,
+    skillsHookedFor  = nil,
+    nameTagObj       = nil,
+    wornTbl          = nil,
+    playerSpriteObj  = nil,
+    origAreas        = nil,
+    areasBypassedFor = nil,
+    origDropOk       = nil,
+    dropOkHookedFor  = nil,
+    origDrawWeather  = nil,
+    weatherHookedFor = nil,
+    weatherLockedId  = nil,
+    weatherLockedOpts = nil,
     lastWorldTag     = "",
     lastTileAt       = 0,
     lastDropAt       = 0,
@@ -788,18 +801,63 @@ local function inspectUpvalues(gt)
             for _, c in ipairs(conns) do
                 local fn = type(c) == "table" and (c.Function or c["function"]) or nil
                 if type(fn) == "function" and uv(fn, 1) == gt then
-                    local hasScale, has64 = false, false
-                    for idx = 1, 80 do
+                    local hasScale, has64, hasSkills = false, false, false
+                    for idx = 1, 130 do
                         local val = uv(fn, idx)
-                        if val == nil and idx > 65 then break end
-                        if typeof(val) == "Instance" and val:IsA("UIScale") then hasScale = true end
-                        if val == 64 then has64 = true end
+                        if val == nil and idx > 110 then break end
+                        if typeof(val) == "Instance" and val:IsA("UIScale") then
+                            hasScale = true
+                        elseif val == 64 then
+                            has64 = true
+                        elseif type(val) == "table" and type(rawget(val, "handPower")) == "function" and type(rawget(val, "punchRange")) == "function" and type(rawget(val, "buildRange")) == "function" then
+                            hasSkills = true
+                        end
                     end
-                    if hasScale and has64 then
+                    if hasScale and (has64 or hasSkills) then
                         H.renderFn = fn
                         break
                     end
                 end
+            end
+        end
+    end
+
+    if H.renderFn then
+        for uIdx = 1, 130 do
+            local val = uv(H.renderFn, uIdx)
+            if val == nil and uIdx > 110 then break end
+            if type(val) == "table" then
+                if not H.particles and type(rawget(val, "swirl")) == "function" and type(rawget(val, "yolk")) == "function" then
+                    H.particles = val
+                elseif not H.backdropObj and type(rawget(val, "setWorld")) == "function" then
+                    H.backdropObj = val
+                elseif not H.skillsObj and type(rawget(val, "handPower")) == "function" and type(rawget(val, "punchRange")) == "function" and type(rawget(val, "buildRange")) == "function" then
+                    H.skillsObj = val
+                elseif not H.mobileControls and type(rawget(val, "dir")) == "function" and type(rawget(val, "jumping")) == "function" and type(rawget(val, "busy")) == "function" then
+                    H.mobileControls = val
+                elseif not H.nameTagObj and type(rawget(val, "tagKey")) == "function" and type(rawget(val, "redraw")) == "function" then
+                    H.nameTagObj = val
+                end
+            end
+        end
+    end
+
+    if H.skillsObj then
+        local sk = H.skillsObj
+        local origIsWorn = (H.skillsHookedFor == sk and H.origSkills and H.origSkills.isWorn) or rawget(sk, "isWorn")
+        if type(origIsWorn) == "function" then
+            local w = uv(origIsWorn, 1)
+            if type(w) == "table" then H.wornTbl = w end
+        end
+        local origApplyWorn = (H.skillsHookedFor == sk and H.origSkills and H.origSkills.applyWorn) or rawget(sk, "applyWorn")
+        if type(origApplyWorn) == "function" then
+            if type(H.wornTbl) ~= "table" then
+                local w = uv(origApplyWorn, 1)
+                if type(w) == "table" then H.wornTbl = w end
+            end
+            local ps = uv(origApplyWorn, 2)
+            if type(ps) == "table" and (type(rawget(ps, "rigs")) == "table" or typeof(rawget(ps, "SKIN")) == "Color3" or type(rawget(ps, "applyFeet")) == "function") then
+                H.playerSpriteObj = ps
             end
         end
     end
@@ -831,17 +889,9 @@ local function inspectUpvalues(gt)
         end
 
         local getc = (_debug and (_debug.getconstants or _debug.getconsts)) or getconstants
-        for uIdx = 1, 95 do
+        for uIdx = 1, 120 do
             local val = uv(H.renderFn, uIdx)
-            if type(val) == "table" then
-                if not H.particles and type(rawget(val, "swirl")) == "function" and type(rawget(val, "yolk")) == "function" then
-                    H.particles = val
-                elseif not H.backdropObj and type(rawget(val, "setWorld")) == "function" then
-                    H.backdropObj = val
-                elseif not H.skillsObj and type(rawget(val, "handPower")) == "function" and type(rawget(val, "punchRange")) == "function" and type(rawget(val, "buildRange")) == "function" then
-                    H.skillsObj = val
-                end
-            elseif type(val) == "function" then
+            if type(val) == "function" then
                 if H.touchHurtRef and val == H.touchHurtRef and not H.touchHurtIdx then
                     H.touchHurtIdx = uIdx
                     H.origTouchHurt = H.origTouchHurt or val
@@ -986,19 +1036,21 @@ end
 
 function Core.GetActionRange(kind)
     local sk = H.skillsObj
+    local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+    local src = (sk and H.skillsHookedFor == sk and H.origSkills and not (gs and gs.spoofServerReach)) and H.origSkills or sk
     local r = 2.5
-    if sk then
+    if src then
         if kind == "build" or kind == "place" then
-            if type(sk.buildRange) == "function" then
-                local ok, v = pcall(sk.buildRange)
+            if type(src.buildRange) == "function" then
+                local ok, v = pcall(src.buildRange)
                 if ok and type(v) == "number" and v >= 2.0 then r = v end
             end
         elseif kind == "punch" or kind == "break" then
-            if type(sk.punchRange) == "function" then
-                local ok, v = pcall(sk.punchRange)
+            if type(src.punchRange) == "function" then
+                local ok, v = pcall(src.punchRange)
                 if ok and type(v) == "number" and v >= 2.0 then r = v end
-            elseif type(sk.buildRange) == "function" then
-                local ok, v = pcall(sk.buildRange)
+            elseif type(src.buildRange) == "function" then
+                local ok, v = pcall(src.buildRange)
                 if ok and type(v) == "number" and v >= 2.0 then r = v end
             end
         end
@@ -1489,7 +1541,8 @@ function Core.EnsureBestDigEquipped()
     if not sk or not db or type(sk.handDig) ~= "function" or type(sk.onWear) ~= "function" then
         return false, 0
     end
-    local curDig = tonumber(select(2, pcall(sk.handDig))) or 0
+    local origHandDig = (H.skillsHookedFor == sk and H.origSkills and H.origSkills.handDig) or rawget(sk, "handDig")
+    local curDig = (type(origHandDig) == "function") and (tonumber(select(2, pcall(origHandDig))) or 0) or 0
     if curDig > 0 then
         return true, curDig
     end
@@ -1520,34 +1573,203 @@ function Core.EnsureBestDigEquipped()
     return false, curDig
 end
 
+function Core.InstallGetgcBypassHooks()
+    local sk = H.skillsObj
+    if sk and H.skillsHookedFor ~= sk then
+        local orig = {
+            handPower  = rawget(sk, "handPower"),
+            punchRange = rawget(sk, "punchRange"),
+            buildRange = rawget(sk, "buildRange"),
+            handDig    = rawget(sk, "handDig"),
+            wornSpeed  = rawget(sk, "wornSpeed"),
+            slowFall   = rawget(sk, "slowFall"),
+            fireproof  = rawget(sk, "fireproof"),
+            blocked    = rawget(sk, "blocked"),
+            isWorn     = rawget(sk, "isWorn"),
+            applyWorn  = rawget(sk, "applyWorn"),
+        }
+        H.origSkills = orig
+        H.origHandPower = orig.handPower or H.origHandPower
+        H.skillsHookedFor = sk
+
+        if type(orig.isWorn) == "function" then
+            local w = uv(orig.isWorn, 1)
+            if type(w) == "table" then H.wornTbl = w end
+        end
+        if type(orig.applyWorn) == "function" then
+            if type(H.wornTbl) ~= "table" then
+                local w = uv(orig.applyWorn, 1)
+                if type(w) == "table" then H.wornTbl = w end
+            end
+            local ps = uv(orig.applyWorn, 2)
+            if type(ps) == "table" and (type(rawget(ps, "rigs")) == "table" or typeof(rawget(ps, "SKIN")) == "Color3" or type(rawget(ps, "applyFeet")) == "function") then
+                H.playerSpriteObj = ps
+            end
+        end
+
+        if type(orig.handPower) == "function" then
+            sk.handPower = function(...)
+                local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                local on = ((H.oneHitForceUntil or 0) > os.clock())
+                    or (SYT_Logic.PNB and SYT_Logic.PNB.State and SYT_Logic.PNB.State.oneHit)
+                    or (SYT_Logic.Pabrik and SYT_Logic.Pabrik.State and SYT_Logic.Pabrik.State.oneHit)
+                    or (SYT_Logic.DirtFarm and SYT_Logic.DirtFarm.State and SYT_Logic.DirtFarm.State.oneHit)
+                    or (gs and gs.enabled and gs.bypassHandPower)
+                if on then return 99 end
+                return orig.handPower(...)
+            end
+        end
+        if type(orig.punchRange) == "function" then
+            sk.punchRange = function(...)
+                local okO, origV = pcall(orig.punchRange, ...)
+                local base = okO and tonumber(origV) or 2.5
+                local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                if gs and gs.enabled and gs.bypassClientRange then
+                    return math.max(base, tonumber(gs.maxRangeTiles) or 12)
+                end
+                if okO then return origV end
+                return base
+            end
+        end
+        if type(orig.buildRange) == "function" then
+            sk.buildRange = function(...)
+                local okO, origV = pcall(orig.buildRange, ...)
+                local base = okO and tonumber(origV) or 2.5
+                local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                if gs and gs.enabled and gs.bypassClientRange then
+                    return math.max(base, tonumber(gs.maxRangeTiles) or 12)
+                end
+                if okO then return origV end
+                return base
+            end
+        end
+        if type(orig.wornSpeed) == "function" then
+            sk.wornSpeed = function(...)
+                local okO, origV = pcall(orig.wornSpeed, ...)
+                local base = okO and tonumber(origV) or 1
+                local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                if gs and gs.enabled and gs.bypassWalkSpeed then
+                    return math.max(base, tonumber(gs.walkSpeedScale) or 1.45)
+                end
+                if okO then return origV end
+                return base
+            end
+        end
+        if type(orig.handDig) == "function" then
+            sk.handDig = function(...)
+                local okO, origV = pcall(orig.handDig, ...)
+                local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                if gs and gs.enabled and gs.bypassHandPower then
+                    if type(origV) == "boolean" then return true end
+                    if type(origV) == "number" then return math.max(origV, 99) end
+                end
+                if okO then return origV end
+                return false
+            end
+        end
+        if type(orig.slowFall) == "function" then
+            sk.slowFall = function(...)
+                local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                if gs and gs.enabled and gs.bypassPhysics then return true end
+                return orig.slowFall(...)
+            end
+        end
+        if type(orig.fireproof) == "function" then
+            sk.fireproof = function(...)
+                local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                if gs and gs.enabled and gs.bypassPhysics then return true end
+                return orig.fireproof(...)
+            end
+        end
+        if type(orig.blocked) == "function" then
+            sk.blocked = function(...)
+                local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                if gs and gs.enabled and gs.bypassUiBlock then return false end
+                return orig.blocked(...)
+            end
+        end
+    end
+
+    local gt = H.gt
+    if gt then
+        local areas = rawget(gt, "areas")
+        if type(areas) == "table" and H.areasBypassedFor ~= areas then
+            H.origAreas = {
+                tbl       = areas,
+                canEdit   = rawget(areas, "canEdit"),
+                mayBuild  = rawget(areas, "mayBuild"),
+                hasAccess = rawget(areas, "hasAccess"),
+            }
+            H.areasBypassedFor = areas
+            if type(H.origAreas.canEdit) == "function" then
+                areas.canEdit = function(...)
+                    local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                    if gs and gs.enabled and gs.bypassClientLocks then return true end
+                    return H.origAreas.canEdit(...)
+                end
+            end
+            if type(H.origAreas.mayBuild) == "function" then
+                areas.mayBuild = function(...)
+                    local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                    if gs and gs.enabled and gs.bypassClientLocks then return true end
+                    return H.origAreas.mayBuild(...)
+                end
+            end
+            if type(H.origAreas.hasAccess) == "function" then
+                areas.hasAccess = function(...)
+                    local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                    if gs and gs.enabled and gs.bypassClientLocks then return true end
+                    return H.origAreas.hasAccess(...)
+                end
+            end
+        end
+
+        if type(rawget(gt, "dropOk")) == "function" and H.dropOkHookedFor ~= gt then
+            H.origDropOk = rawget(gt, "dropOk")
+            H.dropOkHookedFor = gt
+            gt.dropOk = function(...)
+                local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+                if gs and gs.enabled and (gs.bypassUiBlock or gs.bypassClientLocks) then
+                    return true
+                end
+                return H.origDropOk(...)
+            end
+        end
+    end
+    return H.skillsHookedFor ~= nil
+end
+
 function Core.SyncOneHitHook(forceSec)
     if type(forceSec) == "number" and forceSec > 0 then
         H.oneHitForceUntil = math.max(H.oneHitForceUntil or 0, os.clock() + forceSec)
     end
-    local sk = H.skillsObj
-    if not sk or type(sk.handPower) ~= "function" or H.handPowerHooked then return end
-    H.origHandPower = H.origHandPower or sk.handPower
-    H.handPowerHooked = true
-    sk.handPower = function(...)
-        local on = ((H.oneHitForceUntil or 0) > os.clock())
-            or (SYT_Logic.PNB and SYT_Logic.PNB.State and SYT_Logic.PNB.State.oneHit)
-            or (SYT_Logic.Pabrik and SYT_Logic.Pabrik.State and SYT_Logic.Pabrik.State.oneHit)
-            or (SYT_Logic.DirtFarm and SYT_Logic.DirtFarm.State and SYT_Logic.DirtFarm.State.oneHit)
-        if on then return 99 end
-        return H.origHandPower(...)
-    end
+    return Core.InstallGetgcBypassHooks()
 end
 
 function SYT_Logic.Init(forceRefresh)
     local nowT = os.clock()
     H.lastInitTryAt = nowT
     local curWName = (H.gt and type(rawget(H.gt, "name")) == "string") and rawget(H.gt, "name") or ""
-    if curWName ~= "" and curWName ~= H.lastWorldTag then
+    local worldChanged = (curWName ~= "" and curWName ~= H.lastWorldTag)
+    if worldChanged then
         forceRefresh = true
         H.lastWorldTag = curWName
         H.inv = nil
+        H.renderFn = nil
         H.renderPosPairs = {}
         H.pxIdx = nil
+        H.skillsObj = nil
+        H.origSkills = nil
+        H.skillsHookedFor = nil
+        H.nameTagObj = nil
+        H.wornTbl = nil
+        H.playerSpriteObj = nil
+        H.origAreas = nil
+        H.areasBypassedFor = nil
+        H.origDropOk = nil
+        H.dropOkHookedFor = nil
+        H.origDrawWeather = nil
+        H.weatherHookedFor = nil
         H.tileAck = {}
         H.recentSelfEdits = {}
         H.lastPlaceRejectedAt = 0
@@ -1561,9 +1783,10 @@ function SYT_Logic.Init(forceRefresh)
     end
     if H.initialized and not forceRefresh and isValidGT(H.gt) and H.Net and H.ItemDB and H.inv then
         Core.EnsureMoveHook()
+        Core.EnsureManualInputHook()
         Core.EnsureTileHook()
         Core.EnsureChatWarnHook()
-        Core.SyncOneHitHook()
+        Core.InstallGetgcBypassHooks()
         if not H.wheelSpins then Core.DiscoverWheelSpins(false) end
         if type(Core.EnsureWheelHook) == "function" then Core.EnsureWheelHook() end
         pcall(Core.InstallAntiBackGuard)
@@ -1589,9 +1812,9 @@ function SYT_Logic.Init(forceRefresh)
                 if isValidGT(u1) then
                     H.gt = u1
                     if not H.renderFn then
-                        for idx = 1, 80 do
+                        for idx = 1, 130 do
                             local val = uv(fn, idx)
-                            if val == nil and idx > 65 then break end
+                            if val == nil and idx > 110 then break end
                             if typeof(val) == "Instance" and val:IsA("UIScale") then
                                 H.renderFn = fn
                                 break
@@ -1612,7 +1835,7 @@ function SYT_Logic.Init(forceRefresh)
         H.lastWorldTag = rawget(H.gt, "name") or H.lastWorldTag
     end
 
-    local needTableScan = (not isValidGT(H.gt) or not H.Net or not H.ItemDB or not H.inv or not H.stateObj or not H.others or not H.skillsObj)
+    local needTableScan = (not isValidGT(H.gt) or not H.Net or not H.ItemDB or not H.inv or not H.stateObj or not H.others or not H.skillsObj or not H.nameTagObj)
     if needTableScan and (nowT - (H.lastGcScanAt or 0) >= 4.0 or not isValidGT(H.gt)) then
         H.lastGcScanAt = nowT
         for _, v in ipairs(safeGetGC(true)) do
@@ -1639,6 +1862,8 @@ function SYT_Logic.Init(forceRefresh)
                     H.backdropObj = v
                 elseif not H.skillsObj and type(rawget(v, "handPower")) == "function" and type(rawget(v, "punchRange")) == "function" and type(rawget(v, "buildRange")) == "function" then
                     H.skillsObj = v
+                elseif not H.nameTagObj and type(rawget(v, "tagKey")) == "function" and type(rawget(v, "redraw")) == "function" then
+                    H.nameTagObj = v
                 end
             end
         end
@@ -1661,24 +1886,117 @@ function SYT_Logic.Init(forceRefresh)
     if H.Net and H.Net.died and not H.origDiedSend and type(H.Net.died.send) == "function" then
         H.origDiedSend = H.Net.died.send
     end
-    if H.skillsObj and not H.origHandPower and type(H.skillsObj.handPower) == "function" then
-        H.origHandPower = H.skillsObj.handPower
-    end
 
-    if H.gt and (not H.renderFn or forceRefresh) then
+    if H.gt and (not H.renderFn or not H.skillsObj or not H.nameTagObj or forceRefresh) then
+        H.mobileControls = nil
         pcall(inspectUpvalues, H.gt)
     end
 
     Core.EnsureMoveHook()
+    Core.EnsureManualInputHook()
     Core.EnsureTileHook()
     Core.EnsureChatWarnHook()
-    Core.SyncOneHitHook()
+    Core.InstallGetgcBypassHooks()
     Core.DiscoverWheelSpins(false)
     if type(Core.EnsureWheelHook) == "function" then Core.EnsureWheelHook() end
     pcall(Core.InstallAntiBackGuard)
     if type(SYT_Logic.InstallNetGuard) == "function" then pcall(SYT_Logic.InstallNetGuard) end
     H.initialized = isValidGT(H.gt) and H.Net ~= nil and H.ItemDB ~= nil
+    if worldChanged and H.initialized and SYT_Logic.Visual and type(SYT_Logic.Visual.OnWorldChanged) == "function" then
+        pcall(SYT_Logic.Visual.OnWorldChanged)
+    end
     return H.initialized
+end
+
+-- Pure Manual Input Hook (Game.lua MobileControls.current .dir() / .jumping())
+function Core.EnsureManualInputHook()
+    local mc = H.mobileControls
+    if not mc then
+        if not H._mcModRef then
+            pcall(function()
+                local pgui = LP and LP:FindFirstChild("PlayerGui")
+                local ggui = pgui and pgui:FindFirstChild("GameGui")
+                local mod = ggui and ggui:FindFirstChild("MobileControls")
+                if mod then
+                    H._mcModRef = require(mod)
+                end
+            end)
+        end
+        if type(H._mcModRef) == "table" and type(H._mcModRef.current) == "table" then
+            mc = H._mcModRef.current
+            H.mobileControls = mc
+        end
+    elseif type(H._mcModRef) == "table" and type(H._mcModRef.current) == "table" and H._mcModRef.current ~= mc then
+        mc = H._mcModRef.current
+        H.mobileControls = mc
+    end
+    if type(mc) ~= "table" or type(rawget(mc, "dir")) ~= "function" or type(rawget(mc, "jumping")) ~= "function" then
+        return false
+    end
+    if H._mcHookedObj == mc then
+        return true
+    end
+    local origDir = mc.dir
+    local origJump = mc.jumping
+    H._mcOrigDir = origDir
+    H._mcOrigJump = origJump
+    H._mcHookedObj = mc
+    mc.dir = function(...)
+        local ok, base = pcall(origDir, ...)
+        local mi = H.manualInput
+        if mi and mi.active then
+            if mi.expiresAt and os.clock() > mi.expiresAt then
+                mi.active = false
+                mi.dir = 0
+                mi.jump = false
+                return ok and base or 0
+            end
+            return mi.dir or 0
+        end
+        return ok and base or 0
+    end
+    mc.jumping = function(...)
+        local ok, base = pcall(origJump, ...)
+        local mi = H.manualInput
+        if mi and mi.active then
+            if mi.expiresAt and os.clock() > mi.expiresAt then
+                mi.active = false
+                mi.dir = 0
+                mi.jump = false
+                return ok and base or false
+            end
+            return mi.jump == true
+        end
+        return ok and base or false
+    end
+    return true
+end
+
+function Core.SetManualInput(dir, jump)
+    if type(H._mcModRef) == "table" and type(H._mcModRef.current) == "table" and H._mcModRef.current ~= H._mcHookedObj then
+        H.mobileControls = H._mcModRef.current
+        Core.EnsureManualInputHook()
+    elseif H._mcHookedObj ~= H.mobileControls or not H._mcHookedObj then
+        Core.EnsureManualInputHook()
+    end
+    H.manualInput = H.manualInput or {}
+    local mi = H.manualInput
+    local d = tonumber(dir) or 0
+    if d > 0 then d = 1 elseif d < 0 then d = -1 else d = 0 end
+    mi.dir = d
+    mi.jump = jump == true
+    mi.active = true
+    mi.expiresAt = os.clock() + 2.5
+    return true
+end
+
+function Core.ClearManualInput()
+    if H.manualInput then
+        H.manualInput.active = false
+        H.manualInput.dir = 0
+        H.manualInput.jump = false
+        H.manualInput.expiresAt = 0
+    end
 end
 
 -- In-Game Growblox Account helpers (BUKAN username Roblox)
@@ -2333,7 +2651,18 @@ local GetcSkipper = {
         skipUpdateItems  = false,
         longRangeNoDelay = true,
         noValidateBack   = true,
+        antiBack         = true,
+        stopOrNoSend     = "nosend",
+        safeStepCap      = 3,
         maxRangeTiles    = 12,
+        bypassClientRange = true,
+        bypassWalkSpeed  = false,
+        bypassHandPower  = false,
+        bypassPhysics    = false,
+        bypassClientLocks = false,
+        bypassUiBlock    = false,
+        spoofServerReach = false,
+        walkSpeedScale   = 1.45,
         jitterMin        = 0.05,
         jitterMax        = 0.35,
         minIntervals     = { tile = 0.045, move = 0.030, act = 0.040, take = 0.025, drop = 1.080, chat = 1.650 },
@@ -2343,6 +2672,39 @@ local GetcSkipper = {
     }
 }
 SYT_Logic.GetcSkipper = GetcSkipper
+
+function GetcSkipper.SyncBypassHooks()
+    Core.EnsureInit()
+    return Core.InstallGetgcBypassHooks()
+end
+
+function GetcSkipper.SetBypassOption(key, val)
+    GetcSkipper.State[key] = val
+    Core.EnsureInit()
+    Core.InstallGetgcBypassHooks()
+    return GetcSkipper.State[key]
+end
+
+function GetcSkipper.SetAntiBack(on)
+    GetcSkipper.State.antiBack = on == true
+    if GetcSkipper.State.antiBack and type(Core.InstallAntiBackGuard) == "function" then
+        pcall(Core.InstallAntiBackGuard)
+    end
+    return GetcSkipper.State.antiBack
+end
+
+function GetcSkipper.SetStopOrNoSend(mode)
+    local m = string.lower(tostring(mode or "nosend"))
+    if string.find(m, "stop", 1, true) then
+        m = "stop"
+    elseif string.find(m, "off", 1, true) then
+        m = "off"
+    else
+        m = "nosend"
+    end
+    GetcSkipper.State.stopOrNoSend = m
+    return m
+end
 
 function GetcSkipper.SetSkipUpdateItems(on)
     local S = GetcSkipper.State
@@ -2456,32 +2818,6 @@ local function moveTs()
 end
 
 local function computeMoveFlags(px, py, vx, vy, prevFacing)
-    -- Anti-Back / Stop-or-No-Send extensions on GetcSkipper
-    if GetcSkipper.State.antiBack == nil then GetcSkipper.State.antiBack = true end
-    if GetcSkipper.State.stopOrNoSend == nil then GetcSkipper.State.stopOrNoSend = "nosend" end
-    if GetcSkipper.State.safeStepCap == nil then GetcSkipper.State.safeStepCap = 3 end
-
-    function GetcSkipper.SetAntiBack(on)
-        GetcSkipper.State.antiBack = on == true
-        if GetcSkipper.State.antiBack and type(Core.InstallAntiBackGuard) == "function" then
-            pcall(Core.InstallAntiBackGuard)
-        end
-        return GetcSkipper.State.antiBack
-    end
-
-    function GetcSkipper.SetStopOrNoSend(mode)
-        local m = string.lower(tostring(mode or "nosend"))
-        if string.find(m, "stop", 1, true) then
-            m = "stop"
-        elseif string.find(m, "off", 1, true) then
-            m = "off"
-        else
-            m = "nosend"
-        end
-        GetcSkipper.State.stopOrNoSend = m
-        return m
-    end
-
     local facing = prevFacing or 1
     if math.abs(vx or 0) > 0.05 then
         facing = (vx > 0) and 1 or -1
@@ -3624,7 +3960,9 @@ function Packets.PlaceVerified(tx, ty, id, layer, opts)
         local sentAt = os.clock()
         local ok, msgP = Packets.Place({
             tx = tx, ty = ty, itemId = id, layer = layer,
-            showHand = opts.showHand, autoRange = false,
+            showHand = opts.showHand,
+            autoRange = opts.autoRange == true,
+            preferHybrid = opts.preferHybrid == true,
             noLocalMirror = strict,
             placeGap = opts.placeGap,
             bypassPlaceThrottle = opts.bypassPlaceThrottle,
@@ -4228,6 +4566,32 @@ function Core.StartSteppedAnchorFly()
     return true
 end
 
+local function snapOutOfSolidAtCurrentPos(gt)
+    if not gt then return false end
+    local p = Core.ReadPos()
+    if not (Core.IsSolid(p.tx, p.ty) or Core.IsSolid(p.tx, math.floor(p.y - 1.01))) then
+        return false
+    end
+    local best, bd = nil, 1e9
+    for dy = -6, 6 do
+        for dx = -6, 6 do
+            local ax, ay = p.tx + dx, p.ty + dy
+            if ax >= 0 and ax < gt.w and ay >= 1 and ay < gt.h
+                and not Core.IsSolid(ax, ay) and not Core.IsSolid(ax, ay - 1) then
+                local d = dx * dx + dy * dy
+                if d < bd then bd, best = d, { x = ax, y = ay } end
+            end
+        end
+    end
+    if best then
+        local nx, ny = best.x + 0.5, best.y + 1
+        Core.SetLocalCoords(nx, ny, 0, 0)
+        Packets.SendRawMove(nx, ny, 0, 0, 2, { t = 65535 })
+        return true
+    end
+    return false
+end
+
 function Misc.SetFly(enabled, speed)
     Core.EnsureInit()
     Core.EnsureMoveHook()
@@ -4242,25 +4606,7 @@ function Misc.SetFly(enabled, speed)
         H.flyLastValidPos = nil
         gt.ghost = (Misc.State.noClip == true)
         -- Jika berhenti terbang persis di dalam blok solid, geser halus ke tile kosong terdekat agar anti-stuck game tidak me-respawn ke spawn/base
-        local p = Core.ReadPos()
-        if Core.IsSolid(p.tx, p.ty) or Core.IsSolid(p.tx, math.floor(p.y - 1.01)) then
-            local best, bd = nil, 1e9
-            for dy = -6, 6 do
-                for dx = -6, 6 do
-                    local ax, ay = p.tx + dx, p.ty + dy
-                    if ax >= 0 and ax < gt.w and ay >= 1 and ay < gt.h
-                        and not Core.IsSolid(ax, ay) and not Core.IsSolid(ax, ay - 1) then
-                        local d = dx * dx + dy * dy
-                        if d < bd then bd, best = d, { x = ax, y = ay } end
-                    end
-                end
-            end
-            if best then
-                local nx, ny = best.x + 0.5, best.y + 1
-                Core.SetLocalCoords(nx, ny, 0, 0)
-                Packets.SendRawMove(nx, ny, 0, 0, 2, { t = 65535 })
-            end
-        end
+        snapOutOfSolidAtCurrentPos(gt)
         return false
     end
 
@@ -4778,14 +5124,15 @@ function Misc.SetNoClip(enabled)
         local pos = Core.ReadPos()
         Misc.State.noClipAnchor = { x = pos.x, y = pos.y, tx = pos.tx, ty = pos.ty }
         gt.ghost = true
+        gt.stuckAt = nil
         if type(SYT_Logic.InstallNetGuard) == "function" then pcall(SYT_Logic.InstallNetGuard) end
     else
-        gt.ghost = (Misc.State.fly == true)
-        local a = Misc.State.noClipAnchor
         Misc.State.noClipAnchor = nil
-        if a then
-            Core.SetLocalCoords(a.x, a.y, 0, 0)
-            Packets.SendRawMove(a.x, a.y, 0, 0, computeMoveFlags(a.x, a.y, 0, 0, 1))
+        gt.ghost = (Misc.State.fly == true)
+        if not snapOutOfSolidAtCurrentPos(gt) then
+            local pos = Core.ReadPos()
+            Core.SetLocalCoords(pos.x, pos.y, 0, 0)
+            Packets.SendRawMove(pos.x, pos.y, 0, 0, computeMoveFlags(pos.x, pos.y, 0, 0, 1))
         end
     end
     return Misc.State.noClip
@@ -5856,7 +6203,7 @@ function Pabrik.Start()
                             threads = 3, layer = layer, oneHit = S.oneHit,
                             hitDelay = math.max(0.12, tonumber(S.breakDelay) or 0.16),
                             showHand = S.showHand, showVisual = true,
-                            noLocalMirror = false, autoRange = false, shouldContinue = alive,
+                            noLocalMirror = false, autoRange = true, preferHybrid = true, shouldContinue = alive,
                         })
                     end
                     -- 2. Place block target ke 1-3 tile dengan verify visual==server & anti too-fast
@@ -5865,6 +6212,7 @@ function Pabrik.Start()
                         if Core.GetLayerTile(pt.tx, pt.ty, layer) == 0 then
                             Packets.PlaceVerified(pt.tx, pt.ty, S.blockId, layer, {
                                 showHand = S.showHand, delay = 0, noLocalMirror = false,
+                                autoRange = true, preferHybrid = true,
                                 retries = 2, placeGap = pabPlaceGap, shouldContinue = alive,
                             })
                         end
@@ -5883,7 +6231,7 @@ function Pabrik.Start()
                             threads = 3, layer = layer, oneHit = S.oneHit,
                             hitDelay = math.max(0.12, tonumber(S.breakDelay) or 0.16),
                             showHand = S.showHand, showVisual = true,
-                            noLocalMirror = false, autoRange = false, shouldContinue = alive,
+                            noLocalMirror = false, autoRange = true, preferHybrid = true, shouldContinue = alive,
                         })
                     end
                     if alive() then
@@ -5894,15 +6242,17 @@ function Pabrik.Start()
             elseif Core.CountItem(S.seedId) > 0 then
                 Packets.Collect({ radius = 5, stepMoveIfFar = false, preferHybrid = true, collectDelay = S.collectDelay, shouldContinue = alive })
                 local seedPlaceGap = math.max(H.adaptivePlaceGap or 0.155, tonumber(S.placeDelay) or 0.14)
+                local realPlaceDist = math.max(1, math.floor(Core.GetActionRange("place") - 0.35))
                 for _, t in ipairs(Pabrik.GetSortedTiles()) do
                     if not alive() or evaluateSeems() then break end
                     if Core.CountItem(S.blockId) > 0 or Core.CountItem(S.seedId) <= 0 then break end
                     if Core.IsPlantable(t.x, t.y) then
                         setPabrikStatus(string.format("TP x Walk -> Plant (%d, %d)", t.x, t.y))
-                        local okM = Packets.MoveHybrid(t.x, t.y, 4, alive)
+                        local okM = Core.IsInActionReach(t.x, t.y, "place") or Packets.MoveHybrid(t.x, t.y, realPlaceDist, alive)
                         if okM and alive() then
                             Packets.PlaceVerified(t.x, t.y, S.seedId, 1, {
                                 showHand = S.showHand, delay = 0, noLocalMirror = false,
+                                autoRange = true, preferHybrid = true,
                                 retries = 2, placeGap = seedPlaceGap, shouldContinue = alive,
                             })
                         end
@@ -5939,15 +6289,16 @@ function Pabrik.Start()
                 GetcSkipper.RandomizedWait(0.35, nil, alive)
             else
                 setPabrikStatus(string.format("TP x Walk -> Harvest %d trees", #ready))
+                local realPunchDist = math.max(1, math.floor(Core.GetActionRange("punch") - 0.35))
                 for _, t in ipairs(ready) do
                     if not alive() or evaluateSeems() then break end
-                    local okM = Packets.MoveHybrid(t.x, t.y, 4, alive)
+                    local okM = Core.IsInActionReach(t.x, t.y, "break") or Packets.MoveHybrid(t.x, t.y, realPunchDist, alive)
                     if okM and alive() then
                         Packets.HitDamage({
                             tx = t.x, ty = t.y, layer = 1,
                             oneHit = S.oneHit, hitDelay = math.max(0.12, tonumber(S.breakDelay) or 0.16),
                             showHand = S.showHand, showVisual = true,
-                            noLocalMirror = false, autoRange = false, shouldContinue = alive,
+                            noLocalMirror = false, autoRange = true, preferHybrid = true, shouldContinue = alive,
                         })
                         if alive() and Core.GetFG(t.x, t.y) == 0 then
                             Packets.Collect({ radius = 5, stepMoveIfFar = false, preferHybrid = true, collectDelay = S.collectDelay, shouldContinue = alive })
@@ -5978,11 +6329,11 @@ function Pabrik.Toggle()
     end
 end
 
--- [DIRT FARM] Auto Walk + Break & Replace Non-Dirt -> Format Dirt Farm + Rotation World
+-- [DIRT FARM] Pure Manual Walk + Jump + Break & Replace Non-Dirt -> Format Dirt Farm + Rotation World (No Fly / No TP)
 local DirtFarm = {
     State = {
         running = false, sessionToken = 0, thread = nil, status = "Idle",
-        breakDelay = 0.14, placeDelay = 0.12, collectDelay = 0.04, walkSpeed = 12,
+        breakDelay = 0.14, placeDelay = 0.12, collectDelay = 0.04,
         oneHit = false, showHand = true, autoCollect = true, centerGap = true,
         rotationText = "", rotationWorlds = {}, worldIdx = 1,
         switchingWorld = false,
@@ -6095,25 +6446,50 @@ local function buildDfBlueprint(gt)
     }
 end
 
-local moveNearDfTile, dfQuickCollectNear
 do
+    local function dfIsHazard(info)
+        local godMode = SYT_Logic.Misc and SYT_Logic.Misc.State and SYT_Logic.Misc.State.godMode == true
+        return info and (info.deadly == true or info.hurts == true) and not godMode
+    end
+
+    local function dfIsBlocking(tx, ty)
+        local gt = H.gt
+        if not gt or tx < 0 or tx >= gt.w or ty >= gt.h then return true end
+        if ty < 0 then return false end
+        if Core.IsSolid(tx, ty) then return true end
+        local id = Core.GetFG(tx, ty)
+        if id == 0 then return false end
+        return dfIsHazard(Core.GetItemInfo(id)) == true
+    end
+
+    local function dfIsStandable(tx, ty)
+        local gt = H.gt
+        if not gt or tx < 0 or tx >= gt.w or ty >= gt.h then return true end
+        if ty < 0 then return false end
+        if Core.IsSolid(tx, ty) then return true end
+        local id = Core.GetFG(tx, ty)
+        if id == 0 then return false end
+        local info = Core.GetItemInfo(id)
+        return info and info.platform == true and not info.background
+    end
+
     local function dfIsBreakableBlocking(tx, ty)
         local gt = H.gt
         if not gt or tx < 0 or tx >= gt.w or ty < 0 or ty >= gt.h then return false, false end
         local id = Core.GetFG(tx, ty)
         if id == 0 then return false, false end
         local info = Core.GetItemInfo(id)
-        local solid = Core.IsSolid(tx, ty)
-        local godMode = SYT_Logic.Misc and SYT_Logic.Misc.State and SYT_Logic.Misc.State.godMode == true
-        local hazard = info and (info.deadly == true or info.hurts == true) and not godMode
-        if not solid and not hazard then
-            return false, false
+        if not Core.IsSolid(tx, ty) and not dfIsHazard(info) then
+            return false, false, info
         end
         local breakable = (not Core.IsProtectedTile(id)) and Core.CanEditTile(tx, ty)
         return true, breakable, info
     end
 
     local function dfCanActFromStand(tx, ty, actionKind, itemInfo, standPos)
+        if actionKind == "stand" then
+            return math.abs(standPos.x - (tx + 0.5)) <= 0.48 and math.abs(standPos.y - (ty + 1)) <= 0.25
+        end
         if not Core.IsInActionReach(tx, ty, actionKind, standPos) then return false end
         if actionKind == "build" and itemInfo then
             return Core.CanPlaceBodyOk(tx, ty, itemInfo, standPos)
@@ -6121,17 +6497,482 @@ do
         return true
     end
 
-    -- Weighted A*: pilih jalan terbuka paling pendek, atau tembus blok breakable jika jalur terhalang / memutar jauh
-    local function findDfDigPath(sx, sy, targetX, targetY, actionKind, itemInfo)
+    local function dfQuickCollectNear(aliveFn, filterId)
+        local S = DirtFarm.State
+        if not S.autoCollect and not filterId then return 0 end
+        local gt = H.gt
+        if not gt or type(gt.dropList) ~= "function" then return 0 end
+        local okD, drops = pcall(gt.dropList)
+        if not okD or type(drops) ~= "table" or #drops == 0 then return 0 end
+        local pos = Core.ReadPos()
+        local now = os.clock()
+        local hasReadyNear = false
+        for i = 1, #drops do
+            local d = drops[i]
+            if type(d) == "table" and d.uid and d.x and d.y and (d.n or 0) > 0 and (d.readyAt or 0) <= now then
+                if not filterId or d.id == filterId then
+                    local distBody = math.max(math.abs(d.x - pos.x), math.abs(d.y - (pos.y - 0.5)))
+                    if distBody <= 4.55 and (d.id == 112 or Core.GetItemRoom(d.id) > 0) then
+                        hasReadyNear = true
+                        break
+                    end
+                end
+            end
+        end
+        if hasReadyNear then
+            local res = Packets.Collect({
+                radius = 4.55, filterId = filterId, stepMoveIfFar = false,
+                collectDelay = tonumber(S.collectDelay) or 0.04,
+                shouldContinue = aliveFn,
+            })
+            return res and res.totalTaken or 0
+        end
+        return 0
+    end
+
+    local function dfBreakList(obsList, aliveFn)
+        if not obsList or #obsList == 0 then return true end
+        Core.ClearManualInput()
+        local S = DirtFarm.State
+        local dfHitGap = math.max(0.08, tonumber(S.breakDelay) or 0.14)
+        local posNow = Core.ReadPos()
+        local valid = {}
+        for _, bt in ipairs(obsList) do
+            local tx, ty = bt.tx or bt.x, bt.ty or bt.y
+            local cid = Core.GetFG(tx, ty)
+            if cid ~= 0 and not Core.IsProtectedTile(cid) and Core.CanEditTile(tx, ty) and Core.IsInActionReach(tx, ty, "break", posNow) then
+                valid[#valid + 1] = { tx = tx, ty = ty, layer = 1 }
+            end
+        end
+        if #valid == 0 then
+            for _, bt in ipairs(obsList) do
+                local tx, ty = bt.tx or bt.x, bt.ty or bt.y
+                if Core.GetFG(tx, ty) ~= 0 then return false end
+            end
+            return true
+        end
+
+        Packets.BreakBlocksParallel(valid, {
+            threads = 3, layer = 1, oneHit = S.oneHit,
+            hitDelay = dfHitGap, showHand = S.showHand,
+            showVisual = true, noLocalMirror = false,
+            verifyBreak = true, autoRange = false, shouldContinue = aliveFn,
+        })
+        for _ = 1, 3 do
+            if type(aliveFn) == "function" and not aliveFn() then break end
+            local rem = {}
+            for _, bt in ipairs(valid) do
+                local cid = Core.GetFG(bt.tx, bt.ty)
+                if cid ~= 0 and not Core.IsProtectedTile(cid) then
+                    rem[#rem + 1] = bt
+                end
+            end
+            if #rem == 0 then break end
+            Packets.BreakVerified(rem, {
+                threads = 3, layer = 1, oneHit = false,
+                hitDelay = math.max(0.10, dfHitGap), showHand = S.showHand,
+                showVisual = true, noLocalMirror = true,
+                autoRange = false, shouldContinue = aliveFn,
+            })
+        end
+        for _, bt in ipairs(valid) do
+            if Core.GetFG(bt.tx, bt.ty) ~= 0 then
+                return false
+            end
+        end
+        return true
+    end
+
+    local function dfSettleGrounded(aliveFn, maxWait)
+        Core.ClearManualInput()
+        local deadline = os.clock() + (maxWait or 0.45)
+        while os.clock() < deadline do
+            if type(aliveFn) == "function" and not aliveFn() then return false end
+            local p = Core.ReadPos()
+            if p.grounded or math.abs(p.vy) < 0.05 then return true end
+            task.wait(0.016)
+        end
+        return false
+    end
+
+    local function dfStepWalkToX(goalX, expectedFloorY, maxTime, aliveFn, stopIfFn, keepMovingOnPass)
+        local t0 = os.clock()
+        local deadline = t0 + (maxTime or 3.5)
+        local lastX = Core.ReadPos().x
+        local lastProgT = t0
+        while os.clock() < deadline do
+            if type(aliveFn) == "function" and not aliveFn() then
+                Core.ClearManualInput()
+                return false, "cancelled"
+            end
+            local p = Core.ReadPos()
+            if expectedFloorY and math.abs(p.y - expectedFloorY) > 0.65 and not p.grounded then
+                Core.ClearManualInput()
+                return false, "fell"
+            end
+            if type(stopIfFn) == "function" then
+                local st, reason = stopIfFn(p)
+                if st then
+                    if not keepMovingOnPass then
+                        Core.ClearManualInput()
+                    end
+                    return true, reason or "stopped"
+                end
+            end
+            local dx = goalX - p.x
+            if math.abs(dx) <= 0.12 then
+                Core.ClearManualInput()
+                return true, "reached"
+            end
+            if math.abs(p.x - lastX) > 0.04 then
+                lastX = p.x
+                lastProgT = os.clock()
+            elseif (os.clock() - lastProgT) > 0.55 then
+                Core.ClearManualInput()
+                return false, "stalled"
+            end
+            Core.SetManualInput((dx > 0) and 1 or -1, false)
+            task.wait(0.016)
+        end
+        Core.ClearManualInput()
+        return false, "timeout"
+    end
+
+    local function dfManualJumpTo(destTileX, destFloorY, aliveFn)
+        local targetCenterX = destTileX + 0.5
+        local p0 = Core.ReadPos()
+        local startY = p0.y
+        local dyNeeded = startY - destFloorY
+        local t0 = os.clock()
+        local deadline = t0 + 1.65
+        local jumped = false
+        local releasedJump = false
+
+        while os.clock() < deadline do
+            if type(aliveFn) == "function" and not aliveFn() then
+                Core.ClearManualInput()
+                return false, "cancelled"
+            end
+            local p = Core.ReadPos()
+            local now = os.clock()
+            local elapsed = now - t0
+            if not p.grounded or p.vy < -1.0 then
+                jumped = true
+            end
+
+            if jumped and p.grounded and elapsed > 0.14 then
+                if math.abs(p.y - destFloorY) <= 0.20 and math.abs(p.x - targetCenterX) <= 0.58 then
+                    Core.ClearManualInput()
+                    if math.abs(p.x - targetCenterX) > 0.15 then
+                        dfStepWalkToX(targetCenterX, destFloorY, 0.45, aliveFn)
+                    end
+                    return true, "landed"
+                elseif math.abs(p.y - destFloorY) > 0.25 and p.y > destFloorY + 0.25 then
+                    Core.ClearManualInput()
+                    return false, "missed_floor"
+                end
+            end
+
+            local dx = targetCenterX - p.x
+            local dir = 0
+            if dyNeeded >= 0.5 and elapsed < 0.09 and p.y > destFloorY + 0.25 and math.abs(dx) <= 1.25 then
+                dir = 0
+            elseif math.abs(dx) > 0.10 then
+                dir = (dx > 0) and 1 or -1
+            end
+
+            local wantJump = false
+            if not releasedJump then
+                if dyNeeded >= 1.5 then
+                    if elapsed < 0.20 and p.y > destFloorY - 0.35 and (p.vy <= 0 or not jumped) then
+                        wantJump = true
+                    elseif elapsed >= 0.08 then
+                        releasedJump = true
+                    end
+                elseif dyNeeded >= 0.5 then
+                    if elapsed < 0.12 and p.y > destFloorY - 0.30 and (p.vy <= 0 or not jumped) then
+                        wantJump = true
+                    elseif elapsed >= 0.05 then
+                        releasedJump = true
+                    end
+                else
+                    if elapsed < 0.12 and p.y > startY - 0.75 and (p.vy <= 0 or not jumped) then
+                        wantJump = true
+                    elseif elapsed >= 0.06 then
+                        releasedJump = true
+                    end
+                end
+            end
+
+            Core.SetManualInput(dir, wantJump)
+            task.wait(0.016)
+        end
+        Core.ClearManualInput()
+        local pf = Core.ReadPos()
+        local okF = math.abs(pf.y - destFloorY) <= 0.25 and math.abs(pf.x - targetCenterX) <= 0.65
+        return okF, okF and "landed_late" or "jump_timeout"
+    end
+
+    local function dfDropIntoCol(targetColX, destFloorY, aliveFn, maxWait)
+        local targetCenterX = targetColX + 0.5
+        local t0 = os.clock()
+        local deadline = t0 + (maxWait or 2.8)
+        while os.clock() < deadline do
+            if type(aliveFn) == "function" and not aliveFn() then
+                Core.ClearManualInput()
+                return false, "cancelled"
+            end
+            local p = Core.ReadPos()
+            if p.grounded and math.abs(p.y - destFloorY) <= 0.20 and math.abs(p.x - targetCenterX) <= 0.65 then
+                Core.ClearManualInput()
+                if math.abs(p.x - targetCenterX) > 0.15 then
+                    dfStepWalkToX(targetCenterX, destFloorY, 0.45, aliveFn)
+                end
+                return true, "landed"
+            end
+            if p.grounded and p.y > destFloorY + 0.35 then
+                Core.ClearManualInput()
+                return false, "overshot_drop"
+            end
+            local dx = targetCenterX - p.x
+            local dir = (math.abs(dx) > 0.12) and ((dx > 0) and 1 or -1) or 0
+            Core.SetManualInput(dir, false)
+            task.wait(0.016)
+        end
+        Core.ClearManualInput()
+        return false, "drop_timeout"
+    end
+
+    local function dfPlaceDirtSafe(tx, ty, dirtId, aliveFn)
+        Core.ClearManualInput()
+        local curId = Core.GetFG(tx, ty)
+        if curId == dirtId then return true, "already" end
+        if curId ~= 0 then
+            if Core.IsProtectedTile(curId) or not Core.CanEditTile(tx, ty) then
+                return false, "protected"
+            end
+            if not dfBreakList({ { tx = tx, ty = ty, layer = 1 } }, aliveFn) then
+                return false, "break_failed"
+            end
+        end
+        if Core.CountItem(dirtId) <= 0 then
+            dfQuickCollectNear(aliveFn, dirtId)
+        end
+        if Core.CountItem(dirtId) <= 0 then
+            return false, "no_dirt"
+        end
+        local dirtInfo = Core.GetItemInfo(dirtId)
+        local pos = Core.ReadPos()
+        local okBody, reasonBody = Core.CanPlaceBodyOk(tx, ty, dirtInfo, pos)
+        if not okBody and reasonBody == "inside_player" then
+            local awayDir = (pos.x <= tx + 0.5) and -1 or 1
+            local safeX = (awayDir < 0) and (tx - 0.45) or (tx + 1.45)
+            local pFloor = math.floor(pos.y + 0.5)
+            if dfIsStandable(math.floor(safeX), pFloor) then
+                dfStepWalkToX(safeX, pFloor, 0.6, aliveFn)
+                pos = Core.ReadPos()
+                okBody, reasonBody = Core.CanPlaceBodyOk(tx, ty, dirtInfo, pos)
+            end
+        end
+        if not okBody then
+            return false, reasonBody or "body_blocked"
+        end
+        if not Core.IsInActionReach(tx, ty, "build", pos) then
+            return false, "out_of_reach"
+        end
+        local S = DirtFarm.State
+        local okP, msgP = Packets.PlaceVerified(tx, ty, dirtId, 1, {
+            showHand = S.showHand, delay = 0, noLocalMirror = false,
+            retries = 2, placeGap = math.max(H.adaptivePlaceGap or 0.155, tonumber(S.placeDelay) or 0.12),
+            shouldContinue = aliveFn,
+        })
+        return okP, msgP
+    end
+
+    local function dfCleanTilesInReach(coords, aliveFn)
+        local pos = Core.ReadPos()
+        local list = {}
+        for _, c in ipairs(coords) do
+            local cx, cy = c[1], c[2]
+            if cx >= 0 and cy >= 0 and H.gt and cx < H.gt.w and cy < H.gt.h then
+                local cid = Core.GetFG(cx, cy)
+                if cid ~= 0 and not Core.IsProtectedTile(cid) and Core.CanEditTile(cx, cy) and Core.IsInActionReach(cx, cy, "break", pos) then
+                    list[#list + 1] = { tx = cx, ty = cy, layer = 1 }
+                end
+            end
+        end
+        if #list == 0 then return true end
+        local idx = 1
+        while idx <= #list do
+            if type(aliveFn) == "function" and not aliveFn() then return false end
+            local batch = {}
+            for k = idx, math.min(#list, idx + 2) do
+                batch[#batch + 1] = list[k]
+            end
+            dfBreakList(batch, aliveFn)
+            idx += 3
+        end
+        return true
+    end
+
+    local function dfEnsureTemporaryStep(tx, ty, dirtId, aliveFn)
+        local cid = Core.GetFG(tx, ty)
+        if dfIsStandable(tx, ty) and not dfIsHazard(cid > 0 and Core.GetItemInfo(cid) or nil) then
+            return true
+        end
+        local okP, errP = dfPlaceDirtSafe(tx, ty, dirtId, aliveFn)
+        return okP, errP
+    end
+
+    local function dfClimbShaftToFloorY(bp, colA, colB, targetFloorY, dirtId, aliveFn, preferExitX)
+        local S = DirtFarm.State
+        local dirtInfo = Core.GetItemInfo(dirtId)
+        for _ = 1, 80 do
+            if type(aliveFn) == "function" and not aliveFn() then
+                Core.ClearManualInput()
+                return false, "cancelled"
+            end
+            dfSettleGrounded(aliveFn, 0.35)
+            local pos = Core.ReadPos()
+            local curFloorY = math.floor(pos.y + 0.5)
+            if curFloorY <= targetFloorY then
+                Core.ClearManualInput()
+                return true, "climbed"
+            end
+
+            local standCol = pos.tx
+            if standCol ~= colA and standCol ~= colB then
+                local enterCol = (math.abs(colA - pos.tx) <= math.abs(colB - pos.tx)) and colA or colB
+                if math.abs(enterCol - pos.tx) > 1 then
+                    Core.ClearManualInput()
+                    return false, "not_adjacent_to_shaft"
+                end
+                dfCleanTilesInReach({ { enterCol, curFloorY - 1 }, { enterCol, curFloorY - 2 } }, aliveFn)
+                local okStep, errStep = dfEnsureTemporaryStep(enterCol, curFloorY, dirtId, aliveFn)
+                if not okStep then return false, errStep or "no_dirt_entry" end
+                dfStepWalkToX(enterCol + 0.5, curFloorY, 0.9, aliveFn)
+                pos = Core.ReadPos()
+                standCol = pos.tx
+                curFloorY = math.floor(pos.y + 0.5)
+            end
+
+            local otherCol = (standCol == colA) and colB or colA
+            local nextFloorY = curFloorY - 1
+            local nextFootY = nextFloorY - 1
+
+            local clearReq = {
+                { standCol, nextFootY },
+                { standCol, nextFootY - 1 },
+                { otherCol, nextFootY },
+                { otherCol, nextFootY - 1 },
+            }
+            if nextFloorY == targetFloorY and preferExitX then
+                clearReq[#clearReq + 1] = { preferExitX, targetFloorY - 1 }
+            end
+            dfCleanTilesInReach(clearReq, aliveFn)
+
+            local stepFloor = nextFloorY
+            local cidStep = Core.GetFG(otherCol, stepFloor)
+            if cidStep == 0 or not dfIsStandable(otherCol, stepFloor) or dfIsHazard(cidStep > 0 and Core.GetItemInfo(cidStep) or nil) then
+                if not dfCanActFromStand(otherCol, stepFloor, "build", dirtInfo, pos) then
+                    dfStepWalkToX(standCol + 0.5, curFloorY, 0.5, aliveFn)
+                end
+                local okP, errP = dfPlaceDirtSafe(otherCol, stepFloor, dirtId, aliveFn)
+                if not okP then
+                    Core.ClearManualInput()
+                    return false, errP or "no_dirt_climb"
+                end
+            end
+
+            local okJ = dfManualJumpTo(otherCol, stepFloor, aliveFn)
+            if not okJ then
+                Core.ClearManualInput()
+                return false, "climb_jump_failed"
+            end
+
+            -- Hancurkan blok pijakan sementara di belakang hanya jika termasuk kolom shaft (desiredAt == 0)
+            local cleanup = {}
+            if bp.desiredAt(standCol, curFloorY) == 0 and Core.GetFG(standCol, curFloorY) ~= 0 then
+                cleanup[#cleanup + 1] = { standCol, curFloorY }
+            end
+            if bp.desiredAt(standCol, curFloorY + 1) == 0 and Core.GetFG(standCol, curFloorY + 1) ~= 0 then
+                cleanup[#cleanup + 1] = { standCol, curFloorY + 1 }
+            end
+            if #cleanup > 0 then
+                dfCleanTilesInReach(cleanup, aliveFn)
+                dfQuickCollectNear(aliveFn, dirtId)
+            end
+        end
+        Core.ClearManualInput()
+        return false, "climb_limit"
+    end
+
+    local function dfTransitionToLowerRow(bp, shaftInner, shaftOuter, edgeX, fromCorY, nextCorY, dirtId, aliveFn)
+        local fromFloorY = fromCorY + 1
+        local nextFloorY = nextCorY + 1
+        local clearPre = {
+            { shaftInner, fromCorY }, { shaftOuter, fromCorY },
+            { shaftInner, fromCorY + 1 }, { shaftOuter, fromCorY + 1 },
+            { shaftOuter, nextCorY }, { edgeX, nextCorY },
+        }
+        if nextFloorY > bp.maxWorkY then
+            clearPre[#clearPre + 1] = { shaftInner, nextCorY }
+        end
+        dfCleanTilesInReach(clearPre, aliveFn)
+
+        -- Kasus Bedrock langsung: jatuh langsung ke Bedrock tanpa perlu step lantai sementara
+        if nextFloorY > bp.maxWorkY then
+            local okD = dfDropIntoCol(shaftInner, nextFloorY, aliveFn, 2.2)
+            if not okD then return false, "bedrock_drop_failed" end
+            return dfStepWalkToX(edgeX + 0.5, nextFloorY, 1.0, aliveFn)
+        end
+
+        -- Buat landing step sementara 1 tile di bawah agar tidak nyangkut atap koridor 1-tile
+        local okStep1, errS1 = dfEnsureTemporaryStep(shaftInner, nextCorY, dirtId, aliveFn)
+        if not okStep1 then return false, errS1 or "drop_step1_failed" end
+
+        local okD1 = dfDropIntoCol(shaftInner, nextCorY, aliveFn, 1.8)
+        if not okD1 then return false, "drop_step1_miss" end
+
+        dfCleanTilesInReach({ { shaftOuter, nextCorY }, { edgeX, nextCorY } }, aliveFn)
+        local okStep2, errS2 = dfEnsureTemporaryStep(shaftOuter, nextFloorY, dirtId, aliveFn)
+        if not okStep2 then return false, errS2 or "drop_step2_failed" end
+
+        local okD2 = dfDropIntoCol(shaftOuter, nextFloorY, aliveFn, 1.8)
+        if not okD2 then return false, "drop_step2_miss" end
+
+        dfCleanTilesInReach({ { shaftInner, nextCorY }, { edgeX, nextCorY } }, aliveFn)
+        if bp.desiredAt(edgeX, nextFloorY) == dirtId and Core.GetFG(edgeX, nextFloorY) ~= dirtId then
+            local okE, errE = dfPlaceDirtSafe(edgeX, nextFloorY, dirtId, aliveFn)
+            if not okE and not dfIsStandable(edgeX, nextFloorY) then
+                return false, errE or "edge_floor_failed"
+            end
+        end
+        local okIn, errIn = dfEnsureTemporaryStep(shaftInner, nextFloorY, dirtId, aliveFn)
+        if not okIn then return false, errIn or "drop_bridge_failed" end
+
+        local okWalk = dfStepWalkToX(edgeX + 0.5, nextFloorY, 1.4, aliveFn)
+        if not okWalk then return false, "enter_row_failed" end
+
+        local cleanShaft = {}
+        if bp.desiredAt(shaftInner, nextFloorY) == 0 then cleanShaft[#cleanShaft + 1] = { shaftInner, nextFloorY } end
+        if bp.desiredAt(shaftOuter, nextFloorY) == 0 then cleanShaft[#cleanShaft + 1] = { shaftOuter, nextFloorY } end
+        if #cleanShaft > 0 then
+            dfCleanTilesInReach(cleanShaft, aliveFn)
+            dfQuickCollectNear(aliveFn, dirtId)
+        end
+        return true, "entered"
+    end
+
+    local function dfFindManualPath(sx, sy, targetX, targetY, actionKind, itemInfo)
         local gt = H.gt
         if not gt then return nil end
         local w, h = gt.w or 100, gt.h or 60
         sx, sy = clamp(math.floor(sx), 0, w - 1), clamp(math.floor(sy), 0, h - 1)
         targetX, targetY = clamp(math.floor(targetX), 0, w - 1), clamp(math.floor(targetY), 0, h - 1)
 
-        local startStand = { x = sx + 0.5, y = sy + 1 }
-        if not dfIsBreakableBlocking(sx, sy) and dfCanActFromStand(targetX, targetY, actionKind, itemInfo, startStand) then
-            return { { x = sx, y = sy } }
+        if not dfIsBlocking(sx, sy) and dfIsStandable(sx, sy + 1) and dfCanActFromStand(targetX, targetY, actionKind, itemInfo, { x = sx + 0.5, y = sy + 1 }) then
+            return {}
         end
 
         local heapKeys, heapF, heapSz = {}, {}, 0
@@ -6147,7 +6988,7 @@ do
             heapKeys[i], heapF[i] = k, f
         end
         local function heapPop()
-            local topK, topF = heapKeys[1], heapF[1]
+            local topK = heapKeys[1]
             local lastK, lastF = heapKeys[heapSz], heapF[heapSz]
             heapKeys[heapSz], heapF[heapSz] = nil, nil
             heapSz -= 1
@@ -6163,19 +7004,39 @@ do
                 end
                 heapKeys[i], heapF[i] = lastK, lastF
             end
-            return topK, topF
+            return topK
+        end
+
+        local function clearCost(cx, cy, brkList)
+            local blk, brk, info = dfIsBreakableBlocking(cx, cy)
+            if not blk then return true, 0 end
+            if not brk then return false, 9999 end
+            if brkList then brkList[#brkList + 1] = { cx, cy } end
+            return true, 2.2 + math.max(1, toInt(info and info.hits, 3)) * 0.4
         end
 
         local startKey = sy * w + sx
-        local gScore, cameFrom, closed = { [startKey] = 0 }, { [startKey] = -1 }, {}
+        local gScore, cameFrom, edgeUsed, closed = { [startKey] = 0 }, { [startKey] = -1 }, {}, {}
         local function heuristic(x, y)
-            return math.max(0, math.abs(x - targetX) - 2) + math.max(0, math.abs(y - targetY) - 2)
+            return math.max(0, math.abs(x - targetX) - 2) + math.max(0, math.abs(y - targetY) - 2) * 1.35
         end
         heapPush(startKey, heuristic(sx, sy))
 
-        local dirs = { { 1, 0 }, { -1, 0 }, { 0, -1 }, { 0, 1 } }
+        local function tryPush(fromKey, nx, ny, cost, kind, dir, brkList)
+            if nx < 0 or nx >= w or ny < 0 or ny >= h then return end
+            local nk = ny * w + nx
+            if closed[nk] then return end
+            local ng = (gScore[fromKey] or 0) + cost
+            if not gScore[nk] or ng < gScore[nk] then
+                gScore[nk] = ng
+                cameFrom[nk] = fromKey
+                edgeUsed[nk] = { kind = kind, x = nx, y = ny, dir = dir, breakTiles = brkList }
+                heapPush(nk, ng + heuristic(nx, ny))
+            end
+        end
+
         local expansions = 0
-        while heapSz > 0 and expansions < 7500 do
+        while heapSz > 0 and expansions < 6500 do
             local curK = heapPop()
             if not closed[curK] then
                 closed[curK] = true
@@ -6184,35 +7045,99 @@ do
                 if curK ~= startKey then
                     local standPos = { x = cx + 0.5, y = cy + 1 }
                     if dfCanActFromStand(targetX, targetY, actionKind, itemInfo, standPos) then
-                        local rev, ptr = {}, curK
-                        while ptr and ptr ~= -1 do
-                            rev[#rev + 1] = { x = ptr % w, y = math.floor(ptr / w) }
-                            ptr = cameFrom[ptr]
+                        local underTarget = (actionKind == "break" and cx == targetX and cy + 1 == targetY)
+                        if not underTarget or heapSz == 0 or gScore[curK] > 30 then
+                            local rev, ptr = {}, curK
+                            while ptr and ptr ~= -1 do
+                                local ed = edgeUsed[ptr]
+                                if ed then rev[#rev + 1] = ed end
+                                ptr = cameFrom[ptr]
+                            end
+                            local path = {}
+                            for i = #rev, 1, -1 do path[#path + 1] = rev[i] end
+                            return path
                         end
-                        local path = {}
-                        for i = #rev, 1, -1 do path[#path + 1] = rev[i] end
-                        return path
                     end
                 end
 
-                local curG = gScore[curK]
-                for _, d in ipairs(dirs) do
-                    local nx, ny = cx + d[1], cy + d[2]
-                    if nx >= 0 and nx < w and ny >= 0 and ny < h then
-                        local nk = ny * w + nx
-                        if not closed[nk] then
-                            local blocking, breakable, info = dfIsBreakableBlocking(nx, ny)
-                            if (not blocking) or breakable then
-                                local stepCost = 1.0
-                                if blocking then
-                                    local hits = math.max(1, toInt(info and info.hits, 3))
-                                    stepCost = 2.6 + hits * 0.4
+                for _, dir in ipairs({ -1, 1 }) do
+                    local nx = cx + dir
+                    if nx >= 0 and nx < w then
+                        -- 1. Walk horizontal datar
+                        if dfIsStandable(nx, cy + 1) then
+                            local brk = {}
+                            local okC, cCost = clearCost(nx, cy, brk)
+                            if okC then
+                                tryPush(curK, nx, cy, 1.0 + cCost, "walk", dir, brk)
+                            end
+                        end
+
+                        -- 2. Jump Up 1..2 tile
+                        for jh = 1, 2 do
+                            local ny = cy - jh
+                            if ny >= 1 then
+                                local brk = {}
+                                local okAll = dfIsStandable(nx, ny + 1)
+                                local totalC = 2.4 + jh * 0.7
+                                if okAll then
+                                    for hy = cy - 1, ny - 1, -1 do
+                                        local okH, cH = clearCost(cx, hy, brk)
+                                        if not okH then okAll = false; break end
+                                        totalC += cH
+                                    end
                                 end
-                                local ng = curG + stepCost
-                                if not gScore[nk] or ng < gScore[nk] then
-                                    gScore[nk] = ng
-                                    cameFrom[nk] = curK
-                                    heapPush(nk, ng + heuristic(nx, ny))
+                                if okAll then
+                                    for ly = ny, ny - 1, -1 do
+                                        local okL, cL = clearCost(nx, ly, brk)
+                                        if not okL then okAll = false; break end
+                                        totalC += cL
+                                    end
+                                end
+                                if okAll then
+                                    tryPush(curK, nx, ny, totalC, "jump_up", dir, brk)
+                                end
+                            end
+                        end
+
+                        -- 3. Drop ke bawah melalui kolom air
+                        if not dfIsStandable(nx, cy + 1) then
+                            local brk = {}
+                            local okEntry, eCost = clearCost(nx, cy, brk)
+                            if okEntry then
+                                local fy = cy + 1
+                                while fy < h and not dfIsStandable(nx, fy) do
+                                    local blkD, brkD = dfIsBreakableBlocking(nx, fy)
+                                    if blkD and not brkD then fy = h + 1; break end
+                                    if blkD and brkD then brk[#brk + 1] = { nx, fy }; eCost += 2.6 end
+                                    fy += 1
+                                end
+                                if fy < h then
+                                    local landY = fy - 1
+                                    tryPush(curK, nx, landY, 1.4 + (landY - cy) * 0.35 + eCost, "drop", dir, brk)
+                                end
+                            end
+                        end
+
+                        -- 4. Jump horizontal melewati celah 1..2 tile
+                        for span = 2, 3 do
+                            local lx = cx + dir * span
+                            if lx >= 0 and lx < w and dfIsStandable(lx, cy + 1) and not dfIsStandable(nx, cy + 1) then
+                                local brk = {}
+                                local okGap, gapC = true, 2.5 + span * 0.4
+                                local okHead0, ch0 = clearCost(cx, cy - 1, brk)
+                                if not okHead0 then okGap = false end
+                                gapC += ch0
+                                if okGap then
+                                    for s = 1, span do
+                                        local gx = cx + dir * s
+                                        local ok1, c1 = clearCost(gx, cy, brk)
+                                        local ok2, c2 = clearCost(gx, cy - 1, brk)
+                                        if not ok1 or not ok2 then okGap = false; break end
+                                        gapC += c1 + c2
+                                    end
+                                end
+                                if okGap then
+                                    tryPush(curK, lx, cy, gapC, "jump_gap", dir, brk)
                                 end
                             end
                         end
@@ -6223,285 +7148,519 @@ do
         return nil
     end
 
-    local function dfBreakObstacles(obsList, aliveFn)
-        if #obsList == 0 then return false end
-        local S = DirtFarm.State
-        local dfHitGap = math.max(0.08, tonumber(S.breakDelay) or 0.14)
-        Packets.BreakBlocksParallel(obsList, {
-            threads = 3, layer = 1, oneHit = S.oneHit,
-            hitDelay = dfHitGap, showHand = S.showHand,
-            showVisual = true, noLocalMirror = false,
-            verifyBreak = true, autoRange = false, shouldContinue = aliveFn,
-        })
-        for _ = 1, 3 do
-            if type(aliveFn) == "function" and not aliveFn() then break end
-            local rem = {}
-            for _, bt in ipairs(obsList) do
-                if Core.GetFG(bt.tx, bt.ty) ~= 0 and not Core.IsProtectedTile(Core.GetFG(bt.tx, bt.ty)) then
-                    rem[#rem + 1] = bt
-                end
-            end
-            if #rem == 0 then break end
-            Packets.BreakVerified(rem, {
-                threads = 3, layer = 1, oneHit = false,
-                hitDelay = math.max(0.10, dfHitGap), showHand = S.showHand,
-                showVisual = true, noLocalMirror = true,
-                autoRange = false, shouldContinue = aliveFn,
-            })
-        end
-        for _, bt in ipairs(obsList) do
-            if Core.GetFG(bt.tx, bt.ty) ~= 0 then
+    local function dfExecutePath(path, tx, ty, actionKind, itemInfo, aliveFn)
+        local i = 1
+        while i <= #path do
+            if type(aliveFn) == "function" and not aliveFn() then
+                Core.ClearManualInput()
                 return false
             end
-        end
-        return true
-    end
-
-    dfQuickCollectNear = function(aliveFn)
-        local S = DirtFarm.State
-        if not S.autoCollect then return end
-        local gt = H.gt
-        if not gt or type(gt.dropList) ~= "function" then return end
-        local okD, drops = pcall(gt.dropList)
-        if not okD or type(drops) ~= "table" or #drops == 0 then return end
-        local pos = Core.ReadPos()
-        local now = os.clock()
-        local hasReadyNear = false
-        for i = 1, #drops do
-            local d = drops[i]
-            if type(d) == "table" and d.uid and d.x and d.y and (d.n or 0) > 0 and (d.readyAt or 0) <= now then
-                local distBody = math.max(math.abs(d.x - pos.x), math.abs(d.y - (pos.y - 0.5)))
-                if distBody <= 4.55 and (d.id == 112 or Core.GetItemRoom(d.id) > 0) then
-                    hasReadyNear = true
-                    break
+            if dfCanActFromStand(tx, ty, actionKind, itemInfo, Core.ReadPos()) then
+                Core.ClearManualInput()
+                return true
+            end
+            local ed = path[i]
+            if ed.breakTiles and #ed.breakTiles > 0 then
+                local needBrk = {}
+                for _, bt in ipairs(ed.breakTiles) do
+                    if dfIsBlocking(bt[1], bt[2]) then
+                        needBrk[#needBrk + 1] = bt
+                    end
+                end
+                if #needBrk > 0 then
+                    if not dfCleanTilesInReach(needBrk, aliveFn) then
+                        Core.ClearManualInput()
+                        return false
+                    end
+                    for _, bt in ipairs(needBrk) do
+                        if dfIsBlocking(bt[1], bt[2]) then
+                            Core.ClearManualInput()
+                            return false
+                        end
+                    end
                 end
             end
+
+            if ed.kind == "walk" then
+                local endIdx = i
+                local expectedY = ed.y + 1
+                while endIdx + 1 <= #path do
+                    local nxt = path[endIdx + 1]
+                    if nxt.kind == "walk" and nxt.dir == ed.dir and nxt.y == ed.y and (not nxt.breakTiles or #nxt.breakTiles == 0) then
+                        endIdx += 1
+                    else
+                        break
+                    end
+                end
+                local endNode = path[endIdx]
+                local okW = dfStepWalkToX(endNode.x + 0.5, expectedY, 1.2 + (endIdx - i + 1) * 0.25, aliveFn, function(p)
+                    return dfCanActFromStand(tx, ty, actionKind, itemInfo, p), "in_reach"
+                end)
+                if not okW then return false end
+                i = endIdx + 1
+            elseif ed.kind == "jump_up" or ed.kind == "jump_gap" then
+                local okJ = dfManualJumpTo(ed.x, ed.y + 1, aliveFn)
+                if not okJ then return false end
+                i += 1
+            elseif ed.kind == "drop" then
+                local okD = dfDropIntoCol(ed.x, ed.y + 1, aliveFn, 2.8)
+                if not okD then return false end
+                i += 1
+            else
+                i += 1
+            end
         end
-        if hasReadyNear then
-            Packets.Collect({
-                radius = 4.55, stepMoveIfFar = false, preferWalk = true,
-                walkSpeed = clamp(tonumber(S.walkSpeed) or 12, 6, 16),
-                collectDelay = tonumber(S.collectDelay) or 0.04,
-                shouldContinue = aliveFn,
-            })
-        end
+        Core.ClearManualInput()
+        return dfCanActFromStand(tx, ty, actionKind, itemInfo, Core.ReadPos())
     end
 
-    -- Walk + Break murni untuk Dirt Farm (zero TP, zero masuk blok solid sebelum hancur di server)
-    moveNearDfTile = function(tx, ty, shouldContinueFn, actionKind, itemInfo)
-        local S = DirtFarm.State
+    local function dfMoveManualNear(tx, ty, aliveFn, actionKind, itemInfo)
         local kind = actionKind or "break"
-        local walkSpd = clamp(tonumber(S.walkSpeed) or 12, 6, 16)
+        dfSettleGrounded(aliveFn, 0.35)
         local cur = Core.ReadPos()
         if dfCanActFromStand(tx, ty, kind, itemInfo, cur) then
             return true, "in_reach"
         end
 
-        for _ = 1, 3 do
-            if type(shouldContinueFn) == "function" and not shouldContinueFn() then
+        local dirtId = resolveDirtId()
+        for attempt = 1, 3 do
+            if type(aliveFn) == "function" and not aliveFn() then
+                Core.ClearManualInput()
                 return false, "cancelled"
             end
             cur = Core.ReadPos()
             if dfCanActFromStand(tx, ty, kind, itemInfo, cur) then
                 return true, "in_reach"
             end
-            local path = findDfDigPath(cur.tx, cur.ty, tx, ty, kind, itemInfo)
-            if not path or #path == 0 then
-                return false, "unreachable"
-            end
 
-            local idx = 1
-            local needReroute = false
-            while idx < #path do
-                if type(shouldContinueFn) == "function" and not shouldContinueFn() then
-                    return false, "cancelled"
+            local floorY = math.floor(cur.y + 0.5)
+            local path = dfFindManualPath(cur.tx, floorY - 1, tx, ty, kind, itemInfo)
+            if path then
+                if dfExecutePath(path, tx, ty, kind, itemInfo, aliveFn) then
+                    return true, "manual_reached"
                 end
-                if dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos()) then
-                    return true, "walk_in_reach"
+            elseif attempt == 1 and ty < cur.ty - 1 and Core.CountItem(dirtId) >= 2 and H.gt then
+                -- Jika target lebih tinggi dan terputus jurang/shaft, naik melalui shaft terdekat menggunakan pijakan Dirt manual
+                local w = H.gt.w or 100
+                local midX = math.floor(w / 2)
+                local shafts = {
+                    { 0, 1, 2 },
+                    { w - 2, w - 1, w - 3 },
+                }
+                if DirtFarm.State.centerGap then
+                    shafts[#shafts + 1] = { midX - 1, midX, (tx >= midX) and (midX + 1) or (midX - 2) }
                 end
-
-                local blockIdx = nil
-                for k = idx + 1, #path do
-                    if dfIsBreakableBlocking(path[k].x, path[k].y) then
-                        blockIdx = k
-                        break
-                    end
-                end
-
-                local openEnd = blockIdx and (blockIdx - 1) or #path
-                if openEnd > idx then
-                    local openSlice = {}
-                    for k = idx, openEnd do openSlice[#openSlice + 1] = path[k] end
-                    local dst = path[openEnd]
-                    local okW = Packets.WalkPathTo(dst.x, dst.y, walkSpd, shouldContinueFn, {
-                        fastWalk = walkSpd > 7.4, noSnap = true, customPath = openSlice,
-                    })
-                    idx = openEnd
-                    if dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos()) then
-                        return true, "walk_in_reach"
-                    end
-                    local afterPos = Core.ReadPos()
-                    if not okW and (math.abs(afterPos.tx - dst.x) + math.abs(afterPos.ty - dst.y)) > 1 then
-                        needReroute = true
-                        break
-                    end
-                end
-
-                if not blockIdx then break end
-
-                if dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos()) then
-                    return true, "walk_in_reach"
-                end
-
-                local obsBatch = {}
-                local posNow = Core.ReadPos()
-                local lim = math.min(#path, blockIdx + 4)
-                for k = blockIdx, lim do
-                    local nd = path[k]
-                    local blk, brk = dfIsBreakableBlocking(nd.x, nd.y)
-                    if blk then
-                        if brk and Core.IsInActionReach(nd.x, nd.y, "break", posNow) then
-                            obsBatch[#obsBatch + 1] = { tx = nd.x, ty = nd.y, layer = 1 }
-                            if #obsBatch >= 3 then break end
-                        elseif #obsBatch == 0 then
-                            needReroute = true
+                table.sort(shafts, function(a, b)
+                    return math.abs(a[1] - cur.tx) < math.abs(b[1] - cur.tx)
+                end)
+                local climbedAny = false
+                for _, sh in ipairs(shafts) do
+                    local cA, cB, exitX = sh[1], sh[2], sh[3]
+                    local basePath = dfFindManualPath(cur.tx, floorY - 1, exitX, cur.ty, "break", nil)
+                    if basePath and dfExecutePath(basePath, exitX, cur.ty, "break", nil, aliveFn) then
+                        local destFloorY = clamp(ty + 1, 2, (H.gt.h or 60) - 2)
+                        if dfClimbShaftToFloorY(buildDfBlueprint(H.gt), cA, cB, destFloorY, dirtId, aliveFn, exitX) then
+                            climbedAny = true
                             break
                         end
                     end
                 end
-                if needReroute or #obsBatch == 0 then
-                    needReroute = true
-                    break
-                end
+                if not climbedAny then break end
+            else
+                break
+            end
+        end
 
-                dfBreakObstacles(obsBatch, shouldContinueFn)
-                if dfIsBreakableBlocking(path[blockIdx].x, path[blockIdx].y) then
-                    needReroute = true
-                    break
-                end
-                if dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos()) then
-                    return true, "walk_break_in_reach"
-                end
+        Core.ClearManualInput()
+        local fin = Core.ReadPos()
+        local finOk = dfCanActFromStand(tx, ty, kind, itemInfo, fin)
+        return finOk, finOk and "manual_reached" or "unreachable"
+    end
+
+    local function dfWalkCorridorLower(bp, corY, xFrom, xTo, alsoClearAbove, aliveFn, markFailFn)
+        local dir = (xTo >= xFrom) and 1 or -1
+        local floorY = corY + 1
+        local dirtId = bp.dirtId
+        local dirtInfo = Core.GetItemInfo(dirtId)
+
+        for tx = xFrom, xTo, dir do
+            if type(aliveFn) == "function" and not aliveFn() then
+                Core.ClearManualInput()
+                return false, "cancelled"
             end
 
-            if dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos()) then
-                return true, "walk_break_ok"
-            end
-            if not needReroute then break end
-        end
+            -- Tangani Center Gap: jembatani datar dengan Dirt sementara atau lompat jika atas terbuka, lalu hancurkan di belakang
+            if DirtFarm.State.centerGap and (tx == bp.midX - 1 or tx == bp.midX) and floorY <= bp.maxWorkY then
+                local g1 = (dir > 0) and (bp.midX - 1) or bp.midX
+                local g2 = (dir > 0) and bp.midX or (bp.midX - 1)
+                if tx == g1 then
+                    local afterGap = g2 + dir
+                    local prepBreak = { { g1, corY }, { g2, corY } }
+                    if alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(g1, corY - 1) == 0 then
+                        prepBreak[#prepBreak + 1] = { g1, corY - 1 }
+                        prepBreak[#prepBreak + 1] = { g2, corY - 1 }
+                    end
+                    dfCleanTilesInReach(prepBreak, aliveFn)
 
-        local finOk = dfCanActFromStand(tx, ty, kind, itemInfo, Core.ReadPos())
-        return finOk, finOk and "walk_break_ok" or "out_of_reach"
-    end
-end
+                    local g1Solid = dfIsStandable(g1, floorY) and not dfIsHazard(Core.GetFG(g1, floorY) > 0 and Core.GetItemInfo(Core.GetFG(g1, floorY)) or nil)
+                    local g2Solid = dfIsStandable(g2, floorY) and not dfIsHazard(Core.GetFG(g2, floorY) > 0 and Core.GetItemInfo(Core.GetFG(g2, floorY)) or nil)
+                    local bridged = false
+                    if g1Solid and g2Solid then
+                        bridged = true
+                    elseif Core.CountItem(dirtId) >= 2 then
+                        if not g1Solid then g1Solid = dfEnsureTemporaryStep(g1, floorY, dirtId, aliveFn) end
+                        if not g2Solid then g2Solid = dfEnsureTemporaryStep(g2, floorY, dirtId, aliveFn) end
+                        bridged = g1Solid and g2Solid
+                    elseif not dfIsBlocking(tx - dir, corY - 1) and not dfIsBlocking(g1, corY - 1) and not dfIsBlocking(g2, corY - 1) and dfIsStandable(afterGap, floorY) then
+                        dfCleanTilesInReach({ { afterGap, corY } }, aliveFn)
+                        if dfManualJumpTo(afterGap, floorY, aliveFn) then
+                            bridged = true
+                        end
+                    end
 
-local function dfBreakBatch(tasksBatch, aliveFn)
-    if #tasksBatch == 0 then return 0 end
-    local S = DirtFarm.State
-    local first = tasksBatch[1]
-    local okM = moveNearDfTile(first.x, first.y, aliveFn, "break")
-    if not okM then return -1 end
+                    if not bridged then
+                        Core.ClearManualInput()
+                        return false, "no_dirt_bridge"
+                    end
+                    if math.abs(Core.ReadPos().tx - afterGap) > 0 then
+                        if not dfStepWalkToX(g2 + 0.5, floorY, 1.2, aliveFn) then
+                            Core.ClearManualInput()
+                            return false, "gap_walk_failed"
+                        end
+                        if bp.desiredAt(afterGap, floorY) == dirtId and Core.GetFG(afterGap, floorY) ~= dirtId then
+                            if not dfPlaceDirtSafe(afterGap, floorY, dirtId, aliveFn) and not dfIsStandable(afterGap, floorY) then
+                                Core.ClearManualInput()
+                                return false, "after_gap_no_floor"
+                            end
+                        end
+                        dfCleanTilesInReach({ { afterGap, corY } }, aliveFn)
+                        if not dfStepWalkToX(afterGap + 0.5, floorY, 0.9, aliveFn) then
+                            Core.ClearManualInput()
+                            return false, "gap_exit_failed"
+                        end
+                    end
+                    -- Bersihkan jembatan tengah dari sisi seberang (g1 & g2 masih <= 2.0 tile di belakang)
+                    dfCleanTilesInReach({ { g1, floorY }, { g2, floorY } }, aliveFn)
+                    dfQuickCollectNear(aliveFn)
+                end
+            else
+                -- Pastikan tile koridor, atap ekstra (bedrock), & lantai ke depan sesuai blueprint sebelum melangkah ke tx
+                local wantCor = bp.desiredAt(tx, corY)
+                local curCor = Core.GetFG(tx, corY)
+                local needCorBreak = (wantCor == 0 and curCor ~= 0 and not Core.IsProtectedTile(curCor))
+                local needAboveBreak = alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(tx, corY - 1) == 0 and Core.GetFG(tx, corY - 1) ~= 0 and not Core.IsProtectedTile(Core.GetFG(tx, corY - 1))
+                local wantFloor = (floorY <= bp.maxWorkY) and bp.desiredAt(tx, floorY) or nil
+                local curFloor = Core.GetFG(tx, floorY)
+                local needFloorFix = (wantFloor == dirtId and curFloor ~= dirtId and not Core.IsProtectedTile(curFloor) and Core.CanEditTile(tx, floorY))
 
-    local pendingList = {}
-    for _, t in ipairs(tasksBatch) do
-        local cid = Core.GetFG(t.x, t.y)
-        if cid ~= 0 and not Core.IsProtectedTile(cid) and Core.CanEditTile(t.x, t.y) then
-            pendingList[#pendingList + 1] = { tx = t.x, ty = t.y, layer = 1 }
-        end
-    end
-    if #pendingList == 0 then return 0 end
+                if needCorBreak or needAboveBreak or needFloorFix then
+                    local standReqX = tx - dir
+                    if dfIsStandable(standReqX, floorY) and math.abs(Core.ReadPos().x - (standReqX + 0.5)) > 0.35 then
+                        local okMove = dfStepWalkToX(standReqX + 0.5, floorY, 1.0, aliveFn)
+                        if not okMove then
+                            Core.ClearManualInput()
+                            return false, "approach_failed"
+                        end
+                    end
 
-    local dfHitGap = math.max(0.08, tonumber(S.breakDelay) or 0.14)
-    local cur = Core.ReadPos()
-    local execList, outReachList = {}, {}
-    for _, bt in ipairs(pendingList) do
-        if Core.IsInActionReach(bt.tx, bt.ty, "break", cur) and #execList < 3 then
-            execList[#execList + 1] = bt
-        else
-            outReachList[#outReachList + 1] = bt
-        end
-    end
-    if #execList == 0 then
-        execList[1] = pendingList[1]
-    end
+                    -- Batch break koridor 1..2 tile ke depan sekaligus agar cepat
+                    local brkBatch = {}
+                    if needCorBreak then brkBatch[#brkBatch + 1] = { tx, corY } end
+                    if needAboveBreak then brkBatch[#brkBatch + 1] = { tx, corY - 1 } end
+                    local tx2 = tx + dir
+                    if tx2 >= 2 and tx2 <= bp.w - 3 and not (DirtFarm.State.centerGap and (tx2 == bp.midX - 1 or tx2 == bp.midX)) then
+                        if bp.desiredAt(tx2, corY) == 0 and Core.GetFG(tx2, corY) ~= 0 and not Core.IsProtectedTile(Core.GetFG(tx2, corY)) then
+                            brkBatch[#brkBatch + 1] = { tx2, corY }
+                        end
+                    end
+                    if #brkBatch > 0 then
+                        dfCleanTilesInReach(brkBatch, aliveFn)
+                    end
 
-    local function runBreakSet(listToBreak)
-        if #listToBreak == 0 then return end
-        Packets.BreakBlocksParallel(listToBreak, {
-            threads = 3, layer = 1, oneHit = S.oneHit,
-            hitDelay = dfHitGap, showHand = S.showHand,
-            showVisual = true, noLocalMirror = false,
-            verifyBreak = true, autoRange = false, shouldContinue = aliveFn,
-        })
-        for _ = 1, 3 do
-            if type(aliveFn) == "function" and not aliveFn() then break end
-            local rem = {}
-            for _, bt in ipairs(listToBreak) do
-                if Core.GetFG(bt.tx, bt.ty) ~= 0 and not Core.IsProtectedTile(Core.GetFG(bt.tx, bt.ty)) then
-                    rem[#rem + 1] = bt
+                    if needFloorFix then
+                        local floorSolidNow = dfIsStandable(tx, floorY)
+                        if Core.CountItem(dirtId) <= 0 then
+                            dfQuickCollectNear(aliveFn, dirtId)
+                        end
+                        if Core.CountItem(dirtId) > 0 then
+                            local okP, errP = dfPlaceDirtSafe(tx, floorY, dirtId, aliveFn)
+                            if not okP and markFailFn then markFailFn(tx, floorY) end
+                        elseif not floorSolidNow then
+                            -- Jika tidak ada Dirt dan lantai bolong, lompat ke depan jika celah <= 2 dan tidak terhalang atap
+                            Core.ClearManualInput()
+                            return false, "no_dirt"
+                        end
+                    end
+                end
+
+                -- Melangkah datar melalui tx (hanya jeda di tx jika berada di pinggir shaft untuk membersihkan 2 kolom shaft)
+                local atLeftEdge = (tx == 2)
+                local atRightEdge = (tx == bp.w - 3)
+                if atLeftEdge or atRightEdge or tx == xTo then
+                    local okStep = dfStepWalkToX(tx + 0.5, floorY, 1.1, aliveFn)
+                    if not okStep then
+                        Core.ClearManualInput()
+                        return false, "edge_walk_failed"
+                    end
+                    local sCols = atLeftEdge and { 0, 1 } or (atRightEdge and { bp.w - 2, bp.w - 1 } or {})
+                    if #sCols > 0 then
+                        local scList = {}
+                        for _, sc in ipairs(sCols) do
+                            if bp.desiredAt(sc, corY) == 0 and Core.GetFG(sc, corY) ~= 0 then scList[#scList + 1] = { sc, corY } end
+                            if alsoClearAbove and bp.desiredAt(sc, corY - 1) == 0 and Core.GetFG(sc, corY - 1) ~= 0 then scList[#scList + 1] = { sc, corY - 1 } end
+                            -- Jangan hancurkan lantai shaft ujung ini jika masih perlu turun di kolom ujung ini
+                            local isDropTurnHere = (tx == xTo and floorY <= bp.maxWorkY)
+                            if not isDropTurnHere and bp.desiredAt(sc, floorY) == 0 and Core.GetFG(sc, floorY) ~= 0 then
+                                scList[#scList + 1] = { sc, floorY }
+                            end
+                        end
+                        dfCleanTilesInReach(scList, aliveFn)
+                        dfQuickCollectNear(aliveFn)
+                    end
+                else
+                    -- Terus berjalan mulus melewati tile bersih tanpa berhenti
+                    local okWalkTile = dfStepWalkToX(tx + 0.5, floorY, 0.9, aliveFn, function(p)
+                        return (dir > 0 and p.x >= tx + 0.35) or (dir < 0 and p.x <= tx + 0.65), "passed"
+                    end, true)
+                    if not okWalkTile then
+                        Core.ClearManualInput()
+                        return false, "walk_stalled"
+                    end
+                    dfQuickCollectNear(aliveFn)
                 end
             end
-            if #rem == 0 then break end
-            Packets.BreakVerified(rem, {
-                threads = 3, layer = 1, oneHit = false,
-                hitDelay = math.max(0.10, dfHitGap), showHand = S.showHand,
-                showVisual = true, noLocalMirror = true,
-                autoRange = false, shouldContinue = aliveFn,
-            })
         end
+
+        Core.ClearManualInput()
+        return true, "row_done"
     end
 
-    runBreakSet(execList)
-    -- Jika ada tile dalam batch yang belum masuk jangkauan punch, Walk+Break mendekat lalu lanjut pecahkan
-    if #outReachList > 0 and (type(aliveFn) ~= "function" or aliveFn()) then
-        local nxt = outReachList[1]
-        if moveNearDfTile(nxt.tx, nxt.ty, aliveFn, "break") then
-            local pos2 = Core.ReadPos()
-            local followList = {}
-            for _, bt in ipairs(outReachList) do
-                if Core.GetFG(bt.tx, bt.ty) ~= 0 and Core.IsInActionReach(bt.tx, bt.ty, "break", pos2) then
-                    followList[#followList + 1] = bt
+    local function dfWalkUpperShelf(bp, standFloorY, placeFloorY, xFrom, xTo, aliveFn, markFailFn)
+        local dir = (xTo >= xFrom) and 1 or -1
+        local dirtId = bp.dirtId
+        local standCorY = standFloorY - 1
+        local ceilCorY = placeFloorY - 1
+
+        for tx = xFrom, xTo, dir do
+            if type(aliveFn) == "function" and not aliveFn() then
+                Core.ClearManualInput()
+                return false, "cancelled"
+            end
+
+            if DirtFarm.State.centerGap and (tx == bp.midX - 1 or tx == bp.midX) then
+                local g1 = (dir > 0) and (bp.midX - 1) or bp.midX
+                local g2 = (dir > 0) and bp.midX or (bp.midX - 1)
+                if tx == g1 then
+                    local afterGap = g2 + dir
+                    local prep = { { g1, standCorY }, { g2, standCorY } }
+                    if placeFloorY >= bp.topY and bp.desiredAt(g1, placeFloorY) == 0 then
+                        prep[#prep + 1] = { g1, placeFloorY }; prep[#prep + 1] = { g2, placeFloorY }
+                    end
+                    if ceilCorY >= bp.topY and bp.desiredAt(g1, ceilCorY) == 0 then
+                        prep[#prep + 1] = { g1, ceilCorY }; prep[#prep + 1] = { g2, ceilCorY }
+                    end
+                    dfCleanTilesInReach(prep, aliveFn)
+
+                    if not dfIsStandable(g1, standFloorY) and Core.CountItem(dirtId) > 0 then
+                        dfEnsureTemporaryStep(g1, standFloorY, dirtId, aliveFn)
+                    end
+                    if not dfIsStandable(g2, standFloorY) and Core.CountItem(dirtId) > 0 then
+                        dfEnsureTemporaryStep(g2, standFloorY, dirtId, aliveFn)
+                    end
+                    if not (dfIsStandable(g1, standFloorY) and dfIsStandable(g2, standFloorY)) then
+                        Core.ClearManualInput()
+                        return false, "no_dirt"
+                    end
+                    dfStepWalkToX(g2 + 0.5, standFloorY, 1.2, aliveFn)
+                    dfCleanTilesInReach({ { afterGap, standCorY } }, aliveFn)
+                    if bp.desiredAt(afterGap, standFloorY) == dirtId and Core.GetFG(afterGap, standFloorY) ~= dirtId then
+                        dfEnsureTemporaryStep(afterGap, standFloorY, dirtId, aliveFn)
+                    end
+                    if not dfStepWalkToX(afterGap + 0.5, standFloorY, 0.9, aliveFn) then
+                        Core.ClearManualInput()
+                        return false, "upper_gap_exit_failed"
+                    end
+                    dfCleanTilesInReach({ { g1, standFloorY }, { g2, standFloorY } }, aliveFn)
+                    dfQuickCollectNear(aliveFn)
+                end
+            else
+                -- Bersihkan koridor di depan & atap (ceilCorY), lalu Place Dirt tepat di atas kepala (placeFloorY)
+                local curCor = Core.GetFG(tx, standCorY)
+                local standPrevX = tx - dir
+                if bp.desiredAt(tx, standCorY) == 0 and curCor ~= 0 and not Core.IsProtectedTile(curCor) then
+                    if dfIsStandable(standPrevX, standFloorY) then
+                        dfStepWalkToX(standPrevX + 0.5, standFloorY, 0.9, aliveFn)
+                    end
+                    dfCleanTilesInReach({ { tx, standCorY } }, aliveFn)
+                end
+                if bp.desiredAt(tx, standFloorY) == dirtId and Core.GetFG(tx, standFloorY) ~= dirtId then
+                    if dfIsStandable(standPrevX, standFloorY) then
+                        dfStepWalkToX(standPrevX + 0.5, standFloorY, 0.9, aliveFn)
+                    end
+                    local okFloor, errF = dfPlaceDirtSafe(tx, standFloorY, dirtId, aliveFn)
+                    if not okFloor and not dfIsStandable(tx, standFloorY) then
+                        Core.ClearManualInput()
+                        return false, errF or "no_dirt"
+                    end
+                end
+
+                local okStep = dfStepWalkToX(tx + 0.5, standFloorY, 0.9, aliveFn)
+                if not okStep then
+                    Core.ClearManualInput()
+                    return false, "upper_walk_failed"
+                end
+
+                local upperClean = {}
+                if ceilCorY >= bp.topY and bp.desiredAt(tx, ceilCorY) == 0 and Core.GetFG(tx, ceilCorY) ~= 0 then
+                    upperClean[#upperClean + 1] = { tx, ceilCorY }
+                end
+                local wantPlace = (placeFloorY >= bp.topY) and bp.desiredAt(tx, placeFloorY) or nil
+                if wantPlace == 0 and Core.GetFG(tx, placeFloorY) ~= 0 then
+                    upperClean[#upperClean + 1] = { tx, placeFloorY }
+                end
+                if tx == 2 or tx == bp.w - 3 then
+                    local sCols = (tx == 2) and { 0, 1 } or { bp.w - 2, bp.w - 1 }
+                    for _, sc in ipairs(sCols) do
+                        if bp.desiredAt(sc, standCorY) == 0 and Core.GetFG(sc, standCorY) ~= 0 then upperClean[#upperClean + 1] = { sc, standCorY } end
+                        if placeFloorY >= bp.topY and bp.desiredAt(sc, placeFloorY) == 0 and Core.GetFG(sc, placeFloorY) ~= 0 then upperClean[#upperClean + 1] = { sc, placeFloorY } end
+                        if ceilCorY >= bp.topY and bp.desiredAt(sc, ceilCorY) == 0 and Core.GetFG(sc, ceilCorY) ~= 0 then upperClean[#upperClean + 1] = { sc, ceilCorY } end
+                    end
+                end
+                if #upperClean > 0 then
+                    dfCleanTilesInReach(upperClean, aliveFn)
+                end
+
+                if wantPlace == dirtId and Core.GetFG(tx, placeFloorY) ~= dirtId then
+                    if Core.CountItem(dirtId) <= 0 then dfQuickCollectNear(aliveFn, dirtId) end
+                    local okP, errP = dfPlaceDirtSafe(tx, placeFloorY, dirtId, aliveFn)
+                    if not okP then
+                        if errP == "no_dirt" then
+                            Core.ClearManualInput()
+                            return false, "no_dirt"
+                        elseif markFailFn then
+                            markFailFn(tx, placeFloorY)
+                        end
+                    end
+                end
+                dfQuickCollectNear(aliveFn)
+            end
+        end
+
+        Core.ClearManualInput()
+        return true, "upper_row_done"
+    end
+
+    local function dfFindReadyDirtDrop(dirtId)
+        local gt = H.gt
+        if not gt or type(gt.dropList) ~= "function" then return nil end
+        local okD, drops = pcall(gt.dropList)
+        if not okD or type(drops) ~= "table" then return nil end
+        local pos = Core.ReadPos()
+        local now = os.clock()
+        local best, bestDist = nil, math.huge
+        for i = 1, #drops do
+            local d = drops[i]
+            if type(d) == "table" and d.uid and d.id == dirtId and (d.n or 0) > 0 and (d.readyAt or 0) <= now then
+                local dist = math.abs(d.x - pos.x) + math.abs(d.y - pos.y) * 1.4
+                if dist < bestDist then
+                    bestDist = dist
+                    best = d
                 end
             end
-            runBreakSet(followList)
         end
+        return best
     end
 
-    local brokenCount = 0
-    for _, bt in ipairs(pendingList) do
-        if Core.GetFG(bt.tx, bt.ty) == 0 then
-            brokenCount += 1
-        end
-    end
-    dfQuickCollectNear(aliveFn)
-    return brokenCount
-end
+    local function dfBreakBatch(tasksBatch, aliveFn)
+        if #tasksBatch == 0 then return 0 end
+        local first = tasksBatch[1]
+        local okM = dfMoveManualNear(first.x, first.y, aliveFn, "break")
+        if not okM then return -1 end
 
-local function dfPlaceDirt(tx, ty, dirtId, aliveFn)
-    local S = DirtFarm.State
-    local walkSpd = clamp(tonumber(S.walkSpeed) or 12, 6, 16)
-    if Core.CountItem(dirtId) <= 0 and S.autoCollect then
-        Packets.Collect({ radius = 10, filterId = dirtId, stepMoveIfFar = true, preferWalk = true, walkSpeed = walkSpd, collectDelay = S.collectDelay, shouldContinue = aliveFn })
+        local pendingList = {}
+        for _, t in ipairs(tasksBatch) do
+            local cid = Core.GetFG(t.x, t.y)
+            if cid ~= 0 and not Core.IsProtectedTile(cid) and Core.CanEditTile(t.x, t.y) then
+                pendingList[#pendingList + 1] = { tx = t.x, ty = t.y, layer = 1 }
+            end
+        end
+        if #pendingList == 0 then return 0 end
+
+        local cur = Core.ReadPos()
+        local execList, outReachList = {}, {}
+        for _, bt in ipairs(pendingList) do
+            if Core.IsInActionReach(bt.tx, bt.ty, "break", cur) and #execList < 3 then
+                execList[#execList + 1] = bt
+            else
+                outReachList[#outReachList + 1] = bt
+            end
+        end
+        if #execList == 0 then execList[1] = pendingList[1] end
+
+        dfBreakList(execList, aliveFn)
+        if #outReachList > 0 and (type(aliveFn) ~= "function" or aliveFn()) then
+            local nxt = outReachList[1]
+            if dfMoveManualNear(nxt.tx, nxt.ty, aliveFn, "break") then
+                local pos2 = Core.ReadPos()
+                local followList = {}
+                for _, bt in ipairs(outReachList) do
+                    if Core.GetFG(bt.tx, bt.ty) ~= 0 and Core.IsInActionReach(bt.tx, bt.ty, "break", pos2) then
+                        followList[#followList + 1] = bt
+                    end
+                end
+                if #followList > 0 then dfBreakList(followList, aliveFn) end
+            end
+        end
+
+        local brokenCount = 0
+        for _, bt in ipairs(pendingList) do
+            if Core.GetFG(bt.tx, bt.ty) == 0 then brokenCount += 1 end
+        end
+        dfQuickCollectNear(aliveFn)
+        return brokenCount
+    end
+
+    local function dfPlaceDirt(tx, ty, dirtId, aliveFn)
         if Core.CountItem(dirtId) <= 0 then
-            Packets.Collect({ radius = 8, stepMoveIfFar = true, preferWalk = true, walkSpeed = walkSpd, collectDelay = S.collectDelay, shouldContinue = aliveFn })
+            dfQuickCollectNear(aliveFn, dirtId)
         end
+        if Core.CountItem(dirtId) <= 0 and DirtFarm.State.autoCollect then
+            local drop = dfFindReadyDirtDrop(dirtId)
+            if drop then
+                local dtx = clamp(math.floor(drop.x), 0, (H.gt and H.gt.w or 100) - 1)
+                local dty = clamp(math.floor(drop.y - 0.01), 0, (H.gt and H.gt.h or 60) - 1)
+                dfMoveManualNear(dtx, dty, aliveFn, "collect")
+                dfQuickCollectNear(aliveFn, dirtId)
+            end
+        end
+        if Core.CountItem(dirtId) <= 0 then
+            return false, "no_dirt"
+        end
+        local dirtInfo = Core.GetItemInfo(dirtId)
+        local okM = dfMoveManualNear(tx, ty, aliveFn, "build", dirtInfo)
+        if not okM then return false, "unreachable" end
+        return dfPlaceDirtSafe(tx, ty, dirtId, aliveFn)
     end
-    if Core.CountItem(dirtId) <= 0 then
-        return false, "no_dirt"
-    end
-    local dirtInfo = Core.GetItemInfo(dirtId)
-    local okM = moveNearDfTile(tx, ty, aliveFn, "build", dirtInfo)
-    if not okM then return false, "unreachable" end
-    local okP, msgP = Packets.PlaceVerified(tx, ty, dirtId, 1, {
-        showHand = S.showHand, delay = 0, noLocalMirror = false,
-        retries = 2, placeGap = math.max(H.adaptivePlaceGap or 0.155, tonumber(S.placeDelay) or 0.14),
-        shouldContinue = aliveFn,
-    })
-    return okP, msgP
+
+    DirtFarm._impl = {
+        dfQuickCollectNear = dfQuickCollectNear,
+        dfMoveManualNear = dfMoveManualNear,
+        dfClimbShaftToFloorY = dfClimbShaftToFloorY,
+        dfTransitionToLowerRow = dfTransitionToLowerRow,
+        dfWalkCorridorLower = dfWalkCorridorLower,
+        dfWalkUpperShelf = dfWalkUpperShelf,
+        dfFindReadyDirtDrop = dfFindReadyDirtDrop,
+        dfBreakBatch = dfBreakBatch,
+        dfPlaceDirt = dfPlaceDirt,
+        dfStepWalkToX = dfStepWalkToX,
+        dfCleanTilesInReach = dfCleanTilesInReach,
+        dfEnsureTemporaryStep = dfEnsureTemporaryStep,
+    }
 end
 
 function DirtFarm.Start()
     Core.EnsureInit()
+    Core.EnsureManualInputHook()
     Core.SyncOneHitHook()
     local gt = H.gt
     if not gt or gt.name == "" then
@@ -6517,9 +7676,11 @@ function DirtFarm.Start()
     if UIHooks.updateButtons then UIHooks.updateButtons() end
 
     DirtFarm.State.thread = task.spawn(function()
+        local impl = DirtFarm._impl
         local skippedKeys, failCounts = {}, {}
         local lastWorldTracked = ""
         local noDirtRetries = 0
+        local lowerSweptForWorld, upperSweptForWorld = false, false
 
         local function tileKey(x, y) return y * 1000 + x end
         local function markFail(x, y)
@@ -6531,8 +7692,10 @@ function DirtFarm.Start()
         while alive() do
             if evaluateSeems() then break end
             Core.EnsureInit()
+            Core.EnsureManualInputHook()
             gt = H.gt
             if not gt or gt.name == "" then
+                Core.ClearManualInput()
                 setDfStatus("Menunggu world...")
                 task.wait(0.5)
             else
@@ -6541,18 +7704,150 @@ function DirtFarm.Start()
                     lastWorldTracked = curW
                     skippedKeys, failCounts = {}, {}
                     noDirtRetries = 0
+                    lowerSweptForWorld, upperSweptForWorld = false, false
                 end
 
                 local bp = buildDfBlueprint(gt)
                 local dirtId = bp.dirtId
 
-                -- Urutan penggalian anti-stuck:
-                -- (A) Gali Shaft sisi kiri, kanan & tengah dulu dari doorY ke bawah/atas agar semua baris punya akses
-                -- (B) Gali baris air kelipatan 2 + bersihkan halangan
-                -- (C) Ganti non-dirt & isi celah di baris dirt bawah
-                -- (D) Bersihkan + Place Dirt baris atas (y < doorY) bottom-up
-                local digShaftTasks, digRowTasks, fillLowerTasks, upperTasks = {}, {}, {}, {}
+                local function rowHasLowerWork(corY, alsoAbove)
+                    local flY = corY + 1
+                    for x = 0, bp.w - 1 do
+                        local wc = bp.desiredAt(x, corY)
+                        if wc ~= nil and Core.GetFG(x, corY) ~= wc and not skippedKeys[tileKey(x, corY)] then
+                            if wc == 0 or wc == dirtId then return true end
+                        end
+                        if flY <= bp.maxWorkY then
+                            local wf = bp.desiredAt(x, flY)
+                            if wf ~= nil and Core.GetFG(x, flY) ~= wf and not skippedKeys[tileKey(x, flY)] then
+                                return true
+                            end
+                        end
+                        if alsoAbove and corY - 1 >= bp.topY then
+                            local wa = bp.desiredAt(x, corY - 1)
+                            if wa ~= nil and Core.GetFG(x, corY - 1) ~= wa and not skippedKeys[tileKey(x, corY - 1)] then
+                                return true
+                            end
+                        end
+                    end
+                    return false
+                end
 
+                -- Stage 1A: Sweep Bagian Bawah (doorY -> maxWorkY) secara manual murni dari atas ke bawah
+                if not lowerSweptForWorld then
+                    lowerSweptForWorld = true
+                    local lowerCors = {}
+                    local cy = bp.doorY
+                    while cy <= bp.maxWorkY do
+                        if cy == bp.maxWorkY - 1 and bp.desiredAt(math.max(2, bp.doorX), bp.maxWorkY) == 0 then
+                            lowerCors[#lowerCors + 1] = { corY = bp.maxWorkY, above = true }
+                            break
+                        else
+                            lowerCors[#lowerCors + 1] = { corY = cy, above = false }
+                            if cy == bp.maxWorkY then break end
+                            cy += 2
+                        end
+                    end
+
+                    local sweepRev = false
+                    for i = 1, #lowerCors do
+                        if not alive() or evaluateSeems() then break end
+                        local rowInfo = lowerCors[i]
+                        local rCorY = rowInfo.corY
+                        if rowHasLowerWork(rCorY, rowInfo.above) then
+                            local curP = Core.ReadPos()
+                            local xStart = sweepRev and (bp.w - 3) or 2
+                            local xEnd = sweepRev and 2 or (bp.w - 3)
+                            if math.abs(curP.tx - xEnd) < math.abs(curP.tx - xStart) then
+                                xStart, xEnd = xEnd, xStart
+                                sweepRev = not sweepRev
+                            end
+                            if math.floor(curP.y + 0.5) ~= (rCorY + 1) or math.abs(curP.tx - xStart) > 0 then
+                                setDfStatus(string.format("[Manual Walk] Menuju Baris Bawah y=%d (%d)...", rCorY, xStart))
+                                local okReach = impl.dfMoveManualNear(xStart, rCorY, alive, "stand")
+                                if not okReach then
+                                    xStart, xEnd = xEnd, xStart
+                                    sweepRev = not sweepRev
+                                    okReach = impl.dfMoveManualNear(xStart, rCorY, alive, "stand")
+                                end
+                            end
+                            setDfStatus(string.format("[Manual Walk] Garap Lorong Bawah y=%d (%d->%d)", rCorY, xStart, xEnd))
+                            impl.dfWalkCorridorLower(bp, rCorY, xStart, xEnd, rowInfo.above, alive, markFail)
+                            if alive() and i < #lowerCors and lowerCors[i + 1].corY == rCorY + 2 and rowHasLowerWork(lowerCors[i + 1].corY, lowerCors[i + 1].above) then
+                                local endPos = Core.ReadPos()
+                                local atLeft = (endPos.tx <= 3)
+                                local sIn = atLeft and 1 or (bp.w - 2)
+                                local sOut = atLeft and 0 or (bp.w - 1)
+                                local edgeX = atLeft and 2 or (bp.w - 3)
+                                impl.dfTransitionToLowerRow(bp, sIn, sOut, edgeX, rCorY, rCorY + 2, dirtId, alive)
+                            end
+                            sweepRev = not sweepRev
+                        end
+                    end
+                    Core.ClearManualInput()
+                end
+
+                -- Stage 1B: Sweep Bagian Atas (doorY - 1 -> topY) bottom-to-top dengan pijakan Dirt & panjat shaft 1-tile
+                if alive() and not upperSweptForWorld then
+                    upperSweptForWorld = true
+                    local upperPlaceRows = {}
+                    local uy = bp.groundY - 2
+                    while uy >= bp.topY do
+                        upperPlaceRows[#upperPlaceRows + 1] = uy
+                        uy -= 2
+                    end
+                    if #upperPlaceRows > 0 and Core.CountItem(dirtId) > 0 then
+                        for i = 1, #upperPlaceRows do
+                            if not alive() or evaluateSeems() then break end
+                            local pY = upperPlaceRows[i]
+                            local standY = pY + 2
+                            local hasUpperNeed = false
+                            for x = 0, bp.w - 1 do
+                                local wp = bp.desiredAt(x, pY)
+                                if wp ~= nil and Core.GetFG(x, pY) ~= wp and not skippedKeys[tileKey(x, pY)] then hasUpperNeed = true; break end
+                                local ws = bp.desiredAt(x, standY - 1)
+                                if ws ~= nil and Core.GetFG(x, standY - 1) ~= ws and not skippedKeys[tileKey(x, standY - 1)] then hasUpperNeed = true; break end
+                                if pY - 1 >= bp.topY then
+                                    local wc = bp.desiredAt(x, pY - 1)
+                                    if wc ~= nil and Core.GetFG(x, pY - 1) ~= wc and not skippedKeys[tileKey(x, pY - 1)] then hasUpperNeed = true; break end
+                                end
+                            end
+                            if hasUpperNeed then
+                                local curP = Core.ReadPos()
+                                local startLeft = (math.abs(curP.tx - 2) <= math.abs(curP.tx - (bp.w - 3)))
+                                local xStart = startLeft and 2 or (bp.w - 3)
+                                local xEnd = startLeft and (bp.w - 3) or 2
+                                if math.floor(curP.y + 0.5) ~= standY or math.abs(curP.tx - xStart) > 0 then
+                                    setDfStatus(string.format("[Manual Walk] Menuju Rak Atas y=%d (%d)...", standY, xStart))
+                                    local okAt = impl.dfMoveManualNear(xStart, standY - 1, alive, "stand")
+                                    if not okAt then break end
+                                end
+                                setDfStatus(string.format("[Manual Walk] Build Baris Atas y=%d", pY))
+                                local okUp, errUp = impl.dfWalkUpperShelf(bp, standY, pY, xStart, xEnd, alive, markFail)
+                                if not okUp and errUp == "no_dirt" then break end
+                                -- Jika masih ada baris di atasnya, panjat 2 tile ke pY lewat shaft di ujung xEnd
+                                if i < #upperPlaceRows and alive() then
+                                    local atLeft = (xEnd == 2)
+                                    local cIn = atLeft and 1 or (bp.w - 2)
+                                    local cOut = atLeft and 0 or (bp.w - 1)
+                                    impl.dfCleanTilesInReach({ { xEnd, pY - 1 }, { cIn, standY - 1 }, { cOut, standY - 1 } }, alive)
+                                    local okCl = impl.dfClimbShaftToFloorY(bp, cIn, cOut, pY, dirtId, alive, xEnd)
+                                    if okCl then
+                                        impl.dfStepWalkToX(xEnd + 0.5, pY, 0.9, alive)
+                                        impl.dfCleanTilesInReach({ { cIn, pY }, { cOut, pY }, { cIn, standY - 1 } }, alive)
+                                        impl.dfQuickCollectNear(alive, dirtId)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    Core.ClearManualInput()
+                end
+
+                if not alive() then break end
+
+                -- Stage 2: Scan ulang sisa tile & selesaikan satu per satu dengan Pure Manual Walk + Jump + Shaft Climb
+                local digShaftTasks, digRowTasks, fillLowerTasks, upperTasks = {}, {}, {}, {}
                 local function isShaftX(x)
                     return x <= 1 or x >= bp.w - 2 or (DirtFarm.State.centerGap and (x == bp.midX - 1 or x == bp.midX))
                 end
@@ -6603,6 +7898,7 @@ function DirtFarm.Start()
 
                 local totalTodo = #digShaftTasks + #digRowTasks + #fillLowerTasks + #upperTasks
                 if totalTodo == 0 then
+                    Core.ClearManualInput()
                     local rot = DirtFarm.State.rotationWorlds
                     local nextWorld = nil
                     if #rot > 0 then
@@ -6623,8 +7919,9 @@ function DirtFarm.Start()
                         setDfStatus(string.format("[%s] SELESAI -> Rotation ke %s", curW, nextWorld))
                         emitNotify("SYT Dirt Farm", string.format("DF %s selesai! Pindah ke %s...", curW, nextWorld))
                         if DirtFarm.State.autoCollect then
-                            Packets.Collect({ radius = 8, stepMoveIfFar = true, preferWalk = true, walkSpeed = clamp(tonumber(DirtFarm.State.walkSpeed) or 12, 6, 16), collectDelay = DirtFarm.State.collectDelay, shouldContinue = alive })
+                            impl.dfQuickCollectNear(alive)
                         end
+                        Core.ClearManualInput()
                         DirtFarm.State.switchingWorld = true
                         pcall(gt.enter, nextWorld)
                         local deadline = os.clock() + 12
@@ -6644,14 +7941,14 @@ function DirtFarm.Start()
                     end
                 else
                     local activeQueue, phaseLabel
-                    if #digShaftTasks > 0 then
-                        activeQueue, phaseLabel = digShaftTasks, "Fase 1A: Gali Pojok & Shaft"
-                    elseif #digRowTasks > 0 then
-                        activeQueue, phaseLabel = digRowTasks, "Fase 1B: Gali Lorong Kelipatan 2"
+                    if #digRowTasks > 0 then
+                        activeQueue, phaseLabel = digRowTasks, "Manual Stray: Gali Lorong"
+                    elseif #digShaftTasks > 0 then
+                        activeQueue, phaseLabel = digShaftTasks, "Manual Stray: Rapikan Shaft"
                     elseif #fillLowerTasks > 0 then
-                        activeQueue, phaseLabel = fillLowerTasks, "Fase 1C: Ubah/Isi Dirt Bawah"
+                        activeQueue, phaseLabel = fillLowerTasks, "Manual Stray: Isi Dirt Bawah"
                     else
-                        activeQueue, phaseLabel = upperTasks, "Fase 2: Place Dirt Atas"
+                        activeQueue, phaseLabel = upperTasks, "Manual Stray: Place Dirt Atas"
                     end
 
                     local didAnyAction = false
@@ -6675,7 +7972,7 @@ function DirtFarm.Start()
                                         break
                                     end
                                 end
-                                local resB = dfBreakBatch(batch, alive)
+                                local resB = impl.dfBreakBatch(batch, alive)
                                 if resB > 0 then
                                     didAnyAction = true
                                     noDirtRetries = 0
@@ -6691,11 +7988,11 @@ function DirtFarm.Start()
                             end
                         elseif taskItem.op == "replace" then
                             if curId ~= 0 and curId ~= dirtId and not Core.IsProtectedTile(curId) then
-                                local resB = dfBreakBatch({ taskItem }, alive)
+                                local resB = impl.dfBreakBatch({ taskItem }, alive)
                                 if resB > 0 then didAnyAction = true else markFail(taskItem.x, taskItem.y) end
                             end
                             if Core.GetFG(taskItem.x, taskItem.y) == 0 then
-                                local okP, errP = dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
+                                local okP, errP = impl.dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
                                 if okP then
                                     didAnyAction = true
                                     noDirtRetries = 0
@@ -6711,7 +8008,7 @@ function DirtFarm.Start()
                             idx += 1
                         else -- "place"
                             if Core.GetFG(taskItem.x, taskItem.y) == 0 then
-                                local okP, errP = dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
+                                local okP, errP = impl.dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
                                 if okP then
                                     didAnyAction = true
                                     noDirtRetries = 0
@@ -6736,11 +8033,12 @@ function DirtFarm.Start()
             task.wait(0.05)
         end
 
+        Core.ClearManualInput()
         DirtFarm.State.switchingWorld = false
         if DirtFarm.State.sessionToken == tok then
             DirtFarm.State.running = false
             DirtFarm.State.thread = nil
-            if DirtFarm.State.status == "Idle" or string.find(DirtFarm.State.status, "Fase", 1, true) then
+            if DirtFarm.State.status == "Idle" or string.find(DirtFarm.State.status, "Manual", 1, true) then
                 setDfStatus("Stopped")
             elseif UIHooks.updateButtons then
                 UIHooks.updateButtons()
@@ -6751,6 +8049,7 @@ function DirtFarm.Start()
 end
 
 function DirtFarm.Stop()
+    Core.ClearManualInput()
     DirtFarm.State.running = false
     DirtFarm.State.switchingWorld = false
     DirtFarm.State.sessionToken += 1
@@ -6765,7 +8064,7 @@ function DirtFarm.Toggle()
     return DirtFarm.Start()
 end
 
--- V4 [SET VISUALISASI]
+-- V4 [SPOOFER & VISUALISASI]
 local VISUAL_ROLES = { "none", "developer", "moderator", "admin", "owner", "vip", "royal", "legend", "sponsor", "supporter", "dr" }
 local VISUAL_EFFECTS = { "None", "Rainbow Wave", "Sponsor Sparkle", "Supporter Wave", "Legend Gold", "Royal Pulse", "Creator Tag", "Color Prefix" }
 local VISUAL_TITLES = { "none", "legend", "dr", "cc", "sponsor", "supporter", "royal" }
@@ -6784,16 +8083,111 @@ local ROLE_BADGES = {
 }
 
 local Visual = {
+    Presets = {
+        roles         = VISUAL_ROLES,
+        effects       = VISUAL_EFFECTS,
+        titles        = VISUAL_TITLES,
+        guildRanks    = { "None (Real)", "2: (GE) Member", "3: (GC) Officer", "4: (GL) Leader", "Custom Text Prefix" },
+        countries     = { "Real (Unchanged)", "id", "us", "my", "sg", "ph", "jp", "kr", "gb", "de", "br", "00" },
+        boosterColors = {
+            ["Default (Real)"] = false,
+            ["Magenta Glow"]   = Color3.fromRGB(244, 127, 255),
+            ["Gold Emperor"]   = Color3.fromRGB(255, 215, 70),
+            ["Cyan Neon"]      = Color3.fromRGB(80, 235, 255),
+            ["Crimson Red"]    = Color3.fromRGB(255, 75, 95),
+            ["Emerald"]        = Color3.fromRGB(70, 240, 145),
+            ["Pure White"]     = Color3.fromRGB(255, 255, 255),
+        },
+        boosterColorNames = { "Default (Real)", "Magenta Glow", "Gold Emperor", "Cyan Neon", "Crimson Red", "Emerald", "Pure White" },
+        wearSlots = { "back", "hand", "hat", "hair", "shirt", "pants", "feet", "face", "neck" },
+        outfitPresets = {
+            "Real (Server Outfit)",
+            "Legend Gold Mix",
+            "Dev Glitch / Void",
+            "Dragon & Wings Mix",
+            "Farming / Pickaxe Look",
+            "Clear All Clothes (Naked)",
+        },
+        skinNames = {
+            "Real (Server Skin)", "Default Fair", "Pale Ivory", "Warm Tan", "Deep Bronze",
+            "Zombie Green", "Frost Cyan", "Crimson Devil", "Shadow Black", "Golden Idol",
+            "Void Purple", "Ghost (See-Through)",
+        },
+        skins = {
+            ["Default Fair"]  = Color3.fromRGB(255, 214, 178),
+            ["Pale Ivory"]    = Color3.fromRGB(255, 236, 220),
+            ["Warm Tan"]      = Color3.fromRGB(224, 172, 105),
+            ["Deep Bronze"]   = Color3.fromRGB(141, 85, 36),
+            ["Zombie Green"]  = Color3.fromRGB(120, 210, 120),
+            ["Frost Cyan"]    = Color3.fromRGB(130, 230, 255),
+            ["Crimson Devil"] = Color3.fromRGB(220, 70, 70),
+            ["Shadow Black"]  = Color3.fromRGB(45, 45, 55),
+            ["Golden Idol"]   = Color3.fromRGB(255, 210, 80),
+            ["Void Purple"]   = Color3.fromRGB(155, 90, 235),
+        },
+        weatherNames = {
+            "Real (Server Weather)",
+            "Rainin' Gems (13690)",
+            "Heatwave (3694)",
+            "Apocalypse (4242)",
+            "Night (8896)",
+            "Spooky (984)",
+            "Snowy (1210)",
+            "Meteor Shower (8836)",
+            "Stargazing (7644)",
+            "Digital Rain (6280)",
+            "Black Hole (13640)",
+            "Holiday Haven (14032)",
+            "Emerald City (15240)",
+            "Atlantis (14598)",
+            "Paradise City (16406)",
+            "Realm of Spirits (13070)",
+            "Bedawang Nala (16282)",
+        },
+        weatherIds = {
+            ["Real (Server Weather)"]    = 0,
+            ["Rainin' Gems (13690)"]     = 13690,
+            ["Heatwave (3694)"]          = 3694,
+            ["Apocalypse (4242)"]        = 4242,
+            ["Night (8896)"]             = 8896,
+            ["Spooky (984)"]             = 984,
+            ["Snowy (1210)"]             = 1210,
+            ["Meteor Shower (8836)"]     = 8836,
+            ["Stargazing (7644)"]        = 7644,
+            ["Digital Rain (6280)"]      = 6280,
+            ["Black Hole (13640)"]       = 13640,
+            ["Holiday Haven (14032)"]    = 14032,
+            ["Emerald City (15240)"]     = 15240,
+            ["Atlantis (14598)"]         = 14598,
+            ["Paradise City (16406)"]    = 16406,
+            ["Realm of Spirits (13070)"] = 13070,
+            ["Bedawang Nala (16282)"]    = 16282,
+        },
+    },
     State = {
         customName = "", role = "none", effect = "None", colorCode = "", customTitle = "none",
-        guildTag = "", booster = false,
+        guildTag = "", guildMode = "None (Real)", country = "Real (Unchanged)",
+        booster = false, boosterColor = "Default (Real)",
+        spoofDr = false, spoofLegend = false, spoofStillTag = false, spoofLevel = 0,
         tilesName = false, hideName = false, lockNames = false,
+        -- Outfit / Skin / Weather / Gems spoof state
+        outfitPreset = "Real (Server Outfit)", selectedSlot = "back", wearSearch = "", customSlotId = "",
+        fakeWorn = {}, skinPreset = "Real (Server Skin)", ghostSkin = false,
+        weatherName = "Real (Server Weather)", weatherId = 0, _appliedWeatherId = nil,
+        fakeGemsActive = false, fakeGemsValue = 0, origGems = nil,
+        -- Snapshots
         lastWorldName = "", lastPosKey = "", origSaved = false,
-        origNick = nil, origGameName = nil, origWornTitle = nil, origDrTitle = nil,
+        origNick = nil, origGameName = nil, origTag = nil, origOwnTitle = nil, origWornTitle = nil,
+        origDrTitle = nil, origHasLegend = nil, origHideLegend = nil, origHideDr = nil, origStillTag = nil,
         origRoleAttr = nil, origTitleAttr = nil, origGuildRank = nil, origBooster = nil,
+        origBoosterColor = nil, origCountry = nil, origLevel = nil, origPlayerLevel = nil,
+        origWorn = nil, origWornSavedFor = nil,
+        origSkin = nil, origSkinSavedFor = nil,
+        origSkinT = nil, origSkinTSavedFor = nil,
     }
 }
 SYT_Logic.Visual = Visual
+SYT_Logic.Spoofer = Visual
 
 local function findNameTag()
     local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
@@ -6805,16 +8199,45 @@ local function findNameTag()
     return nil
 end
 
+local function refreshNameTagObj()
+    if type(H.nameTagObj) == "table" then
+        H.nameTagObj.shownKey = nil
+        if type(H.nameTagObj.redraw) == "function" then
+            pcall(H.nameTagObj.redraw)
+        end
+    end
+    local tag = findNameTag()
+    if tag then tag.Visible = not Visual.State.hideName end
+end
+
+local function ensureVisualRefs()
+    Core.EnsureInit()
+    if H.gt and (not H.skillsObj or not H.nameTagObj or not H.wornTbl or not H.playerSpriteObj) then
+        pcall(inspectUpvalues, H.gt)
+    end
+    Core.InstallGetgcBypassHooks()
+end
+
 local function saveOrigVisual()
     local S = Visual.State
     if S.origSaved or not LP then return end
-    S.origSaved = true
-    S.origNick      = LP:GetAttribute("Nick")
-    S.origGameName  = LP:GetAttribute("GameName")
-    S.origWornTitle = LP:GetAttribute("WornTitle")
-    S.origDrTitle   = LP:GetAttribute("DrTitle")
-    S.origGuildRank = LP:GetAttribute("GuildRank")
-    S.origBooster   = LP:GetAttribute("DiscordBooster")
+    S.origSaved        = true
+    S.origNick         = LP:GetAttribute("Nick")
+    S.origGameName     = LP:GetAttribute("GameName")
+    S.origTag          = LP:GetAttribute("Tag")
+    S.origOwnTitle     = LP:GetAttribute("OwnTitle")
+    S.origWornTitle    = LP:GetAttribute("WornTitle")
+    S.origDrTitle      = LP:GetAttribute("DrTitle")
+    S.origHasLegend    = LP:GetAttribute("HasLegend")
+    S.origHideLegend   = LP:GetAttribute("HideLegendUntil")
+    S.origHideDr       = LP:GetAttribute("HideDrUntil")
+    S.origStillTag     = LP:GetAttribute("StillTag")
+    S.origGuildRank    = LP:GetAttribute("GuildRank")
+    S.origBooster      = LP:GetAttribute("DiscordBooster")
+    S.origBoosterColor = LP:GetAttribute("DiscordColor")
+    S.origCountry      = LP:GetAttribute("Country")
+    S.origLevel        = LP:GetAttribute("Level")
+    S.origPlayerLevel  = LP:GetAttribute("PlayerLevel")
     local k = "u" .. tostring(LP.UserId)
     local sr, tl = ReplicatedStorage:FindFirstChild("StaffRoles"), ReplicatedStorage:FindFirstChild("TitleList")
     S.origRoleAttr  = sr and sr:GetAttribute(k) or nil
@@ -6833,8 +8256,256 @@ local function wrapVisualEffect(text, effectName, colorPrefix)
     return (colorPrefix ~= "") and (colorPrefix .. text) or text
 end
 
+function Visual.HasActiveSpoof()
+    local S = Visual.State
+    if S.lockNames or S.tilesName or S.hideName or S.customName ~= "" or S.role ~= "none"
+        or S.effect ~= "None" or S.colorCode ~= "" or S.customTitle ~= "none"
+        or S.guildMode ~= "None (Real)" or S.country ~= "Real (Unchanged)"
+        or S.booster or (S.boosterColor and S.boosterColor ~= "Default (Real)")
+        or S.spoofDr or S.spoofLegend or S.spoofStillTag or (tonumber(S.spoofLevel) or 0) > 0
+        or S.skinPreset ~= "Real (Server Skin)" or S.ghostSkin or (tonumber(S.weatherId) or 0) > 0
+        or S.fakeGemsActive then
+        return true
+    end
+    for _, _ in pairs(S.fakeWorn) do
+        return true
+    end
+    return false
+end
+
+function Visual.FindWearableByKeywords(slotName, keywords, fallbackId)
+    ensureVisualRefs()
+    local db = H.ItemDB
+    if type(db) == "table" then
+        for _, kw in ipairs(keywords) do
+            local kwLow = string.lower(kw)
+            for id, info in pairs(db) do
+                if type(id) == "number" and type(info) == "table" and info.slot == slotName and type(info.name) == "string" then
+                    if string.find(string.lower(info.name), kwLow, 1, true) then
+                        return id
+                    end
+                end
+            end
+        end
+    end
+    return fallbackId
+end
+
+function Visual.GetWearableOptionsForSlot(slotName, searchFilter)
+    ensureVisualRefs()
+    local out = { "Default (Keep Real)", "Kosong / Remove (0)" }
+    local db = H.ItemDB
+    if type(db) ~= "table" then return out end
+    local filt = string.lower(tostring(searchFilter or ""))
+    local matches = {}
+    for id, info in pairs(db) do
+        if type(id) == "number" and type(info) == "table" and info.slot == slotName and type(info.name) == "string" then
+            if filt == "" or string.find(string.lower(info.name), filt, 1, true) or string.find(tostring(id), filt, 1, true) then
+                matches[#matches + 1] = { id = id, name = info.name }
+            end
+        end
+    end
+    table.sort(matches, function(a, b) return a.id < b.id end)
+    for i = 1, math.min(#matches, 80) do
+        out[#out + 1] = string.format("%d - %s", matches[i].id, matches[i].name)
+    end
+    return out
+end
+
+function Visual.SetOutfitPreset(presetName)
+    local S = Visual.State
+    S.outfitPreset = tostring(presetName or "Real (Server Outfit)")
+    S.fakeWorn = {}
+    if S.outfitPreset == "Real (Server Outfit)" then
+        return Visual.ApplyOutfit()
+    elseif S.outfitPreset == "Clear All Clothes (Naked)" then
+        for _, sl in ipairs(Visual.Presets.wearSlots) do S.fakeWorn[sl] = 0 end
+    elseif S.outfitPreset == "Legend Gold Mix" then
+        S.fakeWorn.back  = Visual.FindWearableByKeywords("back",  { "immortal da vinci", "legendary", "golden angel", "da vinci", "wing" }, 16262)
+        S.fakeWorn.hand  = Visual.FindWearableByKeywords("hand",  { "rayman", "legend", "dragon", "scythe", "katana" }, 900)
+        S.fakeWorn.hat   = Visual.FindWearableByKeywords("hat",   { "crown", "legend", "zeus" }, nil)
+        S.fakeWorn.feet  = Visual.FindWearableByKeywords("feet",  { "air robinson", "boots", "speed" }, nil)
+    elseif S.outfitPreset == "Dev Glitch / Void" then
+        S.fakeWorn.hat   = Visual.FindWearableByKeywords("hat",   { "void", "glitch" }, 20007)
+        S.fakeWorn.neck  = Visual.FindWearableByKeywords("neck",  { "kuyang", "void", "scarf" }, 20006)
+        S.fakeWorn.back  = Visual.FindWearableByKeywords("back",  { "glitch", "void", "nightmare", "wing" }, 8286)
+        S.fakeWorn.hand  = Visual.FindWearableByKeywords("hand",  { "glitch", "katana", "scythe", "ice_dragon" }, 1378)
+    elseif S.outfitPreset == "Dragon & Wings Mix" then
+        S.fakeWorn.back  = Visual.FindWearableByKeywords("back",  { "da vinci", "angel wings", "wings" }, 8286)
+        S.fakeWorn.hand  = Visual.FindWearableByKeywords("hand",  { "dragon", "hand" }, 900)
+    elseif S.outfitPreset == "Farming / Pickaxe Look" then
+        S.fakeWorn.hand  = Visual.FindWearableByKeywords("hand",  { "pickaxe", "drill", "pick" }, nil)
+        S.fakeWorn.hat   = Visual.FindWearableByKeywords("hat",   { "straw", "farmer", "crown" }, nil)
+    end
+    return Visual.ApplyOutfit()
+end
+
+function Visual.ApplySlotItem(slotName, choiceStr)
+    local S = Visual.State
+    local sl = tostring(slotName or S.selectedSlot or "back")
+    local txt = tostring(choiceStr or "")
+    if txt == "" or txt == "Default (Keep Real)" then
+        S.fakeWorn[sl] = nil
+    elseif txt == "Kosong / Remove (0)" or tonumber(txt) == 0 then
+        S.fakeWorn[sl] = 0
+    else
+        local parsedId = tonumber(string.match(txt, "^(%d+)"))
+        if parsedId and parsedId > 0 then
+            S.fakeWorn[sl] = parsedId
+        else
+            return false, "invalid_id"
+        end
+    end
+    return Visual.ApplyOutfit()
+end
+
+function Visual.ApplyOutfit()
+    ensureVisualRefs()
+    local S = Visual.State
+    local wt = H.wornTbl
+    if type(wt) == "table" then
+        if S.origWornSavedFor ~= wt then
+            S.origWornSavedFor = wt
+            S.origWorn = {}
+            for _, sl in ipairs(Visual.Presets.wearSlots) do
+                S.origWorn[sl] = rawget(wt, sl)
+            end
+        end
+        for _, sl in ipairs(Visual.Presets.wearSlots) do
+            local spoofVal = S.fakeWorn[sl]
+            if spoofVal ~= nil then
+                wt[sl] = (spoofVal > 0) and spoofVal or nil
+            elseif S.origWorn then
+                wt[sl] = S.origWorn[sl]
+            end
+        end
+    end
+
+    local ps = H.playerSpriteObj
+    if type(ps) == "table" then
+        if S.origSkinSavedFor ~= ps then
+            S.origSkinSavedFor = ps
+            S.origSkin = rawget(ps, "SKIN")
+        end
+        local col = Visual.Presets.skins[S.skinPreset]
+        if S.skinPreset == "Real (Server Skin)" or S.skinPreset == "Ghost (See-Through)" then
+            if typeof(S.origSkin) == "Color3" then
+                ps.SKIN = S.origSkin
+                if type(rawget(ps, "setSkin")) == "function" then pcall(ps.setSkin, ps, S.origSkin) end
+            end
+        elseif typeof(col) == "Color3" then
+            ps.SKIN = col
+            if type(rawget(ps, "setSkin")) == "function" then pcall(ps.setSkin, ps, col) end
+        end
+    end
+
+    local gt = H.gt
+    if gt then
+        if S.origSkinTSavedFor ~= gt then
+            S.origSkinTSavedFor = gt
+            S.origSkinT = rawget(gt, "skinT")
+        end
+        if S.ghostSkin == true or S.skinPreset == "Ghost (See-Through)" then
+            gt.skinT = 0.2
+        else
+            gt.skinT = S.origSkinT
+        end
+    end
+
+    if H.skillsObj and type(H.skillsObj.applyWorn) == "function" then
+        pcall(H.skillsObj.applyWorn)
+    end
+    if type(ps) == "table" and type(rawget(ps, "applyFeet")) == "function" then
+        pcall(ps.applyFeet, ps)
+    end
+    refreshNameTagObj()
+    return type(wt) == "table" or type(ps) == "table"
+end
+
+function Visual.EnsureWeatherHook()
+    local gt = H.gt
+    if not gt or type(rawget(gt, "drawWeather")) ~= "function" then return false end
+    if H.weatherHookedFor == gt then return true end
+    H.origDrawWeather = rawget(gt, "drawWeather")
+    H.weatherHookedFor = gt
+    gt.drawWeather = function(...)
+        local S = Visual.State
+        local wid = tonumber(S.weatherId) or 0
+        if wid > 0 then
+            local fx = rawget(gt, "weatherFx")
+            if type(fx) == "table" and type(fx.set) == "function" then
+                if S._appliedWeatherId ~= wid then
+                    S._appliedWeatherId = wid
+                    pcall(fx.set, fx, wid)
+                end
+                return
+            end
+        end
+        S._appliedWeatherId = nil
+        return H.origDrawWeather(...)
+    end
+    return true
+end
+
+function Visual.ApplyWeather(weatherNameOrId)
+    ensureVisualRefs()
+    local S = Visual.State
+    local gt = H.gt
+    local wid = tonumber(weatherNameOrId)
+    if wid then
+        S.weatherId = math.max(0, math.floor(wid))
+    elseif type(weatherNameOrId) == "string" then
+        S.weatherName = weatherNameOrId
+        S.weatherId = Visual.Presets.weatherIds[weatherNameOrId] or 0
+    end
+    S._appliedWeatherId = nil
+    Visual.EnsureWeatherHook()
+    if gt then
+        local fx = rawget(gt, "weatherFx")
+        if S.weatherId > 0 and type(fx) == "table" and type(fx.set) == "function" then
+            S._appliedWeatherId = S.weatherId
+            pcall(fx.set, fx, S.weatherId)
+        elseif S.weatherId <= 0 and type(H.origDrawWeather) == "function" then
+            pcall(H.origDrawWeather)
+        end
+    end
+    return S.weatherId
+end
+
+function Visual.ApplyGems(fakeAmount)
+    ensureVisualRefs()
+    local sk = H.skillsObj
+    local addFn = sk and rawget(sk, "addGems")
+    if type(addFn) ~= "function" then return false, "addGems_nil" end
+    local S = Visual.State
+    if not S.fakeGemsActive then
+        local cur = uv(addFn, 1)
+        if type(cur) == "number" then S.origGems = cur end
+    end
+    local val = math.max(0, math.floor(tonumber(fakeAmount) or 0))
+    S.fakeGemsActive = true
+    S.fakeGemsValue = val
+    suv(addFn, 1, val)
+    pcall(addFn, 0)
+    return true, val
+end
+
+function Visual.RestoreGems()
+    local S = Visual.State
+    if not S.fakeGemsActive then return true end
+    local sk = H.skillsObj
+    local addFn = sk and rawget(sk, "addGems")
+    if type(addFn) == "function" and type(S.origGems) == "number" then
+        suv(addFn, 1, S.origGems)
+        pcall(addFn, 0)
+    end
+    S.fakeGemsActive = false
+    S.origGems = nil
+    return true
+end
+
 function Visual.Apply()
-    Core.EnsureInit()
+    ensureVisualRefs()
     saveOrigVisual()
     local S = Visual.State
     if not LP then return false end
@@ -6842,6 +8513,9 @@ function Visual.Apply()
     local pos  = Core.ReadPos()
     local rLow = string.lower(tostring(S.role or "none"))
     local body = base .. (S.tilesName and string.format(" [%d,%d]", pos.tx, pos.ty) or "")
+    if S.guildMode == "Custom Text Prefix" and S.guildTag ~= "" then
+        body = "[" .. S.guildTag .. "] " .. body
+    end
 
     -- Gabungkan effect + role badge (dengan efek BitmapText game asli)
     local styledBody = wrapVisualEffect(body, S.effect or "None", S.colorCode or "")
@@ -6851,11 +8525,13 @@ function Visual.Apply()
         finalNick = wrapVisualEffect("Dr." .. body, S.effect or "None", (S.colorCode ~= "") and S.colorCode or "`2")
     end
 
-    -- Trigger attribute redraw di NameUI/Game.lua (`Nick` & `Undercover`)
+    -- Trigger attribute redraw di Roles.lua / NameUI / Game.lua
     LP:SetAttribute("Nick", finalNick)
 
     local k = "u" .. tostring(LP.UserId)
     local sr = ReplicatedStorage:FindFirstChild("StaffRoles")
+    local tagVal = (rLow == "developer" or rLow == "moderator") and rLow or S.origTag
+    LP:SetAttribute("Tag", tagVal)
     if sr then
         local srVal = (rLow == "developer" or rLow == "moderator" or rLow == "vip") and rLow or S.origRoleAttr
         sr:SetAttribute(k, srVal)
@@ -6867,47 +8543,143 @@ function Visual.Apply()
         chosenTitle = rLow
     end
     if chosenTitle and chosenTitle ~= "" and chosenTitle ~= "none" then
+        LP:SetAttribute("OwnTitle", chosenTitle)
         LP:SetAttribute("WornTitle", chosenTitle)
-        if chosenTitle == "dr" then LP:SetAttribute("DrTitle", "Dr." .. base) end
         if tl then tl:SetAttribute(k, chosenTitle) end
     else
+        LP:SetAttribute("OwnTitle", S.origOwnTitle)
         LP:SetAttribute("WornTitle", S.origWornTitle)
-        LP:SetAttribute("DrTitle", S.origDrTitle)
         if tl then tl:SetAttribute(k, S.origTitleAttr) end
     end
 
-    if S.guildTag ~= "" then
-        LP:SetAttribute("GuildRank", S.guildTag)
+    -- DrTitle & HasLegend harus boolean true agar render Dr. & Legend Wings/Badge aktif di Roles.lua
+    if S.spoofDr or chosenTitle == "dr" or rLow == "dr" then
+        LP:SetAttribute("DrTitle", true)
+        LP:SetAttribute("HideDrUntil", 0)
+    else
+        LP:SetAttribute("DrTitle", S.origDrTitle)
+        LP:SetAttribute("HideDrUntil", S.origHideDr)
+    end
+    if S.spoofLegend or chosenTitle == "legend" or rLow == "legend" then
+        LP:SetAttribute("HasLegend", true)
+        LP:SetAttribute("HideLegendUntil", 0)
+    else
+        LP:SetAttribute("HasLegend", S.origHasLegend)
+        LP:SetAttribute("HideLegendUntil", S.origHideLegend)
+    end
+    LP:SetAttribute("StillTag", S.spoofStillTag and true or S.origStillTag)
+
+    if S.guildMode == "2: (GE) Member" then
+        LP:SetAttribute("GuildRank", 2)
+    elseif S.guildMode == "3: (GC) Officer" then
+        LP:SetAttribute("GuildRank", 3)
+    elseif S.guildMode == "4: (GL) Leader" then
+        LP:SetAttribute("GuildRank", 4)
     else
         LP:SetAttribute("GuildRank", S.origGuildRank)
     end
-    LP:SetAttribute("DiscordBooster", S.booster == true or S.origBooster)
 
-    local tag = findNameTag()
-    if tag then tag.Visible = not S.hideName end
+    if S.country and S.country ~= "Real (Unchanged)" then
+        LP:SetAttribute("Country", S.country)
+    else
+        LP:SetAttribute("Country", S.origCountry)
+    end
+
+    local bCol = Visual.Presets.boosterColors[S.boosterColor]
+    LP:SetAttribute("DiscordBooster", S.booster == true or S.origBooster)
+    if typeof(bCol) == "Color3" then
+        LP:SetAttribute("DiscordColor", bCol)
+    else
+        LP:SetAttribute("DiscordColor", S.origBoosterColor)
+    end
+
+    local lvl = toInt(S.spoofLevel, 0)
+    if lvl > 0 then
+        LP:SetAttribute("Level", lvl)
+        LP:SetAttribute("PlayerLevel", lvl)
+    else
+        LP:SetAttribute("Level", S.origLevel)
+        LP:SetAttribute("PlayerLevel", S.origPlayerLevel)
+    end
+
+    Visual.ApplyOutfit()
+    if (tonumber(S.weatherId) or 0) > 0 or H.weatherHookedFor == H.gt then
+        Visual.ApplyWeather(S.weatherId)
+    end
+    refreshNameTagObj()
     S.lastPosKey = tileKey(pos.tx, pos.ty)
     return true
 end
 
+function Visual.OnWorldChanged()
+    ensureVisualRefs()
+    if Visual.HasActiveSpoof() then
+        Visual.Apply()
+        if Visual.State.fakeGemsActive then
+            Visual.ApplyGems(Visual.State.fakeGemsValue)
+        end
+    end
+end
+
 function Visual.Restore()
+    ensureVisualRefs()
     saveOrigVisual()
     local S = Visual.State
     S.customName, S.role, S.effect, S.colorCode, S.customTitle = "", "none", "None", "", "none"
-    S.guildTag, S.booster, S.tilesName, S.hideName = "", false, false, false
+    S.guildTag, S.guildMode, S.country = "", "None (Real)", "Real (Unchanged)"
+    S.booster, S.boosterColor = false, "Default (Real)"
+    S.spoofDr, S.spoofLegend, S.spoofStillTag, S.spoofLevel = false, false, false, 0
+    S.tilesName, S.hideName = false, false
+    S.outfitPreset, S.fakeWorn, S.skinPreset, S.ghostSkin = "Real (Server Outfit)", {}, "Real (Server Skin)", false
+    S.weatherName, S.weatherId, S._appliedWeatherId = "Real (Server Weather)", 0, nil
+
     if LP then
         LP:SetAttribute("Nick", S.origNick)
         LP:SetAttribute("GameName", S.origGameName)
+        LP:SetAttribute("Tag", S.origTag)
+        LP:SetAttribute("OwnTitle", S.origOwnTitle)
         LP:SetAttribute("WornTitle", S.origWornTitle)
         LP:SetAttribute("DrTitle", S.origDrTitle)
+        LP:SetAttribute("HasLegend", S.origHasLegend)
+        LP:SetAttribute("HideLegendUntil", S.origHideLegend)
+        LP:SetAttribute("HideDrUntil", S.origHideDr)
+        LP:SetAttribute("StillTag", S.origStillTag)
         LP:SetAttribute("GuildRank", S.origGuildRank)
         LP:SetAttribute("DiscordBooster", S.origBooster)
+        LP:SetAttribute("DiscordColor", S.origBoosterColor)
+        LP:SetAttribute("Country", S.origCountry)
+        LP:SetAttribute("Level", S.origLevel)
+        LP:SetAttribute("PlayerLevel", S.origPlayerLevel)
         local k = "u" .. tostring(LP.UserId)
         local sr, tl = ReplicatedStorage:FindFirstChild("StaffRoles"), ReplicatedStorage:FindFirstChild("TitleList")
         if sr then sr:SetAttribute(k, S.origRoleAttr) end
         if tl then tl:SetAttribute(k, S.origTitleAttr) end
     end
-    local tag = findNameTag()
-    if tag then tag.Visible = true end
+
+    if type(H.wornTbl) == "table" and S.origWorn then
+        for _, sl in ipairs(Visual.Presets.wearSlots) do
+            H.wornTbl[sl] = S.origWorn[sl]
+        end
+    end
+    if type(H.playerSpriteObj) == "table" and typeof(S.origSkin) == "Color3" then
+        H.playerSpriteObj.SKIN = S.origSkin
+        if type(rawget(H.playerSpriteObj, "setSkin")) == "function" then
+            pcall(H.playerSpriteObj.setSkin, H.playerSpriteObj, S.origSkin)
+        end
+    end
+    if H.gt and S.origSkinTSavedFor == H.gt then
+        H.gt.skinT = S.origSkinT
+    end
+    if H.skillsObj and type(H.skillsObj.applyWorn) == "function" then pcall(H.skillsObj.applyWorn) end
+    if type(H.playerSpriteObj) == "table" and type(rawget(H.playerSpriteObj, "applyFeet")) == "function" then
+        pcall(H.playerSpriteObj.applyFeet, H.playerSpriteObj)
+    end
+
+    if type(H.origDrawWeather) == "function" and H.weatherHookedFor == H.gt then
+        pcall(H.origDrawWeather)
+    end
+    Visual.RestoreGems()
+    refreshNameTagObj()
     return true
 end
 
@@ -7729,9 +9501,8 @@ buildSYTMenuFn = function()
             end)
 
             local DfCfgCard = c:Card("Delay & Opsi Format Dirt Farm", nil, "Sliders", {
-                Subtitle = "Skip otomatis White Door, Bedrock & Locks"
+                Subtitle = "Pure Manual Walk + Jump murni | Skip White Door, Bedrock & Locks"
             })
-            DfCfgCard:Slider("Walk Speed (DF)", "DfWalkSpeed", 6, 16, math.floor((DirtFarm.State.walkSpeed or 12) + 0.5), " t/s", function(v) DirtFarm.State.walkSpeed = v end, 1)
             DfCfgCard:Slider("Break Delay (ms)", "DfBreakMs", 40, 600, math.floor(DirtFarm.State.breakDelay * 1000), " ms", function(v) DirtFarm.State.breakDelay = v / 1000 end, 10)
             DfCfgCard:Slider("Place Delay (ms)", "DfPlaceMs", 40, 600, math.floor(DirtFarm.State.placeDelay * 1000), " ms", function(v) DirtFarm.State.placeDelay = v / 1000 end, 10)
             DfCfgCard:Slider("Collect Delay (ms)", "DfCollectMs", 20, 400, math.floor(DirtFarm.State.collectDelay * 1000), " ms", function(v) DirtFarm.State.collectDelay = v / 1000 end, 10)
@@ -7751,7 +9522,7 @@ buildSYTMenuFn = function()
             DfCtrl:Input("Status Dirt Farm", "DfStatusDisplay", "Idle", DirtFarm.State.status or "Idle")
 
             local DfGuide = r:Card("Alur Kerja DF Otomatis", "Info", "Shield", {
-                Subtitle = "1) Walk cepat + Auto-Break jalur | 2) Gali pojok & line selang 2 | 3) Ubah non-Dirt jadi Dirt | 4) Auto Rotation World"
+                Subtitle = "1) Pure Manual Walk + Auto-Break | 2) Garap bawah top-down + gap/shaft | 3) Panjat shaft 1-tile + build atas | 4) Auto Rotation World"
             })
             DfGuide:Button("Bersihkan Drops DF Sekitar", "COLLECT", "Bolt", function()
                 Packets.Collect({ radius = 8, stepMoveIfFar = false, collectDelay = 0 })
@@ -7759,18 +9530,18 @@ buildSYTMenuFn = function()
         end)
     })
 
-    -- TAB 6: VISUALISASI (Center = Nama/Role/Effect | Right = Apply, Restore & Toggles)
-    feature("Visuals", "Visualisasi (V4)")({
+    -- TAB 6: SPOOFER & VISUALISASI V4 (Center = Identity, Outfit/Skin & World/Gems | Right = Apply/Restore, Gems & Quick Guards)
+    feature("Visuals", "Spoofer & Visual (V4)")({
         center = center(function(c)
-            c:Header("V4 [SET VISUALISASI]", "Atur Nama In-Game, Roles, Effects Animasi, Title & Guild", "V4")
+            c:Header("V4 [SPOOFER & VISUALISASI]", "Spoof Role/Tag, Title, Outfit Worn, Skin, Weather & Fake Gems (Client-Only)", "V4")
 
-            local VisCard = c:Card("Identitas & Tampilan Karakter", nil, "Player", {
-                Subtitle = "Client visual spoofing secara real-time di client Anda"
+            local VisCard = c:Card("1. Identity, Role, Title, Guild & Level Spoofer", nil, "Player", {
+                Subtitle = "Mengubah atribut NameTag & badge lokal seketika tanpa kirim paket ke server"
             })
             VisCard:Input("Custom Name Visual", "VisCustomName", "Nama baru...", Visual.State.customName, function(txt)
                 Visual.State.customName = tostring(txt or "")
             end)
-            VisCard:Dropdown("Roles Visual", "VisRoleSelect", VISUAL_ROLES, Visual.State.role or "none", function(v)
+            VisCard:Dropdown("Roles / Staff Tag Spoof", "VisRoleSelect", VISUAL_ROLES, Visual.State.role or "none", function(v)
                 Visual.State.role = v
                 Visual.Apply()
             end)
@@ -7782,34 +9553,141 @@ buildSYTMenuFn = function()
                 Visual.State.colorCode = (v == "None") and "" or v
                 Visual.Apply()
             end)
-            VisCard:Dropdown("Title Visual", "VisTitleSelect", VISUAL_TITLES, Visual.State.customTitle or "none", function(v)
+            VisCard:Dropdown("Worn / Own Title Spoof", "VisTitleSelect", VISUAL_TITLES, Visual.State.customTitle or "none", function(v)
                 Visual.State.customTitle = v
                 Visual.Apply()
             end)
-            VisCard:Input("Guild Tag Visual (Opsional)", "VisGuildInput", "Contoh: SYT / PRO", Visual.State.guildTag or "", function(txt)
+            VisCard:Dropdown("Guild Rank Mode (GE / GC / GL)", "VisGuildMode", Visual.Presets.guildRanks, Visual.State.guildMode or "None (Real)", function(v)
+                Visual.State.guildMode = v
+                Visual.Apply()
+            end)
+            VisCard:Input("Custom Guild Prefix (Opsional)", "VisGuildInput", "Contoh: SYT / PRO", Visual.State.guildTag or "", function(txt)
                 Visual.State.guildTag = tostring(txt or "")
             end)
+            VisCard:Dropdown("Country Flag Spoof", "VisCountrySelect", Visual.Presets.countries, Visual.State.country or "Real (Unchanged)", function(v)
+                Visual.State.country = v
+                Visual.Apply()
+            end)
+            VisCard:Dropdown("Discord Booster Color", "VisBoosterColorSelect", Visual.Presets.boosterColorNames, Visual.State.boosterColor or "Default (Real)", function(v)
+                Visual.State.boosterColor = v
+                Visual.Apply()
+            end)
+            VisCard:Input("Spoof Level (0 = Real)", "VisLevelInput", "0 / 100 / 999", tostring(Visual.State.spoofLevel or 0), function(txt)
+                Visual.State.spoofLevel = math.max(0, toInt(txt, 0))
+            end)
+
+            local OutfitCard = c:Card("2. Outfit / Worn & Skin Spoofer (Client Sprite)", nil, "Player", {
+                Subtitle = "Ubah item pakaian & warna kulit lokal (mendukung sayap, aura, efek & ghost skin)"
+            })
+            OutfitCard:Dropdown("Outfit Preset (Auto ItemDB)", "SpoofOutfitPreset", Visual.Presets.outfitPresets, Visual.State.outfitPreset or "Real (Server Outfit)", function(v)
+                Visual.SetOutfitPreset(v)
+                emitNotify("OUTFIT SPOOF", "Preset diterapkan: " .. tostring(v))
+            end)
+            OutfitCard:Dropdown("Pilih Slot Pakaian", "SpoofWearSlot", Visual.Presets.wearSlots, Visual.State.selectedSlot or "back", function(v)
+                Visual.State.selectedSlot = v
+                if UI._DropRefresh and UI._DropRefresh.SpoofWearPick then
+                    UI._DropRefresh.SpoofWearPick(Visual.GetWearableOptionsForSlot(v, Visual.State.wearSearch))
+                end
+            end)
+            OutfitCard:Input("Cari Nama Item / ID", "SpoofWearSearch", "Contoh: Wings / Katana / Crown", Visual.State.wearSearch or "", function(txt)
+                Visual.State.wearSearch = tostring(txt or "")
+                if UI._DropRefresh and UI._DropRefresh.SpoofWearPick then
+                    UI._DropRefresh.SpoofWearPick(Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot, Visual.State.wearSearch))
+                end
+            end)
+            OutfitCard:Dropdown("Pilih Item Wearable (ItemDB)", "SpoofWearPick", Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot or "back", ""), "Default (Keep Real)", function(v)
+                Visual.ApplySlotItem(Visual.State.selectedSlot or "back", v)
+            end)
+            OutfitCard:Input("Custom Item ID Untuk Slot Terpilih", "SpoofCustomItemId", "Masukkan angka ID / 0 untuk lepas", Visual.State.customSlotId or "", function(txt)
+                Visual.State.customSlotId = tostring(txt or "")
+            end)
+            OutfitCard:Dropdown("Skin Color Preset", "SpoofSkinSelect", Visual.Presets.skinNames, Visual.State.skinPreset or "Real (Server Skin)", function(v)
+                Visual.State.skinPreset = v
+                Visual.ApplyOutfit()
+            end)
+            OutfitCard:Toggle("Ghost / See-Through Skin (skinT = 0.2)", "SpoofGhostSkin", Visual.State.ghostSkin == true, function(v)
+                Visual.State.ghostSkin = v == true
+                Visual.ApplyOutfit()
+            end)
+
+            local WorldVisCard = c:Card("3. World Weather & HUD Spoofer", nil, "Bolt", {
+                Subtitle = "Kunci Weather visual world di client & ubah tampilan Gems HUD"
+            })
+            WorldVisCard:Dropdown("Local Weather Spoof (Lock)", "SpoofWeatherSelect", Visual.Presets.weatherNames, Visual.State.weatherName or "Real (Server Weather)", function(v)
+                local wid = Visual.ApplyWeather(v)
+                emitNotify("WEATHER SPOOF", wid > 0 and ("Locked Weather ID: " .. tostring(wid)) or "Real Server Weather Restored")
+            end)
+            WorldVisCard:Input("Fake Gems HUD Value", "SpoofFakeGemsInput", "Contoh: 999999999", tostring(Visual.State.fakeGemsValue or 0))
         end),
 
         right = right(function(r)
-            local VisActCard = r:Card("Terapkan & Opsi Visual", "Apply", "Bolt", {
-                Subtitle = "Aktifkan badge, koordinat di nama, atau pulihkan nama asli"
+            local VisActCard = r:Card("Terapkan & Pulihkan Spoofer", "Apply", "Bolt", {
+                Subtitle = "Apply seluruh atribut/outfit/weather atau kembalikan ke asli"
             })
-            VisActCard:Button("Terapkan Visualisasi Sekarang", "APPLY", "Bolt", function()
+            VisActCard:Button("Terapkan Semua Spoof Sekarang", "APPLY", "Bolt", function()
                 Visual.State.customName = tostring(UI:GetValue("VisCustomName") or "")
                 Visual.State.guildTag   = tostring(UI:GetValue("VisGuildInput") or "")
+                Visual.State.spoofLevel = math.max(0, toInt(UI:GetValue("VisLevelInput"), 0))
+                Visual.Apply()
+                emitNotify("SPOOFER", "Seluruh spoof Identity/Outfit/Weather aktif!")
+            end)
+            VisActCard:Button("Kembalikan Semua ke Asli (Restore)", "RESTORE", "Shield", function()
+                Visual.Restore()
+                UI:SetValue("VisCustomName", "")
+                UI:SetValue("VisGuildInput", "")
+                UI:SetValue("VisLevelInput", "0")
+                emitNotify("SPOOFER", "Nama, Title, Outfit, Skin, Weather & Gems dipulihkan ke asli!")
+            end)
+            VisActCard:Button("Scan / Refresh List ItemDB", "SCAN", "Bolt", function()
+                ensureVisualRefs()
+                local opts = Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot or "back", UI:GetValue("SpoofWearSearch") or "")
+                if UI._DropRefresh and UI._DropRefresh.SpoofWearPick then
+                    UI._DropRefresh.SpoofWearPick(opts)
+                end
+                emitNotify("ITEMDB SCAN", string.format("Ditemukan %d item untuk slot '%s'", math.max(0, #opts - 2), tostring(Visual.State.selectedSlot or "back")))
+            end)
+            VisActCard:Button("Pasang Custom ID ke Slot Terpilih", "WEAR ID", "Player", function()
+                local cid = tostring(UI:GetValue("SpoofCustomItemId") or "")
+                Visual.State.customSlotId = cid
+                local ok = Visual.ApplySlotItem(Visual.State.selectedSlot or "back", cid)
+                emitNotify("OUTFIT SLOT", ok and string.format("Slot '%s' -> %s", tostring(Visual.State.selectedSlot or "back"), cid ~= "" and cid or "Default") or "Masukkan ID angka valid / 0")
+            end)
+
+            local FlagCard = r:Card("Flags Badge & Toggles Spoofer", "Flags", "Player", {
+                Subtitle = "DrTitle, HasLegend, StillTag, Booster & Lock World"
+            })
+            FlagCard:Toggle("Dr. Title Badge (DrTitle = true)", "VisDrToggle", Visual.State.spoofDr == true, function(v)
+                Visual.State.spoofDr = v == true
                 Visual.Apply()
             end)
-            VisActCard:Button("Kembalikan Nama & Role Asli", "RESTORE", "Shield", function()
-                Visual.Restore()
+            FlagCard:Toggle("Legend Wings & Title (HasLegend = true)", "VisLegendToggle", Visual.State.spoofLegend == true, function(v)
+                Visual.State.spoofLegend = v == true
+                Visual.Apply()
             end)
-            VisActCard:Toggle("Discord Booster Icon", "VisBoosterToggle", Visual.State.booster, function(v)
+            FlagCard:Toggle("Still Tag (Anti-Scroll Badge)", "VisStillTagToggle", Visual.State.spoofStillTag == true, function(v)
+                Visual.State.spoofStillTag = v == true
+                Visual.Apply()
+            end)
+            FlagCard:Toggle("Discord Booster Icon", "VisBoosterToggle", Visual.State.booster, function(v)
                 Visual.State.booster = v
                 Visual.Apply()
             end)
-            VisActCard:Toggle("Tiles Name [X, Y] di Nama", "VisTilesName", Visual.State.tilesName, function(v) Visual.State.tilesName = v; Visual.Apply() end)
-            VisActCard:Toggle("Hidden Name (Sembunyikan Tag)", "VisHideName", Visual.State.hideName, function(v) Visual.State.hideName = v; Visual.Apply() end)
-            VisActCard:Toggle("Lock Names (Re-apply World Baru)", "VisLockNames", Visual.State.lockNames, function(v) Visual.State.lockNames = v end)
+            FlagCard:Toggle("Tiles Name [X, Y] di Nama", "VisTilesName", Visual.State.tilesName, function(v) Visual.State.tilesName = v; Visual.Apply() end)
+            FlagCard:Toggle("Hidden Name (Sembunyikan Tag)", "VisHideName", Visual.State.hideName, function(v) Visual.State.hideName = v; Visual.Apply() end)
+            FlagCard:Toggle("Lock Spoofs (Auto Re-apply World Baru)", "VisLockNames", Visual.State.lockNames, function(v) Visual.State.lockNames = v end)
+
+            local GemsActCard = r:Card("Fake Gems HUD Control", "Gems", "Bolt", {
+                Subtitle = "Ubah angka Gems di UI client seketika"
+            })
+            GemsActCard:Button("Terapkan Fake Gems HUD", "SET GEMS", "Bolt", function()
+                local raw = tonumber(UI:GetValue("SpoofFakeGemsInput")) or 0
+                local ok, val = Visual.ApplyGems(raw)
+                emitNotify("GEMS HUD", ok and ("Fake Gems HUD diset: " .. tostring(val)) or "ChatUI.addGems belum ditemukan (coba masuk world dulu)")
+            end)
+            GemsActCard:Button("Kembalikan Real Gems HUD", "REAL GEMS", "Shield", function()
+                Visual.RestoreGems()
+                emitNotify("GEMS HUD", "Real Gems HUD dipulihkan!")
+            end)
         end)
     })
 
@@ -7865,7 +9743,36 @@ buildSYTMenuFn = function()
             end)
             GuardCard:Slider("Max Range Skipper (Tiles)", "GuardMaxRange", 1, 50, GetcSkipper.State.maxRangeTiles, " tiles", function(v)
                 GetcSkipper.State.maxRangeTiles = clamp(toInt(v, 12), 1, 50)
+                GetcSkipper.SyncBypassHooks()
             end, 1)
+
+            local GetgcCard = c:Card("[GETC BYPASS] Hooks Engine Client (skillsObj & areas)", nil, "Bolt", {
+                Subtitle = "Bypass punch/build range, wornSpeed, handPower, physics & area lock checks"
+            })
+            GetgcCard:Toggle("Bypass Client Punch & Build Range", "GetgcBypassRange", GetcSkipper.State.bypassClientRange == true, function(v)
+                GetcSkipper.SetBypassOption("bypassClientRange", v == true)
+            end)
+            GetgcCard:Toggle("Bypass 1-Hit HandPower & Dig", "GetgcBypassHandPower", GetcSkipper.State.bypassHandPower == true, function(v)
+                GetcSkipper.SetBypassOption("bypassHandPower", v == true)
+            end)
+            GetgcCard:Toggle("Bypass Walk Speed Multiplier", "GetgcBypassSpeed", GetcSkipper.State.bypassWalkSpeed == true, function(v)
+                GetcSkipper.SetBypassOption("bypassWalkSpeed", v == true)
+            end)
+            GetgcCard:Slider("Walk Speed Scale", "GetgcSpeedScale", 1.0, 3.0, GetcSkipper.State.walkSpeedScale or 1.45, "x", function(v)
+                GetcSkipper.SetBypassOption("walkSpeedScale", clamp(tonumber(v) or 1.45, 1.0, 3.0))
+            end, 0.05)
+            GetgcCard:Toggle("Bypass Physics (SlowFall & Fireproof)", "GetgcBypassPhysics", GetcSkipper.State.bypassPhysics == true, function(v)
+                GetcSkipper.SetBypassOption("bypassPhysics", v == true)
+            end)
+            GetgcCard:Toggle("Bypass Area Locks (canEdit / mayBuild Client)", "GetgcBypassLocks", GetcSkipper.State.bypassClientLocks == true, function(v)
+                GetcSkipper.SetBypassOption("bypassClientLocks", v == true)
+            end)
+            GetgcCard:Toggle("Bypass UI Block & DropOk Check", "GetgcBypassUiBlock", GetcSkipper.State.bypassUiBlock == true, function(v)
+                GetcSkipper.SetBypassOption("bypassUiBlock", v == true)
+            end)
+            GetgcCard:Toggle("Spoof Bot Action Range (High Server Risk)", "GetgcSpoofBotReach", GetcSkipper.State.spoofServerReach == true, function(v)
+                GetcSkipper.SetBypassOption("spoofServerReach", v == true)
+            end)
         end),
 
         right = right(function(r)
@@ -7884,15 +9791,17 @@ buildSYTMenuFn = function()
             SpamCtrl:Input("Status Spam", "SpamStatusDisplay", "Idle", Spam.State.status or "Idle")
 
             local GuardCtrl = r:Card("Aksi & Status Anti-Back Guard", "Guard", "Shield", {
-                Subtitle = "Pastikan proteksi goTo + WorldRemotes + ByteNet + EnsureMove aktif"
+                Subtitle = "Pastikan proteksi goTo + skillsObj + WorldRemotes + ByteNet aktif"
             })
-            GuardCtrl:Button("Pasang Ulang Anti-Back & NetGuard", "HOOK", "Shield", function()
+            GuardCtrl:Button("Pasang Ulang GetGC, Anti-Back & NetGuard", "HOOK", "Shield", function()
+                Core.EnsureInit(true)
                 Core.EnsureMoveHook()
+                local gOk = Core.InstallGetgcBypassHooks()
                 pcall(Core.InstallAntiBackGuard)
                 if type(SYT_Logic.InstallNetGuard) == "function" then
                     pcall(SYT_Logic.InstallNetGuard)
                 end
-                emitNotify("ANTI-BACK GUARD", string.format("Aktif! Blocked MoveTo: %d | Mode: %s", H.blockedMoveToCount or 0, Core.GetStopOrNoSendMode()))
+                emitNotify("GETGC & ANTI-BACK", string.format("SkillsHook=%s | Areas=%s | Blocked MoveTo=%d | Mode=%s", tostring(gOk), tostring(H.areasBypassedFor ~= nil), H.blockedMoveToCount or 0, Core.GetStopOrNoSendMode()))
             end)
         end)
     })
@@ -9110,7 +11019,14 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
                 pcall(SYT_Logic.Init, true)
                 pcall(Core.InstallAntiBackGuard)
                 pcall(hookIncomingNetGuard)
-                if Visual.State.lockNames then Visual.Apply() end
+                if Visual.State.lockNames or Visual.HasActiveSpoof() then
+                    pcall(Visual.OnWorldChanged)
+                end
+                if UI and UI._DropRefresh and UI._DropRefresh.SpoofWearPick and H.ItemDB then
+                    pcall(function()
+                        UI._DropRefresh.SpoofWearPick(Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot or "back", Visual.State.wearSearch))
+                    end)
+                end
                 if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
                 if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end
                 if UIHooks.refreshPad5x5 then pcall(UIHooks.refreshPad5x5) end
@@ -9141,6 +11057,12 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
     if (now - lastSlowTick) >= 1.2 then
         lastSlowTick = now
         if not H.gt or not H.ItemDB or not H.Net or not H.inv then pcall(SYT_Logic.Init) end
+        if not Visual._wearInitSynced and H.ItemDB and UI and UI._DropRefresh and UI._DropRefresh.SpoofWearPick then
+            Visual._wearInitSynced = true
+            pcall(function()
+                UI._DropRefresh.SpoofWearPick(Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot or "back", Visual.State.wearSearch))
+            end)
+        end
         if not buttonMap["[PNB]"] or not buttonMap["[PABRIK]"] or not buttonMap["[DF]"] or not buttonMap["[SPAM]"] or not buttonMap["[GAP TP]"] or not UIHooks.sidebarNameLbl then
             pcall(scanResponsiveButtons)
             pcall(UIHooks.updateButtons)

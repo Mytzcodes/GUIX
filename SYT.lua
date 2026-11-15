@@ -239,25 +239,40 @@ local function loadR8Framework(forceReload)
 end
 
 local UI, ThemeChoices
-local function feature(...)
-    return UI.feature(...)
+local uiBuildErrors = {}
+local uiErrNotify = nil
+local function recordUiError(tag, err)
+    local msg = tag .. ": " .. tostring(err)
+    uiBuildErrors[#uiBuildErrors + 1] = msg
+    warn("[SYT UI Error] " .. msg)
+    if uiErrNotify then pcall(uiErrNotify, msg) end
 end
-local function center(fn)
-    return function(builder)
-        local ok, err = xpcall(fn, debug.traceback, builder)
-        if not ok then
-            warn("[SYT UI Center Error]: " .. tostring(err))
+
+-- feature() aman: error pada 1 tab tidak menghentikan pembuatan tab lain
+local function feature(logo, name)
+    local okF, fn = pcall(UI.feature, logo, name)
+    if okF and type(fn) == "function" then
+        return function(def)
+            local okD, res = pcall(fn, def)
+            if not okD then recordUiError("tab " .. tostring(name), res) end
+            return res
         end
     end
+    recordUiError("feature " .. tostring(name), fn)
+    return function() end
 end
-local function right(fn)
+
+-- Builder kolom dijalankan via task.spawn + xpcall: jika ada yang yield/macet/error, tab berikutnya tetap dibangun
+local function guardedColumn(tag, fn)
     return function(builder)
-        local ok, err = xpcall(fn, debug.traceback, builder)
-        if not ok then
-            warn("[SYT UI Right Error]: " .. tostring(err))
-        end
+        task.spawn(function()
+            local ok, err = xpcall(fn, debug.traceback, builder)
+            if not ok then recordUiError(tag, err) end
+        end)
     end
 end
+local function center(fn) return guardedColumn("center", fn) end
+local function right(fn) return guardedColumn("right", fn) end
 
 local function initSYTWindow(themeOverride, scaleOverride, startHidden)
     cleanupSYTGuiContainers(nil)
@@ -9327,9 +9342,9 @@ local function menuIsReady()
     local sg = getActiveMenuGui()
     if not sg or not sg.Parent then return false end
     if UI and UI.MainWindow and not UI.MainWindow.Parent then return false end
-    if not UI or type(UI.Features) ~= "table" or #UI.Features < 8 then return false end
+    if not UI or type(UI.Features) ~= "table" or #UI.Features < 1 then return false end
     local okCnt, cnt = pcall(function() return #sg:GetDescendants() end)
-    return okCnt and cnt > 140
+    return okCnt and cnt > 40
 end
 
 local function allCanvasesReady()
@@ -9445,6 +9460,8 @@ end
 local buildMountedCanvasesFn
 
 buildSYTMenuFn = function()
+    uiBuildErrors = {}
+    uiErrNotify = function(m) emitNotify("SYT UI Error", string.sub(m, 1, 180)) end
     UIHooks.refreshMap     = nil
     UIHooks.refreshBP      = nil
     UIHooks.refreshPad5x5  = nil
@@ -9658,8 +9675,7 @@ buildSYTMenuFn = function()
             local FollowCard = c:Card("Auto Follow Player (Via Walk)", nil, "Player", {
                 Subtitle = "Pilih target dari dropdown lalu aktifkan Auto Follow"
             })
-            local okCands, initCands = pcall(Misc.GetFollowCandidates, true)
-            initCands = (okCands and type(initCands) == "table" and #initCands > 0) and initCands or { "(Belum ada player lain)" }
+            local initCands = { "Tidak ada player lain" }
             local defFollow = (Misc.State.followTarget ~= "" and Misc.State.followTarget) or initCands[1]
             FollowCard:Dropdown("Pilih Player Target (Scroll)", "MiscFollowTarget", initCands, defFollow, function(v)
                 local chosen = Misc.SetFollowTarget(v)
@@ -11409,7 +11425,7 @@ end
 
 -- Watchdog: bila ScreenGui/MainWindow atau fitur menu hilang setelah boot (bukan ditutup user), buka ulang tanpa mematikan otomasi
 task.spawn(function()
-    local missing = 0
+    local missing, healthy, rebuilds = 0, 0, 0
     task.wait(2.0)
     while getEnv().__SYT_SCRIPT_TOKEN == MY_SCRIPT_TOKEN and not UIHooks.userDestroy do
         task.wait(1.2)
@@ -11417,13 +11433,21 @@ task.spawn(function()
         if not UIHooks.rerunning then
             local sg = getActiveMenuGui()
             local windowAlive = sg and sg.Parent and (not UI or not UI.MainWindow or UI.MainWindow.Parent ~= nil)
-            local featuresOk = UI and type(UI.Features) == "table" and #UI.Features >= 8
+            local featuresOk = UI and type(UI.Features) == "table" and #UI.Features >= 1
             if windowAlive and featuresOk and menuIsReady() then
                 missing = 0
+                healthy += 1
+                if healthy >= 10 then rebuilds = 0 end
             else
                 missing += 1
+                healthy = 0
                 if missing >= 2 then
                     missing = 0
+                    rebuilds += 1
+                    if rebuilds > 3 then
+                        emitNotify("SYT Watchdog", "Rebuild gagal 3x, watchdog dihentikan. Lihat console (F9) untuk error.")
+                        break
+                    end
                     SYT_Logic.RebuildMenu("Watchdog: menu terhapus sistem/game", 0.15, false)
                 end
             end

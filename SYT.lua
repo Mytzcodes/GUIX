@@ -510,11 +510,28 @@ local H = {
     wheelHooked      = false,
     seemsHooked      = false,
     netGodHooked     = false,
+    chatWarnHooked   = false,
     serverTileEchoSeen = false,
     recentSelfEdits  = {},
+    lastPlaceRejectedAt = 0,
+    nextPlaceAllowedAt = 0,
+    adaptivePlaceGap = 0.168,
     lastGcScanAt     = 0,
     lastDigWearTryAt = 0,
     flyLastValidPos  = nil,
+    flyAirAnchor     = nil,
+    antiBackAnchor   = nil,
+    lastSentMove     = nil,
+    stopMoveUntil    = 0,
+    lastPunchAt      = 0,
+    lastActAt        = 0,
+    blockedMoveToCount = 0,
+    lastBlockedMoveToAt = 0,
+    lastActionBlockedAt = 0,
+    lastActionBlockedReason = "",
+    goToGuardedFor   = nil,
+    antiBackGuardHooked = false,
+    antiBackWrappedConns = {},
     allowNextMoveToUntil = 0,
     watcherConn      = nil,
     flyConn          = nil,
@@ -851,7 +868,332 @@ local function inspectUpvalues(gt)
 end
 
 local Core = {}
-local SYT_Logic = { VERSION = "2.0.0", _Hooks = H, Core = Core }
+local SYT_Logic = { VERSION = "2.1.0", _Hooks = H, Core = Core }
+
+function Core.AllowMoveToWindow(sec)
+    H.allowNextMoveToUntil = math.max(H.allowNextMoveToUntil or 0, os.clock() + (tonumber(sec) or 0.8))
+end
+
+function Core.IsAntiBackActive()
+    local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+    local ms = SYT_Logic.Misc and SYT_Logic.Misc.State
+    if gs and gs.enabled == false and not (ms and (ms.fly or ms.godMode)) then
+        return false
+    end
+    return (gs and (gs.antiBack ~= false or gs.noValidateBack == true))
+        or (ms and (ms.fly and ms.flyAntiBasePath ~= false or ms.godMode))
+        or false
+end
+
+function Core.GetStopOrNoSendMode()
+    local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+    if not gs or gs.enabled == false then return "off" end
+    local m = string.lower(tostring(gs.stopOrNoSend or "nosend"))
+    if m == "stop" or m == "nosend" or m == "off" then return m end
+    return "nosend"
+end
+
+function Core.IsNearDoorTile(tx, ty)
+    local gt = H.gt
+    if not gt or not gt.w or not gt.h or type(tx) ~= "number" or type(ty) ~= "number" then return false end
+    for dy = -1, 1 do
+        for dx = -1, 1 do
+            local ax, ay = tx + dx, ty + dy
+            if ax >= 0 and ax < gt.w and ay >= 0 and ay < gt.h then
+                local id = Core.GetFG(ax, ay)
+                if id and id ~= 0 then
+                    local info = Core.GetItemInfo(id)
+                    if info and (info.door or info.entrance) then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+function Core.GetActionRange(kind)
+    local sk = H.skillsObj
+    local r = 2.5
+    if sk then
+        if kind == "build" or kind == "place" then
+            if type(sk.buildRange) == "function" then
+                local ok, v = pcall(sk.buildRange)
+                if ok and type(v) == "number" and v >= 2.0 then r = v end
+            end
+        elseif kind == "punch" or kind == "break" then
+            if type(sk.punchRange) == "function" then
+                local ok, v = pcall(sk.punchRange)
+                if ok and type(v) == "number" and v >= 2.0 then r = v end
+            elseif type(sk.buildRange) == "function" then
+                local ok, v = pcall(sk.buildRange)
+                if ok and type(v) == "number" and v >= 2.0 then r = v end
+            end
+        end
+    end
+    if kind == "collect" or kind == "take" then
+        return 4.6
+    end
+    return math.max(2.35, r - 0.05)
+end
+
+function Core.IsInActionReach(tx, ty, kind, posOverride)
+    if type(tx) ~= "number" or type(ty) ~= "number" then return false end
+    local pos = posOverride or Core.ReadPos()
+    local range = Core.GetActionRange(kind)
+    local dx = math.abs((tx + 0.5) - pos.x)
+    local dy = math.abs((ty + 0.5) - (pos.y - 0.475))
+    return dx <= range and dy <= range
+end
+
+function Core.CanPlaceBodyOk(tx, ty, info, posOverride)
+    local gt = H.gt
+    if not gt or tx < 0 or tx >= gt.w or ty < 0 or ty >= gt.h then return false, "out_of_bounds" end
+    if info and info.kind == "consumable" then return true, "consumable" end
+    if not Core.CanEditTile(tx, ty) then return false, "no_edit" end
+    if type(gt.builderOk) == "function" then
+        local okB, resB = pcall(gt.builderOk, tx, ty, true)
+        if okB and resB == false then return false, "builder_locked" end
+    end
+    if info and (info.solid or info.combiner) and not info.background and info.kind ~= "seed" then
+        local pos = posOverride or Core.ReadPos()
+        if (tx + 1 > pos.x - 0.3) and (tx < pos.x + 0.3) and (ty + 1 > pos.y - 0.95) and (ty < pos.y) then
+            return false, "inside_player"
+        end
+    end
+    return true, "ok"
+end
+
+function Core.ShouldBlockMoveTo(gx, gy)
+    if os.clock() <= (H.allowNextMoveToUntil or 0) then
+        return false
+    end
+    local ms = SYT_Logic.Misc and SYT_Logic.Misc.State
+    local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
+    local antiBack = Core.IsAntiBackActive()
+    local flyOn = ms and ms.fly == true and ms.flyAntiBasePath ~= false
+    local godOn = ms and ms.godMode == true
+    local skipperOn = gs and gs.enabled == true and (gs.noValidateBack == true or gs.antiBack ~= false)
+    if not (antiBack or flyOn or godOn or skipperOn) then
+        return false
+    end
+    local cur = Core.ReadPos()
+    if type(gx) == "number" and type(gy) == "number" then
+        local gt = H.gt
+        local sp = gt and gt.spawn
+        local nearSpawnTarget = sp and (math.abs(gx - sp.X) + math.abs(gy - sp.Y)) <= 2.4
+        local playerFarFromSpawn = sp and (math.abs(cur.x - sp.X) + math.abs(cur.y - sp.Y)) > 3.2
+        if not nearSpawnTarget and Core.IsNearDoorTile(cur.tx, cur.ty) and not flyOn then
+            return false
+        end
+        local jumpDist = math.abs(gx - cur.x) + math.abs(gy - cur.y)
+        if (nearSpawnTarget and playerFarFromSpawn) or jumpDist > 1.8 or flyOn or godOn then
+            H.blockedMoveToCount = (H.blockedMoveToCount or 0) + 1
+            H.lastBlockedMoveToAt = os.clock()
+            if Core.GetStopOrNoSendMode() == "stop" then
+                H.stopMoveUntil = math.max(H.stopMoveUntil or 0, os.clock() + 0.35)
+                H.autoMove = nil
+            end
+            return true
+        end
+        return false
+    end
+    if flyOn or godOn or skipperOn then
+        H.blockedMoveToCount = (H.blockedMoveToCount or 0) + 1
+        H.lastBlockedMoveToAt = os.clock()
+        return true
+    end
+    return false
+end
+
+function Core.InstallAntiBackGuard()
+    local gt, net = H.gt, H.Net
+    -- Layer 1: Guard gt.goTo agar server MoveTo / rollback tidak menarik posisi mundur ke BasePath/Spawn
+    if gt and type(rawget(gt, "goTo")) == "function" and H.goToGuardedFor ~= gt then
+        local origGoTo = gt.goTo
+        H.origGtGoTo = origGoTo
+        H.goToGuardedFor = gt
+        gt.goTo = function(gx, gy, ...)
+            if Core.ShouldBlockMoveTo(tonumber(gx), tonumber(gy)) then
+                local cur = Core.ReadPos()
+                Core.SetLocalCoords(cur.x, cur.y, 0, 0)
+                H.antiBackAnchor = { x = cur.x, y = cur.y, t = os.clock() }
+                return nil
+            end
+            if type(gx) == "number" and type(gy) == "number" then
+                H.lastSentMove = { x = gx, y = gy, vx = 0, vy = 0, flags = 2, t = os.clock() }
+                H.antiBackAnchor = { x = gx, y = gy, t = os.clock() }
+            end
+            return origGoTo(gx, gy, ...)
+        end
+    end
+
+    local dmgEvents = { ForceDie = true, Died = true, Knocked = true, Burned = true, Impulse = true, Hurt = true }
+    local function wrapGuardFn(evKey, origFn)
+        if type(origFn) ~= "function" then return origFn end
+        if H.antiBackWrappedConns[origFn] then return origFn end
+        local isMove = (evKey == "MoveTo")
+        local isDmg = dmgEvents[evKey] == true
+        local wrapper = function(a1, a2, ...)
+            local ms = SYT_Logic.Misc and SYT_Logic.Misc.State
+            if isMove and Core.ShouldBlockMoveTo(tonumber(a1) or (type(a1) == "table" and tonumber(a1.x)), tonumber(a2) or (type(a1) == "table" and tonumber(a1.y))) then
+                return nil
+            end
+            if isDmg and ms and (ms.godMode == true or (Core.IsAntiBackActive() and (evKey == "Knocked" or evKey == "Impulse"))) then
+                return nil
+            end
+            return origFn(a1, a2, ...)
+        end
+        H.antiBackWrappedConns[origFn] = wrapper
+        H.antiBackWrappedConns[wrapper] = wrapper
+        return wrapper
+    end
+
+    -- Layer 2: Guard WorldRemotes OnClientEvent via getconnections (aman untuk executor mobile/PC)
+    local wr = ReplicatedStorage:FindFirstChild("WorldRemotes")
+    if wr and type(getconnections) == "function" then
+        for evKey, _ in pairs({ MoveTo = true, ForceDie = true, Died = true, Knocked = true, Burned = true, Impulse = true, Hurt = true }) do
+            local re = wr:FindFirstChild(evKey)
+            if re and re:IsA("RemoteEvent") then
+                local okC, conns = pcall(getconnections, re.OnClientEvent)
+                if okC and type(conns) == "table" then
+                    for _, c in ipairs(conns) do
+                        local fn = type(c) == "table" and (c.Function or c["function"]) or nil
+                        if type(fn) == "function" and not H.antiBackWrappedConns[fn] then
+                            local wrapped = wrapGuardFn(evKey, fn)
+                            if type(c.Disable) == "function" then
+                                local okDis = pcall(function() c:Disable() end)
+                                if okDis then
+                                    re.OnClientEvent:Connect(wrapped)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Layer 3: Guard ByteNet packet listener upvalues pada H.Net (moveTo, forceDie, knocked, burned, impulse, hurt, died)
+    if type(net) == "table" then
+        local netMap = {
+            moveTo = "MoveTo", moveto = "MoveTo",
+            forceDie = "ForceDie", forcedie = "ForceDie",
+            knocked = "Knocked", burned = "Burned", impulse = "Impulse", hurt = "Hurt", died = "Died",
+        }
+        for pktName, evKey in pairs(netMap) do
+            local pktObj = rawget(net, pktName)
+            if type(pktObj) == "table" and type(pktObj.listen) == "function" then
+                local uvs = guvs(pktObj.listen)
+                if type(uvs) == "table" then
+                    for _, uval in pairs(uvs) do
+                        if type(uval) == "table" and #uval > 0 then
+                            for idx, lfn in ipairs(uval) do
+                                if type(lfn) == "function" and not H.antiBackWrappedConns[lfn] then
+                                    uval[idx] = wrapGuardFn(evKey, lfn)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    H.antiBackGuardHooked = true
+    if type(SYT_Logic._origInstallNetGuard) == "function" then
+        pcall(SYT_Logic._origInstallNetGuard)
+    end
+    return true
+end
+
+function Core.SanitizeOutboundMove(pkt, fromBot, forceBypass)
+    if type(pkt) ~= "table" then return nil, "bad_pkt" end
+    local px = tonumber(pkt.x)
+    local py = tonumber(pkt.y)
+    if not px or not py or px ~= px or py ~= py or math.abs(px) > 1e5 or math.abs(py) > 1e5 then
+        return nil, "invalid_coords"
+    end
+    local gt = H.gt
+    if gt and gt.w and gt.h then
+        if px < -0.5 or px > (gt.w + 0.5) or py < -2.0 or py > (gt.h + 1.5) then
+            return nil, "out_of_world_bounds"
+        end
+    end
+
+    local now = os.clock()
+    local vx = tonumber(pkt.vx) or 0
+    local vy = tonumber(pkt.vy) or 0
+    local flags = toInt(pkt.flags, 2)
+    local ts = clamp(math.floor(tonumber(pkt.t) or ((now * 1000) % 65535)), 0, 65535)
+    local miscRef = SYT_Logic.Misc
+    local ms = miscRef and miscRef.State
+    local stopNoSend = Core.GetStopOrNoSendMode()
+    local antiBack = Core.IsAntiBackActive()
+
+    if ms and ms.noClip and ms.noClipAnchor and not fromBot and not forceBypass then
+        local a = ms.noClipAnchor
+        return { x = a.x, y = a.y, vx = 0, vy = 0, flags = 2, t = ts }
+    end
+
+    if not fromBot and not forceBypass and H.autoMove then
+        local am = H.autoMove
+        return { x = am.x, y = am.y, vx = am.vx or 0, vy = am.vy or 0, flags = am.flags or 2, t = ts }
+    end
+
+    -- Bila mode Stop aktif karena rollback baru saja terdeteksi, tahan paket liar hingga aman kembali
+    if stopNoSend == "stop" and now < (H.stopMoveUntil or 0) and not forceBypass then
+        H.lastActionBlockedAt = now
+        H.lastActionBlockedReason = "stop_move_guard"
+        return nil, "stop_move_guard"
+    end
+
+    -- Ketika SteppedAnchor Fly memegang kontrol terbang, tahan broadcast Others.lua yang mengirim vy/ungrounded liar
+    if ms and ms.fly and ms.flyMethod ~= "GhostHybrid" and not fromBot and not forceBypass then
+        return nil, "fly_anchor_owns_move"
+    end
+
+    if ms and ms.fly and ms.flyAntiBasePath ~= false and not forceBypass then
+        vx = (ms.flyMethod ~= "GhostHybrid") and 0 or clamp(vx, -7.2, 7.2)
+        vy = (ms.flyMethod ~= "GhostHybrid") and 0 or clamp(vy, -19.8, 19.8)
+        local facingBit = (math.floor(flags) % 2 == 1) and 1 or 0
+        flags = facingBit + 2
+    end
+
+    -- Validasi step delta terhadap paket Move terakhir agar tidak memicu server BasePath rollback (> 3.6 tile hop)
+    local prev = H.lastSentMove
+    if antiBack and not forceBypass and prev and (now - (prev.t or 0)) < 3.0 then
+        local dx = px - prev.x
+        local dy = py - prev.y
+        local absDx, absDy = math.abs(dx), math.abs(dy)
+        if not fromBot and (absDx > 6.5 or absDy > 6.5) then
+            if stopNoSend == "stop" then
+                H.stopMoveUntil = now + 0.30
+            end
+            H.lastActionBlockedAt = now
+            H.lastActionBlockedReason = "no_send_huge_delta"
+            return nil, "no_send_huge_delta"
+        end
+        local capH, capV = 3.55, 3.35
+        if absDx > capH or absDy > capV then
+            px = prev.x + clamp(dx, -capH, capH)
+            py = prev.y + clamp(dy, -capV, capV)
+            vx = 0
+            vy = 0
+            local facingBit = (math.floor(flags) % 2 == 1) and 1 or 0
+            flags = facingBit + 2
+        end
+    end
+
+    local cleanPkt = { x = px, y = py, vx = vx, vy = vy, flags = flags, t = ts }
+    H.lastSentMove = { x = px, y = py, vx = vx, vy = vy, flags = flags, t = now }
+    H.antiBackAnchor = { x = px, y = py, t = now }
+    if ms and ms.fly then
+        H.flyLastValidPos = { x = px, y = py, vx = vx, vy = vy, t = now }
+    end
+    return cleanPkt, "ok"
+end
 
 function Core.EnsureMoveHook()
     local net = H.Net
@@ -859,27 +1201,9 @@ function Core.EnsureMoveHook()
     H.origMoveSend = H.origMoveSend or net.move.send
     H.moveHooked = true
     net.move.send = function(pkt)
-        local ts = (type(pkt) == "table" and pkt.t) or math.floor((os.clock() * 1000) % 65535)
-        local miscRef = SYT_Logic.Misc
-        local ms = miscRef and miscRef.State
-        if ms and ms.noClip and ms.noClipAnchor then
-            local a = ms.noClipAnchor
-            return H.origMoveSend({ x = a.x, y = a.y, vx = 0, vy = 0, flags = 2, t = ts })
-        elseif H.autoMove then
-            local am = H.autoMove
-            return H.origMoveSend({ x = am.x, y = am.y, vx = am.vx or 0, vy = am.vy or 0, flags = am.flags or 2, t = ts })
-        elseif ms and ms.fly and ms.flyAntiBasePath ~= false and type(pkt) == "table" then
-            -- Sinkronkan BasePath / flags agar terbang tinggi atau melayang lama tidak memicu rollback BasePath dari server
-            local px = tonumber(pkt.x) or 0
-            local py = tonumber(pkt.y) or 0
-            local vx = clamp(tonumber(pkt.vx) or 0, -9.5, 9.5)
-            local vy = clamp(tonumber(pkt.vy) or 0, -24.0, 24.0)
-            local facingBit = (math.floor(tonumber(pkt.flags) or 0) % 2 == 1) and 1 or 0
-            local cleanFlags = facingBit + 2 -- pertahankan status grounded bit saat hovering/terbang halus
-            H.flyLastValidPos = { x = px, y = py, vx = vx, vy = vy, t = os.clock() }
-            return H.origMoveSend({ x = px, y = py, vx = vx, vy = vy, flags = cleanFlags, t = ts })
-        end
-        return H.origMoveSend(pkt)
+        local cleanPkt = Core.SanitizeOutboundMove(pkt, false, false)
+        if not cleanPkt then return nil end
+        return H.origMoveSend(cleanPkt)
     end
 end
 
@@ -911,6 +1235,58 @@ function Core.MarkSelfTileEdit(layer, tx, ty)
     H.recentSelfEdits = H.recentSelfEdits or {}
     local layerName = (layer == 2) and "bg" or "fg"
     H.recentSelfEdits[layerName .. ":" .. (ty * gt.w + tx)] = os.clock()
+end
+
+function Core.NotifyServerMessage(text)
+    if type(text) ~= "string" then return end
+    local low = string.lower(text)
+    if string.find(low, "placing too fast", 1, true) or string.find(low, "too fast", 1, true) then
+        local now = os.clock()
+        H.lastPlaceRejectedAt = now
+        H.adaptivePlaceGap = clamp((H.adaptivePlaceGap or 0.168) + 0.032, 0.165, 0.36)
+        H.nextPlaceAllowedAt = math.max(H.nextPlaceAllowedAt or 0, now + 0.30)
+    end
+end
+
+function Core.EnsureChatWarnHook()
+    if H.chatWarnHooked then return end
+    local hookedAny = false
+    if H.stateObj then
+        for _, mName in ipairs({ "onSay", "say", "console" }) do
+            local origFn = rawget(H.stateObj, mName)
+            if type(origFn) == "function" then
+                H.stateObj[mName] = function(msg, ...)
+                    Core.NotifyServerMessage(msg)
+                    return origFn(msg, ...)
+                end
+                hookedAny = true
+            end
+        end
+    end
+    local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
+    local gg = pg and pg:FindFirstChild("GameGui")
+    local chatMod = gg and gg:FindFirstChild("ChatUI")
+    if chatMod and chatMod:IsA("ModuleScript") then
+        local okReq, chatTbl = pcall(require, chatMod)
+        if okReq and type(chatTbl) == "table" and type(chatTbl.add) == "function" and not H.origChatAdd then
+            local origAdd = chatTbl.add
+            H.origChatAdd = origAdd
+            chatTbl.add = function(msg, cat, ...)
+                Core.NotifyServerMessage(msg)
+                return origAdd(msg, cat, ...)
+            end
+            hookedAny = true
+        end
+    end
+    if hookedAny then H.chatWarnHooked = true end
+end
+
+function Core.PlayVisualPunch(tx, ty, showVisual)
+    if showVisual == false then return end
+    local gt = H.gt
+    if gt and type(rawget(gt, "remoteHit")) == "function" then
+        pcall(gt.remoteHit, tx, ty, false)
+    end
 end
 
 function Core.DiscoverWheelSpins(allowGcFallback)
@@ -1029,13 +1405,23 @@ function SYT_Logic.Init(forceRefresh)
         H.pxIdx = nil
         H.tileAck = {}
         H.recentSelfEdits = {}
+        H.lastPlaceRejectedAt = 0
+        H.nextPlaceAllowedAt = 0
+        H.lastSentMove = nil
+        H.antiBackAnchor = nil
+        H.flyLastValidPos = nil
+        H.goToGuardedFor = nil
+        H.stopMoveUntil = 0
+        Core.AllowMoveToWindow(2.0)
     end
     if H.initialized and not forceRefresh and isValidGT(H.gt) and H.Net and H.ItemDB and H.inv then
         Core.EnsureMoveHook()
         Core.EnsureTileHook()
+        Core.EnsureChatWarnHook()
         Core.SyncOneHitHook()
         if not H.wheelSpins then Core.DiscoverWheelSpins(false) end
         if type(Core.EnsureWheelHook) == "function" then Core.EnsureWheelHook() end
+        pcall(Core.InstallAntiBackGuard)
         if type(SYT_Logic.InstallNetGuard) == "function" then pcall(SYT_Logic.InstallNetGuard) end
         return true
     end
@@ -1140,9 +1526,11 @@ function SYT_Logic.Init(forceRefresh)
 
     Core.EnsureMoveHook()
     Core.EnsureTileHook()
+    Core.EnsureChatWarnHook()
     Core.SyncOneHitHook()
     Core.DiscoverWheelSpins(false)
     if type(Core.EnsureWheelHook) == "function" then Core.EnsureWheelHook() end
+    pcall(Core.InstallAntiBackGuard)
     if type(SYT_Logic.InstallNetGuard) == "function" then pcall(SYT_Logic.InstallNetGuard) end
     H.initialized = isValidGT(H.gt) and H.Net ~= nil and H.ItemDB ~= nil
     return H.initialized
@@ -1923,6 +2311,32 @@ local function moveTs()
 end
 
 local function computeMoveFlags(px, py, vx, vy, prevFacing)
+    -- Anti-Back / Stop-or-No-Send extensions on GetcSkipper
+    if GetcSkipper.State.antiBack == nil then GetcSkipper.State.antiBack = true end
+    if GetcSkipper.State.stopOrNoSend == nil then GetcSkipper.State.stopOrNoSend = "nosend" end
+    if GetcSkipper.State.safeStepCap == nil then GetcSkipper.State.safeStepCap = 3 end
+
+    function GetcSkipper.SetAntiBack(on)
+        GetcSkipper.State.antiBack = on == true
+        if GetcSkipper.State.antiBack and type(Core.InstallAntiBackGuard) == "function" then
+            pcall(Core.InstallAntiBackGuard)
+        end
+        return GetcSkipper.State.antiBack
+    end
+
+    function GetcSkipper.SetStopOrNoSend(mode)
+        local m = string.lower(tostring(mode or "nosend"))
+        if string.find(m, "stop", 1, true) then
+            m = "stop"
+        elseif string.find(m, "off", 1, true) then
+            m = "off"
+        else
+            m = "nosend"
+        end
+        GetcSkipper.State.stopOrNoSend = m
+        return m
+    end
+
     local facing = prevFacing or 1
     if math.abs(vx or 0) > 0.05 then
         facing = (vx > 0) and 1 or -1
@@ -1931,18 +2345,27 @@ local function computeMoveFlags(px, py, vx, vy, prevFacing)
     return (facing > 0 and 1 or 0) + (grounded and 2 or 0), facing
 end
 
-function Packets.SendRawMove(px, py, vx, vy, flags)
+function Packets.SendRawMove(px, py, vx, vy, flags, opts)
     Core.EnsureInit()
     Core.EnsureMoveHook()
+    if type(Core.InstallAntiBackGuard) == "function" and Core.IsAntiBackActive() then
+        pcall(Core.InstallAntiBackGuard)
+    end
     local sendFn = H.origMoveSend or (H.Net and H.Net.move and H.Net.move.send)
-    if type(sendFn) ~= "function" then return false end
+    if type(sendFn) ~= "function" then return false, "send_nil" end
     local fl = flags
     if fl == nil then
         fl = computeMoveFlags(px, py, vx or 0, vy or 0, 1)
     else
         fl = toInt(fl, 2)
     end
-    return pcall(sendFn, { x = px, y = py, vx = vx or 0, vy = vy or 0, flags = fl, t = moveTs() })
+    local ts = (type(opts) == "table" and tonumber(opts.t)) or moveTs()
+    local rawPkt = { x = px, y = py, vx = vx or 0, vy = vy or 0, flags = fl, t = ts }
+    local cleanPkt, reason = Core.SanitizeOutboundMove(rawPkt, true, type(opts) == "table" and opts.forceBypass == true)
+    if not cleanPkt then
+        return false, reason or "no_send"
+    end
+    return pcall(sendFn, cleanPkt)
 end
 
 function Packets.FindTilePath(sx, sy, gx, gy, allowHazard)
@@ -2001,36 +2424,46 @@ function Packets.FindTilePath(sx, sy, gx, gy, allowHazard)
     return runBfs(true)
 end
 
--- Helper pergerakan kontinu sub-tile sinkron penuh dengan Game.lua & Server Growblox (mendukung Non-Validate-Back & Range Jauh Non-Delay)
+-- Helper pergerakan kontinu sub-tile sinkron penuh dengan Game.lua & Server Growblox (Anti-Back + Stop/No-Send)
 local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn, moveOpts)
     Core.EnsureInit()
     Core.EnsureMoveHook()
     moveOpts = moveOpts or {}
     local gs = GetcSkipper.State
-    local noDelay = (moveOpts.noDelay == true) or (gs.enabled and gs.longRangeNoDelay == true)
-    local noValidateBack = (moveOpts.noValidateBack == true) or (gs.enabled and gs.noValidateBack == true)
-    if noValidateBack and type(SYT_Logic.InstallNetGuard) == "function" then
-        pcall(SYT_Logic.InstallNetGuard)
+    local antiBack = Core.IsAntiBackActive() or (moveOpts.noValidateBack == true)
+    local stopMode = Core.GetStopOrNoSendMode()
+    local noDelay = (moveOpts.noDelay == true) or (moveOpts.noDelay ~= false and gs.enabled and gs.longRangeNoDelay == true)
+    local noValidateBack = (moveOpts.noValidateBack == true) or (moveOpts.noValidateBack ~= false and gs.enabled and gs.noValidateBack == true) or antiBack
+    if noValidateBack then
+        pcall(Core.InstallAntiBackGuard)
+        if type(SYT_Logic.InstallNetGuard) == "function" then
+            pcall(SYT_Logic.InstallNetGuard)
+        end
     end
     local gt = H.gt
     if not gt then return false, "gt nil" end
+    if stopMode == "stop" and os.clock() < (H.stopMoveUntil or 0) then
+        return false, "stopped_cooldown"
+    end
     tx = clamp(math.floor(tx), 0, gt.w - 1)
     ty = clamp(math.floor(ty), 0, gt.h - 1)
 
-    local sH = noDelay and clamp(tonumber(speedH) or 14.0, 6.0, 28.0) or clamp(tonumber(speedH) or 6.9, 4.5, 9.5)
-    local sV = noDelay and clamp(tonumber(speedV) or 20.0, 8.0, 32.0) or clamp(tonumber(speedV) or 11.5, 5.5, 18.0)
+    local sH = noDelay and clamp(tonumber(speedH) or 13.5, 6.0, 22.0) or clamp(tonumber(speedH) or 6.9, 4.5, 7.2)
+    local sV = noDelay and clamp(tonumber(speedV) or 16.0, 8.0, 24.0) or clamp(tonumber(speedV) or 11.5, 5.5, 14.0)
     local maxAttempts = noValidateBack and 1 or 2
     local facing = 1
-    local tickSec = noDelay and 0.016 or 0.067 -- non-delay pakai step frame cepat, normal 15Hz identik Others.lua
+    local tickSec = noDelay and 0.048 or 0.067 -- aman agar setiap step paket <= 3.4 tile
 
     for attempt = 1, maxAttempts do
+        local startT = os.clock()
+        local blockedBefore = H.blockedMoveToCount or 0
         local cur = Core.ReadPos()
         if cur.tx == tx and cur.ty == ty then
             return true, string.format("Walk-Path OK -> (%d, %d)", tx, ty)
         end
         local path = Packets.FindTilePath(cur.tx, cur.ty, tx, ty)
         if not path or #path <= 1 then
-            return false, "Jalur tertutup blok! Buka 1 celah dulu."
+            return false, "Jalur tertutup blok (No-Send Guard)"
         end
         -- Jika node terakhir solid, hentikan di node terbuka terakhir
         if Core.IsSolid(path[#path].x, path[#path].y) then
@@ -2047,7 +2480,7 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
         end
         local initFl, initFc = computeMoveFlags(curPx, curPy, 0, 0, facing)
         facing = initFc
-        H.autoMove = { x = curPx, y = curPy, vx = 0, vy = 0, flags = initFl }
+        H.autoMove = { x = curPx, y = curPy, vx = 0, vy = 0, flags = antiBack and ((facing > 0 and 1 or 0) + 2) or initFl }
         H.moveConn = RunService.RenderStepped:Connect(function()
             local am = H.autoMove
             if am then
@@ -2055,10 +2488,15 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
             end
         end)
 
-        local aborted, cancelled = false, false
+        local aborted, cancelled, stopReason = false, false, nil
         for i = 2, #path do
             if type(shouldContinueFn) == "function" and not shouldContinueFn() then
                 cancelled = true
+                break
+            end
+            if stopMode == "stop" and ((H.blockedMoveToCount or 0) > blockedBefore or (H.lastBlockedMoveToAt or 0) >= startT) then
+                aborted = true
+                stopReason = "stopped_anti_back"
                 break
             end
             local n = path[i]
@@ -2067,11 +2505,11 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
             local isHoriz = math.abs(segDx) >= math.abs(segDy)
             local speed = isHoriz and sH or sV
             local dist = math.sqrt(segDx * segDx + segDy * segDy)
-            local maxSub = noDelay and math.max(0.65, speed * 0.045) or math.max(0.25, speed * tickSec)
+            local maxSub = noDelay and math.min(3.2, math.max(0.85, speed * tickSec)) or math.max(0.25, speed * tickSec)
             local subSteps = math.max(1, math.ceil(dist / maxSub))
-            local stepDt = noDelay and 0 or math.max(0.038, (dist / subSteps) / speed)
-            local segVx = noDelay and clamp(segDx * 6, -9.5, 9.5) or (segDx / math.max(0.02, subSteps * stepDt))
-            local segVy = noDelay and clamp(segDy * 10, -18.0, 18.0) or (segDy / math.max(0.02, subSteps * stepDt))
+            local stepDt = math.max(tickSec, (dist / subSteps) / speed)
+            local segVx = noDelay and 0 or clamp(segDx / math.max(0.04, subSteps * stepDt), -7.2, 7.2)
+            local segVy = noDelay and 0 or clamp(segDy / math.max(0.04, subSteps * stepDt), -18.0, 18.0)
 
             for s = 1, subSteps do
                 if type(shouldContinueFn) == "function" and not shouldContinueFn() then
@@ -2082,25 +2520,37 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
                 local nx = curPx + segDx * tFrac
                 local ny = curPy + segDy * tFrac
                 local fl, fc = computeMoveFlags(nx, ny, segVx, segVy, facing)
-                if noValidateBack then
+                if antiBack or noValidateBack then
+                    if segDx > 0.02 then fc = 1 elseif segDx < -0.02 then fc = -1 end
                     fl = (fc > 0 and 1 or 0) + 2
                 end
                 facing = fc
                 H.autoMove = { x = nx, y = ny, vx = segVx, vy = segVy, flags = fl }
                 Core.SetLocalCoords(nx, ny, segVx, segVy)
-                Packets.SendRawMove(nx, ny, segVx, segVy, fl)
-                if noDelay then
-                    RunService.Heartbeat:Wait()
-                else
-                    task.wait(stepDt)
+                local okSent, sendMsg = Packets.SendRawMove(nx, ny, segVx, segVy, fl)
+                if not okSent and (stopMode == "stop" or stopMode == "nosend") and sendMsg ~= "fly_anchor_owns_move" then
+                    aborted = true
+                    stopReason = tostring(sendMsg or "no_send_abort")
+                    break
+                end
+                task.wait(stepDt)
+                if stopMode == "stop" and ((H.blockedMoveToCount or 0) > blockedBefore or (H.lastBlockedMoveToAt or 0) >= startT) then
+                    aborted = true
+                    stopReason = "stopped_anti_back"
+                    break
                 end
                 if type(gt.state) == "function" or (H.stateObj and type(H.stateObj.state) == "function") then
                     local chk = Core.ReadPos()
                     if (math.abs(chk.x - nx) + math.abs(chk.y - ny)) > 3.6 then
-                        if noValidateBack then
-                            -- Anti-validate-back: paksa koordinat lokal & server packet bertahan di langkah baru
-                            Core.SetLocalCoords(nx, ny, segVx, segVy)
-                            Packets.SendRawMove(nx, ny, segVx, segVy, fl)
+                        if stopMode == "stop" then
+                            Core.SetLocalCoords(curPx, curPy, 0, 0)
+                            Packets.SendRawMove(curPx, curPy, 0, 0, (facing > 0 and 1 or 0) + 2, { t = 65535 })
+                            aborted = true
+                            stopReason = "stopped_desync_hold"
+                            break
+                        elseif noValidateBack then
+                            Core.SetLocalCoords(nx, ny, 0, 0)
+                            Packets.SendRawMove(nx, ny, 0, 0, fl)
                         else
                             aborted = true
                             break
@@ -2125,20 +2575,24 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
         if not aborted then
             local finNode = path[#path]
             local fx, fy = finNode.x + 0.5, finNode.y + 1
-            local fFlags = noValidateBack and ((facing > 0 and 1 or 0) + 2) or computeMoveFlags(fx, fy, 0, 0, facing)
+            local fFlags = (antiBack or noValidateBack) and ((facing > 0 and 1 or 0) + 2) or computeMoveFlags(fx, fy, 0, 0, facing)
             H.autoMove = { x = fx, y = fy, vx = 0, vy = 0, flags = fFlags }
             Core.SetLocalCoords(fx, fy, 0, 0)
-            Packets.SendRawMove(fx, fy, 0, 0, fFlags)
-            if not noDelay then task.wait(0.06) end
-            Packets.SendRawMove(fx, fy, 0, 0, fFlags)
+            Packets.SendRawMove(fx, fy, 0, 0, fFlags, { t = 65535 })
+            if not noDelay then task.wait(0.055) end
+            Packets.SendRawMove(fx, fy, 0, 0, fFlags, { t = 65535 })
             H.autoMove = nil
             local fin = Core.ReadPos()
             if noValidateBack or (math.abs(fin.tx - finNode.x) + math.abs(fin.ty - finNode.y)) <= 2 then
-                return true, string.format("%s -> (%d, %d)", noDelay and "Fast Skipper OK" or "Server Walk OK", finNode.x, finNode.y)
+                return true, string.format("%s -> (%d, %d)", noDelay and "Anti-Back Sync OK" or "Server Walk OK", finNode.x, finNode.y)
             end
             aborted = true
         else
             H.autoMove = nil
+        end
+
+        if stopReason then
+            return false, stopReason
         end
 
         if aborted and attempt < maxAttempts then
@@ -2152,7 +2606,7 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
     local reached = (math.abs(f.tx - tx) + math.abs(f.ty - ty)) <= 3
     return reached, reached
         and string.format("Sampai (%d, %d)", f.tx, f.ty)
-        or string.format("Tertahan server di (%d, %d) - coba Walk-Path lebih pelan", f.tx, f.ty)
+        or string.format("Tertahan aman di (%d, %d) - Anti-Back / Stop Guard", f.tx, f.ty)
 end
 
 -- Metode Rekomendasi Jarak Jauh: Walk-Path aman anti rubberband/balik ke base
@@ -2164,16 +2618,25 @@ end
 
 function Packets.StepTeleport(tx, ty, stepSize, stepDelay, shouldContinueFn)
     Core.EnsureInit()
+    Core.EnsureMoveHook()
     local gt = H.gt
     if not gt then return false, "gt nil" end
     tx = clamp(math.floor(tx), 0, gt.w - 1)
     ty = clamp(math.floor(ty), 0, gt.h - 1)
 
     local gs = GetcSkipper.State
+    local antiBack = Core.IsAntiBackActive()
+    local stopMode = Core.GetStopOrNoSendMode()
     local noDelay = gs.enabled and gs.longRangeNoDelay == true
-    local noValidateBack = gs.enabled and gs.noValidateBack == true
-    if noValidateBack and type(SYT_Logic.InstallNetGuard) == "function" then
-        pcall(SYT_Logic.InstallNetGuard)
+    local noValidateBack = antiBack or (gs.enabled and gs.noValidateBack == true)
+    if noValidateBack then
+        pcall(Core.InstallAntiBackGuard)
+        if type(SYT_Logic.InstallNetGuard) == "function" then
+            pcall(SYT_Logic.InstallNetGuard)
+        end
+    end
+    if stopMode == "stop" and os.clock() < (H.stopMoveUntil or 0) then
+        return false, "stopped_cooldown"
     end
 
     local cur = Core.ReadPos()
@@ -2181,96 +2644,291 @@ function Packets.StepTeleport(tx, ty, stepSize, stepDelay, shouldContinueFn)
 
     local path = Packets.FindTilePath(cur.tx, cur.ty, tx, ty)
     if not path or #path <= 1 then
-        return false, "Jalur tertutup blok! Rekomendasi: buka celah & pakai Walk-Path Safe"
+        return false, "Jalur tertutup blok (No-Send Guard)"
+    end
+    if Core.IsSolid(path[#path].x, path[#path].y) then
+        table.remove(path, #path)
+        if #path == 0 then return false, "Target solid tanpa celah" end
     end
 
     local totalDist = #path - 1
-    if totalDist <= 1 and not Core.IsSolid(tx, ty) then
-        local fx, fy = tx + 0.5, ty + 1
+    if totalDist <= 1 and not Core.IsSolid(path[#path].x, path[#path].y) then
+        local fin = path[#path]
+        local fx, fy = fin.x + 0.5, fin.y + 1
         local fFl = noValidateBack and ((fx >= cur.x and 1 or 0) + 2) or computeMoveFlags(fx, fy, (fx - cur.x) * 7, (fy - cur.y) * 7, (fx >= cur.x) and 1 or -1)
         Core.SetLocalCoords(fx, fy, 0, 0)
-        Packets.SendRawMove(fx, fy, 0, 0, fFl)
-        if not noDelay then task.wait(tonumber(stepDelay) or 0.068) end
-        return true, string.format("Step TP (1 node) -> (%d, %d)", tx, ty)
+        Packets.SendRawMove(fx, fy, 0, 0, fFl, { t = 65535 })
+        if not noDelay then task.wait(tonumber(stepDelay) or 0.055) end
+        return true, string.format("Step TP (1 node) -> (%d, %d)", fin.x, fin.y)
     end
 
-    if noDelay then
-        -- Range Jauh Non-Delay: lompat per beberapa node path sekaligus (hingga maxRange / stepSize) tanpa jeda validasi
-        local hopSize = clamp(toInt(stepSize, clamp(toInt(gs.maxRangeTiles, 8), 3, 12)), 2, 16)
-        local delaySec = math.max(0, tonumber(stepDelay) or 0)
-        local facing = (tx >= cur.tx) and 1 or -1
-        H.moveConn = H.moveConn and (pcall(function() H.moveConn:Disconnect() end) and nil) or nil
-        local idx = 1
-        while idx < #path do
-            if type(shouldContinueFn) == "function" and not shouldContinueFn() then
-                H.autoMove = nil
-                return false, "cancelled"
-            end
-            idx = math.min(#path, idx + hopSize)
-            local node = path[idx]
-            local nx, ny = node.x + 0.5, node.y + 1
-            if nx > cur.x + 0.05 then facing = 1 elseif nx < cur.x - 0.05 then facing = -1 end
-            local fl = noValidateBack and ((facing > 0 and 1 or 0) + 2) or computeMoveFlags(nx, ny, 0, 0, facing)
-            H.autoMove = { x = nx, y = ny, vx = 0, vy = 0, flags = fl }
-            Core.SetLocalCoords(nx, ny, 0, 0)
-            Packets.SendRawMove(nx, ny, 0, 0, fl)
-            cur = { x = nx, y = ny, tx = node.x, ty = node.y }
-            if delaySec > 0 then
-                task.wait(delaySec)
-            elseif idx < #path then
-                RunService.Heartbeat:Wait()
-            end
+    -- Stepped Anti-Back Logic: hop <= 3 node path (<= 3.45 Euclidean tile agar selalu diterima server tanpa BasePath rollback)
+    local reqHop = toInt(stepSize, toInt(gs.safeStepCap, 3))
+    local hopCap = antiBack and clamp(reqHop, 1, clamp(toInt(gs.safeStepCap, 3), 1, 3)) or clamp(reqHop, 1, 6)
+    local delaySec = math.max(noDelay and 0.048 or 0.062, tonumber(stepDelay) or (noDelay and 0.048 or 0.068))
+    local facing = (tx >= cur.tx) and 1 or -1
+    local blockedBefore = H.blockedMoveToCount or 0
+    local startT = os.clock()
+    H.moveConn = H.moveConn and (pcall(function() H.moveConn:Disconnect() end) and nil) or nil
+
+    local idx = 1
+    while idx < #path do
+        if type(shouldContinueFn) == "function" and not shouldContinueFn() then
+            H.autoMove = nil
+            return false, "cancelled"
         end
-        H.autoMove = nil
-        local finNode = path[#path]
-        local fx, fy = finNode.x + 0.5, finNode.y + 1
-        Core.SetLocalCoords(fx, fy, 0, 0)
-        Packets.SendRawMove(fx, fy, 0, 0, (facing > 0 and 1 or 0) + 2)
-        return true, string.format("Skipper Range Non-Delay -> (%d, %d)", finNode.x, finNode.y)
+        if stopMode == "stop" and ((H.blockedMoveToCount or 0) > blockedBefore or (H.lastBlockedMoveToAt or 0) >= startT) then
+            H.autoMove = nil
+            Core.SetLocalCoords(cur.x, cur.y, 0, 0)
+            Packets.SendRawMove(cur.x, cur.y, 0, 0, (facing > 0 and 1 or 0) + 2, { t = 65535 })
+            return false, "stopped_anti_back"
+        end
+
+        local nextIdx = math.min(#path, idx + hopCap)
+        while nextIdx > (idx + 1) do
+            local cand = path[nextIdx]
+            local cdx = (cand.x + 0.5) - cur.x
+            local cdy = (cand.y + 1) - cur.y
+            if math.sqrt(cdx * cdx + cdy * cdy) <= (antiBack and 3.45 or 5.5) then
+                break
+            end
+            nextIdx -= 1
+        end
+
+        idx = nextIdx
+        local node = path[idx]
+        local nx, ny = node.x + 0.5, node.y + 1
+        if nx > cur.x + 0.05 then facing = 1 elseif nx < cur.x - 0.05 then facing = -1 end
+        local fl = noValidateBack and ((facing > 0 and 1 or 0) + 2) or computeMoveFlags(nx, ny, 0, 0, facing)
+        H.autoMove = { x = nx, y = ny, vx = 0, vy = 0, flags = fl }
+        Core.SetLocalCoords(nx, ny, 0, 0)
+        local okSent, sendMsg = Packets.SendRawMove(nx, ny, 0, 0, fl)
+        if not okSent and (stopMode == "stop" or stopMode == "nosend") and sendMsg ~= "fly_anchor_owns_move" then
+            H.autoMove = nil
+            return false, tostring(sendMsg or "no_send_abort")
+        end
+        cur = { x = nx, y = ny, tx = node.x, ty = node.y }
+        if idx < #path then
+            task.wait(delaySec)
+        end
     end
 
-    -- Mengikuti path bebas rintangan dengan sub-step kontinu 7.1 H / 12.5 V agar 100% diterima server
-    return executeServerSyncedPath(tx, ty, 7.1, 12.5, shouldContinueFn)
+    H.autoMove = nil
+    local finNode = path[#path]
+    local fx, fy = finNode.x + 0.5, finNode.y + 1
+    local finFl = (facing > 0 and 1 or 0) + 2
+    Core.SetLocalCoords(fx, fy, 0, 0)
+    Packets.SendRawMove(fx, fy, 0, 0, finFl, { t = 65535 })
+    return true, string.format("Step Anti-Back OK -> (%d, %d)", finNode.x, finNode.y)
 end
 stepTeleportImpl = Packets.StepTeleport
 
 function Packets.WalkTeleport(arg1, ty, mode, stepSize, stepDelay)
     Core.EnsureInit()
+    Core.EnsureMoveHook()
     local gt = H.gt
     if not gt then return false, "gt nil" end
     local opts = type(arg1) == "table" and arg1 or { tx = arg1, ty = ty, mode = mode, stepSize = stepSize, stepDelay = stepDelay }
     local m = string.lower(tostring(opts.mode or "step"))
     if m == "raw" then
-        return Packets.SendRawMove(opts.x or opts.tx or 0, opts.y or opts.ty or 0, opts.vx or 0, opts.vy or 0, opts.flags)
+        return Packets.SendRawMove(opts.x or opts.tx or 0, opts.y or opts.ty or 0, opts.vx or 0, opts.vy or 0, opts.flags, opts)
     end
     local tx, py = toInt(opts.tx), toInt(opts.ty)
-    if not tx or not py then return false, "invalid coords" end
+    if not tx or not py then return false, "invalid coords (no send)" end
     local okVal, msg, cx, cy = Core.ValidateTile(tx, py)
-    if not okVal and m ~= "force" then return false, msg end
+    if not okVal and m ~= "force" then return false, msg .. " (No-Send)" end
     cx, cy = cx or clamp(tx, 0, gt.w - 1), cy or clamp(py, 0, gt.h - 1)
-    local gs = GetcSkipper.State
     if m == "walk" or m == "walkpath" or m == "safe" then
         return Packets.WalkPathTo(cx, cy, opts.speed or 6.9, opts.shouldContinueFn)
     elseif m == "direct" or m == "force" then
         local cur = Core.ReadPos()
-        local manhattan = math.abs(cx - cur.tx) + math.abs(cy - cur.ty)
-        local skipperFast = (m == "force") or (gs.enabled and gs.longRangeNoDelay and gs.noValidateBack)
-        if m == "direct" and manhattan > 3 and not skipperFast then
-            return Packets.StepTeleport(cx, cy, opts.stepSize or 2, opts.stepDelay or 0.068, opts.shouldContinueFn)
+        local distCheb = math.max(math.abs((cx + 0.5) - cur.x), math.abs((cy + 1) - cur.y))
+        if m == "direct" and distCheb > 3.4 then
+            return Packets.StepTeleport(cx, cy, opts.stepSize or 3, opts.stepDelay or 0.052, opts.shouldContinueFn)
         end
-        if gs.noValidateBack and type(SYT_Logic.InstallNetGuard) == "function" then
-            pcall(SYT_Logic.InstallNetGuard)
+        pcall(Core.InstallAntiBackGuard)
+        if m == "force" then
+            Core.AllowMoveToWindow(0.8)
         end
         local px, wy = cx + 0.5, cy + 1
         local facing = (px >= cur.x) and 1 or -1
-        local fl = (gs.noValidateBack) and ((facing > 0 and 1 or 0) + 2) or computeMoveFlags(px, wy, 0, 0, facing)
+        local fl = (Core.IsAntiBackActive() or GetcSkipper.State.noValidateBack) and ((facing > 0 and 1 or 0) + 2) or computeMoveFlags(px, wy, 0, 0, facing)
         Core.SetLocalCoords(px, wy, 0, 0)
-        Packets.SendRawMove(px, wy, 0, 0, fl)
+        local okS, rsn = Packets.SendRawMove(px, wy, 0, 0, fl, { t = 65535, forceBypass = (m == "force") })
+        if not okS then return false, tostring(rsn or "no_send") end
         return true, string.format("Direct TP -> Tile (%d, %d) | Stats (%d, %d)", cx, cy, cx + 1, cy + 1)
     end
-    local dfltStep = (gs.enabled and gs.longRangeNoDelay) and clamp(toInt(gs.maxRangeTiles, 8), 3, 12) or 2
-    local dfltDelay = (gs.enabled and gs.longRangeNoDelay) and 0 or 0.068
+    local dfltStep = clamp(toInt(GetcSkipper.State.safeStepCap, 3), 1, 3)
+    local dfltDelay = (GetcSkipper.State.enabled and GetcSkipper.State.longRangeNoDelay) and 0.048 or 0.065
     return Packets.StepTeleport(cx, cy, opts.stepSize or dfltStep, opts.stepDelay or dfltDelay, opts.shouldContinueFn)
+end
+
+function Packets.FindStandCandidates(tx, ty, maxRange)
+    local cur = Core.ReadPos()
+    local r = toInt(maxRange, 4) or 4
+    local gt = H.gt
+    local w, h = (gt and gt.w) or 100, (gt and gt.h) or 60
+    local cands = {}
+    for dy = -r, r do
+        for dx = -r, r do
+            local ax, ay = tx + dx, ty + dy
+            if ax >= 0 and ax < w and ay >= 0 and ay < h and not Core.IsSolid(ax, ay) then
+                local distP = math.abs(ax - cur.tx) + math.abs(ay - cur.ty)
+                local cheb = math.max(math.abs(dx), math.abs(dy))
+                cands[#cands + 1] = { x = ax, y = ay, score = distP * 10 + cheb }
+            end
+        end
+    end
+    table.sort(cands, function(a, b) return a.score < b.score end)
+    local out = {}
+    local limit = math.min(#cands, 12)
+    for idx = 1, limit do
+        local c = cands[idx]
+        local p = Packets.FindTilePath(cur.tx, cur.ty, c.x, c.y)
+        if p and #p >= 1 then
+            out[#out + 1] = { x = c.x, y = c.y, path = p, len = #p }
+        end
+    end
+    table.sort(out, function(a, b) return a.len < b.len end)
+    return out
+end
+
+-- Navigasi Walk Murni (khusus Dirt Farm: anti-teleport, berjalan penuh mengikuti path valid)
+function Packets.MoveWalkNear(tx, ty, maxRange, shouldContinueFn, walkSpeed)
+    local r = toInt(maxRange, 4) or 4
+    local cur = Core.ReadPos()
+    if r == 0 then
+        if cur.tx == tx and cur.ty == ty then return true, "at_target" end
+    elseif math.max(math.abs(cur.tx - tx), math.abs(cur.ty - ty)) <= r then
+        return true, "in_range"
+    end
+    local spd = clamp(tonumber(walkSpeed) or 7.0, 4.8, 7.2)
+    if r == 0 and not Core.IsSolid(tx, ty) then
+        local okW, msgW = Packets.WalkPathTo(tx, ty, spd, shouldContinueFn)
+        if okW then return true, msgW end
+    end
+    local cands = Packets.FindStandCandidates(tx, ty, r)
+    if #cands == 0 then
+        return false, "unreachable"
+    end
+    local maxTries = math.min(#cands, 4)
+    local lastMsg = "walk_failed"
+    for i = 1, maxTries do
+        if type(shouldContinueFn) == "function" and not shouldContinueFn() then
+            return false, "cancelled"
+        end
+        local c = cands[i]
+        local okW, msgW = Packets.WalkPathTo(c.x, c.y, spd, shouldContinueFn)
+        local chk = Core.ReadPos()
+        if okW or math.max(math.abs(chk.tx - tx), math.abs(chk.ty - ty)) <= r then
+            return true, msgW or "walk_ok"
+        end
+        lastMsg = msgW or lastMsg
+    end
+    return false, lastMsg
+end
+
+-- Navigasi Hybrid TP x Walk (khusus Auto Pabrik: TP jarak jauh <= 3 tile/hop lalu Walk masuk ke titik target)
+function Packets.MoveHybrid(tx, ty, maxRange, shouldContinueFn, opts)
+    opts = opts or {}
+    local r = toInt(maxRange, 4) or 4
+    local cur = Core.ReadPos()
+    if r == 0 then
+        if cur.tx == tx and cur.ty == ty then return true, "at_target" end
+    elseif math.max(math.abs(cur.tx - tx), math.abs(cur.ty - ty)) <= r then
+        return true, "in_range"
+    end
+
+    local gx, gy, path
+    if r == 0 and not Core.IsSolid(tx, ty) then
+        gx, gy = tx, ty
+        path = Packets.FindTilePath(cur.tx, cur.ty, gx, gy)
+    else
+        local cands = Packets.FindStandCandidates(tx, ty, r)
+        if cands[1] then
+            gx, gy, path = cands[1].x, cands[1].y, cands[1].path
+        end
+    end
+    if not gx or not path or #path == 0 then
+        return false, "unreachable"
+    end
+
+    local distNodes = #path - 1
+    if distNodes <= 6 then
+        local okW, msgW = Packets.WalkPathTo(gx, gy, 7.1, shouldContinueFn)
+        local chk = Core.ReadPos()
+        if okW or (r > 0 and math.max(math.abs(chk.tx - tx), math.abs(chk.ty - ty)) <= r) or (r == 0 and chk.tx == gx and chk.ty == gy) then
+            return true, msgW
+        end
+        return Packets.StepTeleport(gx, gy, clamp(toInt(opts.stepSize, 3), 1, 3), math.max(0.048, tonumber(opts.stepDelay) or 0.052), shouldContinueFn)
+    end
+
+    -- Fase 1 (TP): lompat aman <= 3 tile per step hingga ~3 tile sebelum tujuan
+    local tpIdx = math.max(2, #path - 3)
+    local tpNode = path[tpIdx]
+    local okTp, msgTp = Packets.StepTeleport(tpNode.x, tpNode.y, clamp(toInt(opts.stepSize, 3), 1, 3), math.max(0.048, tonumber(opts.stepDelay) or 0.050), shouldContinueFn)
+    if type(shouldContinueFn) == "function" and not shouldContinueFn() then
+        return false, "cancelled"
+    end
+    if not okTp and msgTp == "stopped_anti_back" then
+        return false, msgTp
+    end
+
+    -- Fase 2 (Walk): selesaikan pendekatan akhir dengan Walk fisik agar tidak rubberband/nyangkut
+    local chk = Core.ReadPos()
+    if (r == 0 and chk.tx == gx and chk.ty == gy) or (r > 0 and math.max(math.abs(chk.tx - tx), math.abs(chk.ty - ty)) <= r) then
+        return true, "tp_walk_ok"
+    end
+    local okW, msgW = Packets.WalkPathTo(gx, gy, 7.1, shouldContinueFn)
+    chk = Core.ReadPos()
+    if okW or (r > 0 and math.max(math.abs(chk.tx - tx), math.abs(chk.ty - ty)) <= r) or (r == 0 and chk.tx == gx and chk.ty == gy) then
+        return true, msgW or "tp_walk_ok"
+    end
+    return Packets.StepTeleport(gx, gy, 2, 0.055, shouldContinueFn)
+end
+
+-- Navigasi Reach Server-Exact sebelum Punch / Break / Place / Collect (Stop / No-Send jika di luar jangkauan)
+function Packets.EnsureActionReach(tx, ty, kind, shouldContinueFn, opts)
+    opts = opts or {}
+    if Core.IsInActionReach(tx, ty, kind) then
+        return true, "in_reach"
+    end
+    local reach = Core.GetActionRange(kind)
+    local searchR = math.max(1, math.floor(reach - 0.1))
+    local cands = Packets.FindStandCandidates(tx, ty, searchR)
+    local gx, gy
+    for _, c in ipairs(cands) do
+        local cx, cy = c.x + 0.5, c.y + 1
+        local dx = math.abs((tx + 0.5) - cx)
+        local dy = math.abs((ty + 0.5) - (cy - 0.475))
+        if dx <= reach and dy <= reach then
+            gx, gy = c.x, c.y
+            break
+        end
+    end
+    if not gx and cands[1] then
+        gx, gy = cands[1].x, cands[1].y
+    end
+    if not gx then
+        H.lastActionBlockedAt = os.clock()
+        H.lastActionBlockedReason = "unreachable_no_send"
+        return false, "unreachable_no_send"
+    end
+
+    if opts.preferWalk == true then
+        Packets.WalkPathTo(gx, gy, opts.walkSpeed or 7.0, shouldContinueFn)
+    elseif opts.preferHybrid == true then
+        Packets.MoveHybrid(gx, gy, 0, shouldContinueFn, opts)
+    else
+        Packets.StepTeleport(gx, gy, 3, math.max(0.048, tonumber(opts.stepDelay) or 0.050), shouldContinueFn)
+    end
+
+    if Core.IsInActionReach(tx, ty, kind) then
+        return true, "moved_in_reach"
+    end
+    H.lastActionBlockedAt = os.clock()
+    H.lastActionBlockedReason = "out_of_range_no_send"
+    return false, "out_of_range_no_send"
 end
 
 local function waitPacketInterval(delaySec, rawTiming, packetKind, shouldContinueFn)
@@ -2306,30 +2964,31 @@ local function countDropsInRadius(tx, ty, pad)
 end
 
 local function computeEffectiveHits(info, curId, isRetry)
-    local base = math.max(1, toInt(info and info.hits, 3))
-    if H.skillsObj and type(H.skillsObj.handDig) == "function" then
+    local base = (info and info.kind == "seed") and 20 or math.max(1, toInt(info and info.hits, 3))
+    if info and info.kind ~= "seed" and H.skillsObj and type(H.skillsObj.handDig) == "function" then
         local okD, digVal = pcall(H.skillsObj.handDig)
         if okD and (tonumber(digVal) or 0) > 0 then
             base = math.max(1, math.ceil(base * 6 / 8 - 1e-6))
         end
     end
-    if curId == 2 then base = math.min(base, 3) end
-    return isRetry and base or base
+    return base
 end
 
 local function waitTilePlaceCooldown(layer, tx, ty, shouldContinueFn)
     local gt = H.gt
-    if not gt or type(gt.placedAt) ~= "table" or not gt.w then return end
+    if not gt or type(gt.placedAt) ~= "table" or not gt.w then return true end
     local layerName = (layer == 2) and "bg" or "fg"
     local pm = gt.placedAt[layerName]
-    if type(pm) ~= "table" then return end
+    if type(pm) ~= "table" then return true end
     local tAt = pm[ty * gt.w + tx]
     if type(tAt) == "number" then
         local elapsed = os.clock() - tAt
-        if elapsed < 0.18 then
-            waitPacketInterval(0.18 - elapsed, true, "tile", shouldContinueFn)
+        -- Game.lua L3744: server menolak punch dalam < 0.30s sejak block di-place
+        if elapsed < 0.31 then
+            return waitPacketInterval(0.31 - elapsed, true, "tile", shouldContinueFn)
         end
     end
+    return true
 end
 
 function Packets.PunchBreak(arg1, ty, layer, flip, showHand)
@@ -2342,16 +3001,41 @@ function Packets.PunchBreak(arg1, ty, layer, flip, showHand)
     local targetLayer = toInt(opts.layer, 1)
     local curId = Core.GetLayerTile(tx, py, targetLayer)
     if curId == 0 and not opts.force then return true, "empty" end
-    if not opts.ignoreProtected and Core.IsProtectedTile(curId) then return false, "protected" end
-    if opts.autoRange ~= false then GetcSkipper.EnsureRange(tx, py, GetcSkipper.State.maxRangeTiles) end
+    if not opts.ignoreProtected and Core.IsProtectedTile(curId) then return false, "protected_no_send" end
+    if not Core.CanEditTile(tx, py) and not opts.ignoreProtected then return false, "no_edit_no_send" end
+
+    -- Validasi Jangkauan Punch (Game.lua punchRange): Stop / No-Send jika gagal menjangkau
+    if opts.autoRange ~= false then
+        local okR, msgR = Packets.EnsureActionReach(tx, py, "punch", opts.shouldContinue, opts)
+        if not okR then return false, msgR end
+    elseif not Core.IsInActionReach(tx, py, "punch") and Core.GetStopOrNoSendMode() ~= "off" then
+        H.lastActionBlockedAt = os.clock()
+        H.lastActionBlockedReason = "punch_out_of_range_no_send"
+        return false, "out_of_range_no_send"
+    end
 
     if not opts.skipPlaceCooldown then
-        waitTilePlaceCooldown(targetLayer, tx, py, opts.shouldContinue)
+        if not waitTilePlaceCooldown(targetLayer, tx, py, opts.shouldContinue) then
+            return false, "cancelled"
+        end
     end
+    if opts.respectCooldown then
+        local actWait = math.max(tonumber(gt.actAt) or 0, (H.lastPunchAt or 0) + 0.16) - os.clock()
+        if actWait > 0.005 then
+            if not waitPacketInterval(math.min(actWait, 0.25), true, "act", opts.shouldContinue) then
+                return false, "cancelled"
+            end
+        end
+    end
+
     local info = Core.GetItemInfo(curId)
     if opts.showHand ~= false and net.act and net.act.send then
         pcall(net.act.send, { kind = 1, x = tx + 0.5, y = py + 0.5 })
         pcall(net.act.send, { kind = 6, x = tx + 0.5, y = py + 0.5 })
+    end
+    H.lastPunchAt = os.clock()
+    if opts.playPunchVisual then
+        Core.PlayVisualPunch(tx, py, opts.showVisual ~= false)
     end
     Core.MarkSelfTileEdit(targetLayer, tx, py)
     if opts.harvestIfTree ~= false and info and info.kind == "seed" and info.provider and net.harvest and net.harvest.send then
@@ -2362,6 +3046,7 @@ function Packets.PunchBreak(arg1, ty, layer, flip, showHand)
     local ok = pcall(net.tile.send, { layer = targetLayer, x = tx, y = py, id = 0, flip = opts.flip == true })
     if ok then
         H.lastTileAt = os.clock()
+        gt.actAt = math.max(tonumber(gt.actAt) or 0, os.clock() + 0.16)
         if opts.noLocalMirror ~= true then
             Core.MirrorLocalTile(targetLayer, tx, py, 0)
         end
@@ -2372,55 +3057,143 @@ end
 function Packets.HitDamage(arg1, ty, oneHit, customHits, hitDelay, layer, showHand)
     Core.EnsureInit()
     local gt, net = H.gt, H.Net
-    if not gt or not net then return false end
+    if not gt or not net then return false, "net_nil" end
     local opts = type(arg1) == "table" and arg1 or { tx = arg1, ty = ty, oneHit = oneHit, customHits = customHits, hitDelay = hitDelay, layer = layer, showHand = showHand }
     local tx, py = toInt(opts.tx), toInt(opts.ty)
-    if not tx or not py then return false end
+    if not tx or not py or tx < 0 or tx >= gt.w or py < 0 or py >= gt.h then return false, "out_of_bounds" end
     local targetLayer = toInt(opts.layer, 1)
     local curId = Core.GetLayerTile(tx, py, targetLayer)
-    if curId == 0 then return true end
-    if Core.IsProtectedTile(curId) then return false end
-    if opts.autoRange ~= false then GetcSkipper.EnsureRange(tx, py, GetcSkipper.State.maxRangeTiles) end
+    if curId == 0 then return true, "empty" end
+    if Core.IsProtectedTile(curId) or not Core.CanEditTile(tx, py) then return false, "protected_no_send" end
+
+    if opts.autoRange ~= false then
+        local okR, msgR = Packets.EnsureActionReach(tx, py, "break", opts.shouldContinue, opts)
+        if not okR then return false, msgR end
+    elseif not Core.IsInActionReach(tx, py, "break") and Core.GetStopOrNoSendMode() ~= "off" then
+        H.lastActionBlockedAt = os.clock()
+        H.lastActionBlockedReason = "break_out_of_range_no_send"
+        return false, "out_of_range_no_send"
+    end
 
     if opts.oneHit == true then
         Core.SyncOneHitHook(60)
         Core.EnsureBestDigEquipped()
     end
 
+    local cont = opts.shouldContinue
+    if not opts.skipPlaceCooldown then
+        if not waitTilePlaceCooldown(targetLayer, tx, py, cont) then return false, "cancelled" end
+    end
+
     local info = Core.GetItemInfo(curId)
     local effHits = computeEffectiveHits(info, curId)
-    local totalHits = toInt(opts.customHits, nil) or ((opts.oneHit == true and not opts.forceMultiHit) and 1 or effHits)
-    local noMirror = (opts.noLocalMirror == true) or (opts.oneHit == true)
-
-    if totalHits <= 1 then
-        return Packets.PunchBreak({
-            tx = tx, ty = py, layer = targetLayer, showHand = opts.showHand ~= false,
-            autoRange = false, skipPlaceCooldown = opts.skipPlaceCooldown,
-            noLocalMirror = noMirror, shouldContinue = opts.shouldContinue,
-        })
-    end
+    local key = ((targetLayer == 2) and "bg" or "fg") .. ":" .. (py * (gt.w or 100) + tx)
     local delay = tonumber(opts.hitDelay)
-    if delay == nil then delay = 0.14 end
-    local cont = opts.shouldContinue
-    for _ = 1, totalHits - 1 do
-        if type(cont) == "function" and not cont() then return false end
-        if opts.showHand ~= false and net.act and net.act.send then
+    if delay == nil then delay = 0.165 end
+    delay = clamp(delay, 0.08, 0.45)
+
+    -- Mode 1-Hit terverifikasi: uji 1 pukulan nyata dulu; jika server tidak 1-hit, langsung sambung sisa hit tanpa ghost-break
+    if opts.oneHit == true and not opts.forceMultiHit and not toInt(opts.customHits, nil) then
+        local preDrops = countDropsInRadius(tx, py, 1.8)
+        local sentAt = os.clock()
+        Packets.PunchBreak({
+            tx = tx, ty = py, layer = targetLayer,
+            showHand = opts.showHand ~= false,
+            playPunchVisual = true, showVisual = opts.showVisual ~= false,
+            autoRange = false, skipPlaceCooldown = true,
+            noLocalMirror = true, shouldContinue = cont,
+        })
+        local probeDl = os.clock() + 0.145
+        while os.clock() < probeDl do
+            if type(cont) == "function" and not cont() then return false, "cancelled" end
+            if Core.GetLayerTile(tx, py, targetLayer) == 0 then return true, "broken" end
+            local ack = H.tileAck and H.tileAck[key]
+            if ack and ack.t >= (sentAt - 0.02) and ack.id == 0 then
+                Core.MirrorLocalTile(targetLayer, tx, py, 0)
+                return true, "server_1hit"
+            end
+            if countDropsInRadius(tx, py, 1.8) > preDrops then
+                Core.MirrorLocalTile(targetLayer, tx, py, 0)
+                return true, "drop_1hit"
+            end
+            if ack and ack.t >= (sentAt - 0.02) and ack.id ~= 0 then
+                break
+            end
+            task.wait(0.02)
+        end
+        if Core.GetLayerTile(tx, py, targetLayer) == 0 then return true, "broken" end
+        effHits = math.max(1, effHits - 1)
+    end
+
+    local totalHits = toInt(opts.customHits, nil) or effHits
+    local showVis = (opts.showVisual ~= false)
+
+    -- Hit awal (totalHits - 1) mengirim act.send kind 1+6 agar damage terdaftar penuh di server sebelum tile.send(0)
+    for _ = 1, math.max(0, totalHits - 1) do
+        if type(cont) == "function" and not cont() then return false, "cancelled" end
+        if Core.GetLayerTile(tx, py, targetLayer) == 0 then return true, "broken" end
+        if not Core.IsInActionReach(tx, py, "break") and Core.GetStopOrNoSendMode() ~= "off" then
+            return false, "moved_out_of_range_no_send"
+        end
+        if net.act and net.act.send then
             pcall(net.act.send, { kind = 1, x = tx + 0.5, y = py + 0.5 })
             pcall(net.act.send, { kind = 6, x = tx + 0.5, y = py + 0.5 })
         end
+        H.lastPunchAt = os.clock()
+        Core.PlayVisualPunch(tx, py, showVis)
         if delay > 0 then
-            if not waitPacketInterval(delay, opts.rawTiming, "act", cont) then return false end
+            if not waitPacketInterval(delay, opts.rawTiming, "act", cont) then return false, "cancelled" end
         end
-        if Core.GetLayerTile(tx, py, targetLayer) == 0 then return true end
+        if Core.GetLayerTile(tx, py, targetLayer) == 0 then return true, "broken" end
     end
-    return Packets.PunchBreak({
-        tx = tx, ty = py, layer = targetLayer, showHand = opts.showHand ~= false,
-        autoRange = false, skipPlaceCooldown = opts.skipPlaceCooldown,
-        noLocalMirror = noMirror, shouldContinue = cont,
-    })
+
+    local maxExtra = math.max(4, effHits + 5)
+    for extraPass = 0, maxExtra do
+        if type(cont) == "function" and not cont() then return false, "cancelled" end
+        if Core.GetLayerTile(tx, py, targetLayer) == 0 then return true, "broken" end
+        if not Core.IsInActionReach(tx, py, "break") and Core.GetStopOrNoSendMode() ~= "off" then
+            return false, "moved_out_of_range_no_send"
+        end
+        local sentAt = os.clock()
+        Packets.PunchBreak({
+            tx = tx, ty = py, layer = targetLayer,
+            showHand = opts.showHand ~= false,
+            playPunchVisual = (extraPass > 0), showVisual = showVis,
+            autoRange = false,
+            skipPlaceCooldown = true,
+            noLocalMirror = (opts.noLocalMirror == true),
+            shouldContinue = cont,
+        })
+        if opts.verifyBreak == false then
+            return (opts.noLocalMirror ~= true) or (Core.GetLayerTile(tx, py, targetLayer) == 0), "sent"
+        end
+        local waitEnd = os.clock() + (tonumber(opts.verifyTimeout) or 0.115)
+        local reverted = false
+        while os.clock() < waitEnd do
+            if type(cont) == "function" and not cont() then return false, "cancelled" end
+            local ack = H.tileAck and H.tileAck[key]
+            if ack and ack.t >= (sentAt - 0.02) and ack.id ~= 0 then
+                reverted = true
+                break
+            end
+            if Core.GetLayerTile(tx, py, targetLayer) ~= 0 and opts.noLocalMirror ~= true then
+                reverted = true
+                break
+            end
+            task.wait(0.02)
+        end
+        if not reverted and Core.GetLayerTile(tx, py, targetLayer) == 0 then
+            return true, "verified_broken"
+        end
+        -- Blok belum hancur penuh di server: terus punch lagi sampai hancur
+        local retryDelay = math.max(delay, 0.145)
+        if not waitPacketInterval(retryDelay, true, "act", cont) then return false, "cancelled" end
+    end
+    local okEnd = Core.GetLayerTile(tx, py, targetLayer) == 0
+    return okEnd, okEnd and "broken" or "verify_failed"
 end
 
--- Break Paralel hingga 3 blok sekaligus via worker threads (task.spawn) + sync server-visual block
+-- Break Paralel tervalidasi jangkauan (batch radius <= 2 agar seluruh tile masuk dalam punchRange 2.5+)
 function Packets.BreakBlocksParallel(targets, opts)
     Core.EnsureInit()
     local gt = H.gt
@@ -2455,7 +3228,7 @@ function Packets.BreakBlocksParallel(targets, opts)
         local batch = { anchor }
         while #batch < maxThreads and (i + #batch) <= #queue do
             local cand = queue[i + #batch]
-            if math.max(math.abs(cand.tx - anchor.tx), math.abs(cand.ty - anchor.ty)) <= 4 then
+            if math.max(math.abs(cand.tx - anchor.tx), math.abs(cand.ty - anchor.ty)) <= 2 then
                 batch[#batch + 1] = cand
             else
                 break
@@ -2467,32 +3240,50 @@ function Packets.BreakBlocksParallel(targets, opts)
             local cx, cy = 0, 0
             for _, b in ipairs(batch) do cx += b.tx; cy += b.ty end
             cx, cy = math.floor(cx / #batch + 0.5), math.floor(cy / #batch + 0.5)
-            GetcSkipper.EnsureRange(cx, cy, GetcSkipper.State.maxRangeTiles, 0.068, shouldCont)
+            Packets.EnsureActionReach(cx, cy, "break", shouldCont, opts)
         end
 
-        if type(shouldCont) == "function" and not shouldCont() then break end
-        local pending = #batch
-        for k, b in ipairs(batch) do
-            task.spawn(function()
-                if k > 1 then task.wait((k - 1) * 0.012) end
-                local ok = Packets.HitDamage({
-                    tx = b.tx, ty = b.ty, layer = b.layer,
-                    oneHit = opts.oneHit == true,
-                    customHits = opts.customHits,
-                    hitDelay = opts.hitDelay,
-                    showHand = opts.showHand,
-                    noLocalMirror = opts.noLocalMirror,
-                    autoRange = false,
-                    shouldContinue = shouldCont,
-                })
-                if ok then brokeTotal += 1 end
-                pending -= 1
-            end)
-        end
-        local dl = os.clock() + 3.0
-        while pending > 0 and os.clock() < dl do
+        for pass = 1, 2 do
             if type(shouldCont) == "function" and not shouldCont() then break end
-            task.wait(0.015)
+            local remBatch = {}
+            for _, b in ipairs(batch) do
+                if Core.GetLayerTile(b.tx, b.ty, b.layer) ~= 0 then
+                    remBatch[#remBatch + 1] = b
+                end
+            end
+            if #remBatch == 0 then break end
+            local pending = #remBatch
+            for k, b in ipairs(remBatch) do
+                task.spawn(function()
+                    if k > 1 then task.wait((k - 1) * 0.022) end
+                    Packets.HitDamage({
+                        tx = b.tx, ty = b.ty, layer = b.layer,
+                        oneHit = opts.oneHit == true and pass == 1,
+                        forceMultiHit = (pass > 1),
+                        customHits = opts.customHits,
+                        hitDelay = opts.hitDelay,
+                        showHand = opts.showHand,
+                        showVisual = opts.showVisual ~= false,
+                        noLocalMirror = (opts.noLocalMirror == true),
+                        verifyBreak = opts.verifyBreak,
+                        autoRange = (opts.autoRange ~= false),
+                        preferWalk = opts.preferWalk,
+                        preferHybrid = opts.preferHybrid,
+                        shouldContinue = shouldCont,
+                    })
+                    pending -= 1
+                end)
+            end
+            local dl = os.clock() + 4.5
+            while pending > 0 and os.clock() < dl do
+                if type(shouldCont) == "function" and not shouldCont() then break end
+                task.wait(0.015)
+            end
+        end
+        for _, b in ipairs(batch) do
+            if Core.GetLayerTile(b.tx, b.ty, b.layer) == 0 then
+                brokeTotal += 1
+            end
         end
         if i <= #queue then
             GetcSkipper.RandomizedWait(opts.chunkDelay or 0.025, "tile", shouldCont)
@@ -2527,13 +3318,30 @@ local function runPool(items, threads, fn, shouldCont)
 end
 Packets.RunPool = runPool
 
--- Verifikasi tile benar-benar match antara tampilan visual (gt.fg/bg) dan konfirmasi server (Net.tileChanged)
+-- Sinkronisasi slot Place strict >= 0.165s (mengikuti Game.lua L1893 actAt 0.16s agar zero "placing too fast")
+local function reservePlaceSlot(minGap, shouldContinueFn)
+    local now = os.clock()
+    local gap = clamp(tonumber(minGap) or H.adaptivePlaceGap or 0.168, 0.164, 0.36)
+    if H.lastPlaceRejectedAt and (now - H.lastPlaceRejectedAt) > 2.0 and (H.adaptivePlaceGap or 0.168) > 0.168 then
+        H.adaptivePlaceGap = math.max(0.168, (H.adaptivePlaceGap or 0.168) - 0.004)
+    end
+    local gtActAt = (H.gt and tonumber(H.gt.actAt)) or 0
+    local rejectUntil = ((H.lastPlaceRejectedAt or 0) > 0) and (H.lastPlaceRejectedAt + 0.32) or 0
+    local slotAt = math.max(now, H.nextPlaceAllowedAt or 0, rejectUntil, gtActAt)
+    H.nextPlaceAllowedAt = slotAt + gap
+    while os.clock() < slotAt do
+        if type(shouldContinueFn) == "function" and not shouldContinueFn() then return false end
+        task.wait(math.min(0.03, math.max(0.005, slotAt - os.clock())))
+    end
+    return (type(shouldContinueFn) ~= "function") or shouldContinueFn()
+end
+
 function Packets.VerifyTile(tx, ty, layer, expectId, opts)
     opts = opts or {}
     local gt = H.gt
     if not gt then return false, "gt_nil" end
-    local timeout = tonumber(opts.timeout) or 0.55
-    local stableNeed = tonumber(opts.stable) or 0.06
+    local timeout = tonumber(opts.timeout) or 0.25
+    local stableNeed = tonumber(opts.stable) or 0.055
     local sentAt = opts.sentAt or os.clock()
     local strict = (opts.requireServerAck == true) or (opts.noLocalMirror == true)
     local key = ((layer == 2) and "bg" or "fg") .. ":" .. (ty * gt.w + tx)
@@ -2544,6 +3352,11 @@ function Packets.VerifyTile(tx, ty, layer, expectId, opts)
         if ack and ack.t >= (sentAt - 0.02) and ack.id ~= expectId then
             -- Server mengirim nilai berbeda (gagal 1-hit atau revert); hentikan tunggu agar bisa retry cepat
             return false, "server_mismatch"
+        end
+        if opts.checkPlaceReject and (H.lastPlaceRejectedAt or 0) >= (sentAt - 0.02) and (H.lastPlaceRejectedAt or 0) <= (sentAt + 0.35) then
+            if not (ack and ack.id == expectId and ack.t >= (sentAt - 0.02)) then
+                return false, "placing_too_fast"
+            end
         end
         if Core.GetLayerTile(tx, ty, layer) == expectId then
             if ack and ack.id == expectId and ack.t >= (sentAt - 0.02) then
@@ -2569,23 +3382,26 @@ function Packets.VerifyTile(tx, ty, layer, expectId, opts)
     return false, H.serverTileEchoSeen and "no_server_ack" or "timeout"
 end
 
--- STEP 1: place + verifikasi visual & server (tidak mengosongkan/memasang palsu bila server menolak)
+-- STEP 1: place + pacing anti too-fast + verifikasi visual == server (sinkron langsung tanpa stuck place)
 function Packets.PlaceVerified(tx, ty, id, layer, opts)
     opts = opts or {}
     local cont = opts.shouldContinue
     local pd = tonumber(opts.delay) or 0
-    local strict = (opts.noLocalMirror ~= false) -- default strict untuk PlaceVerified agar visual & server sinkron
-    for attempt = 1, (opts.retries or 2) + 1 do
+    local strict = (opts.noLocalMirror == true) -- mirror visual seperti Game.lua lalu revert hanya jika server tolak
+    for _ = 1, (opts.retries or 2) + 1 do
         if type(cont) == "function" and not cont() then return false, "cancelled" end
         local cur = Core.GetLayerTile(tx, ty, layer)
         if cur == id then return true, "matched" end
         if cur ~= 0 then return false, "occupied" end
         if Core.CountItem(id) <= 0 then return false, "no_item" end
         local sentAt = os.clock()
-        local ok = Packets.Place({
+        local ok, msgP = Packets.Place({
             tx = tx, ty = ty, itemId = id, layer = layer,
             showHand = opts.showHand, autoRange = false,
             noLocalMirror = strict,
+            placeGap = opts.placeGap,
+            bypassPlaceThrottle = opts.bypassPlaceThrottle,
+            shouldContinue = cont,
         })
         if ok then
             if pd > 0 then
@@ -2593,33 +3409,48 @@ function Packets.PlaceVerified(tx, ty, id, layer, opts)
             end
             local vOk, vReason = Packets.VerifyTile(tx, ty, layer, id, {
                 sentAt = sentAt, stable = opts.stable or 0.05,
-                timeout = opts.verifyTimeout or 0.42,
+                timeout = opts.verifyTimeout or 0.16,
                 noLocalMirror = strict,
                 requireServerAck = strict and H.serverTileEchoSeen,
+                checkPlaceReject = true,
                 shouldContinue = cont,
             })
             if vOk then return true, vReason end
-            -- Fallback hanya jika server mode tidak mengirim echo tileChanged sama sekali & tidak me-revert
-            if strict and not H.serverTileEchoSeen then
-                local gt = H.gt
-                local key = ((layer == 2) and "bg" or "fg") .. ":" .. (ty * (gt and gt.w or 100) + tx)
-                local ack = H.tileAck and H.tileAck[key]
-                if not (ack and ack.t >= (sentAt - 0.02) and ack.id ~= id) then
-                    Core.MirrorLocalTile(layer, tx, ty, id, false)
-                    return true, "no_echo_mirror"
+            if vReason == "placing_too_fast" or vReason == "server_mismatch" then
+                if Core.GetLayerTile(tx, ty, layer) == id and not strict then
+                    Core.MirrorLocalTile(layer, tx, ty, 0, false)
+                end
+                local inv = Core.GetLiveInventory()
+                if inv and type(inv.add) == "function" and Core.GetLayerTile(tx, ty, layer) ~= id then
+                    pcall(function() inv:add(id, 1) end)
+                end
+                if vReason == "placing_too_fast" then
+                    waitPacketInterval(0.24, true, "tile", cont)
+                end
+            else
+                -- Fallback bila server mode tidak pernah mengirim echo tileChanged & tidak revert
+                if not strict and Core.GetLayerTile(tx, ty, layer) == id then
+                    return true, "visual_ok"
+                end
+                if strict and not H.serverTileEchoSeen then
+                    local gt = H.gt
+                    local key = ((layer == 2) and "bg" or "fg") .. ":" .. (ty * (gt and gt.w or 100) + tx)
+                    local ack = H.tileAck and H.tileAck[key]
+                    if not (ack and ack.t >= (sentAt - 0.02) and ack.id ~= id) then
+                        Core.MirrorLocalTile(layer, tx, ty, id, false)
+                        return true, "no_echo_mirror"
+                    end
                 end
             end
-            local inv = Core.GetLiveInventory()
-            if inv and type(inv.add) == "function" and Core.GetLayerTile(tx, ty, layer) ~= id then
-                pcall(function() inv:add(id, 1) end)
-            end
+        elseif msgP == "matched" then
+            return true, "matched"
         end
-        task.wait(0.02)
+        task.wait(0.03)
     end
     return Core.GetLayerTile(tx, ty, layer) == id, "verify_failed"
 end
 
--- STEP 2: break multi-thread pada 1 event act + verifikasi server-match (1-Hit mencoba .dig tool; jika server masih tahan, lanjut multi-hit cepat tanpa wipe palsu)
+-- STEP 2: break multi-thread + terus punch sampai blok benar-benar hancur + sync visual client
 function Packets.BreakVerified(targets, opts)
     opts = opts or {}
     local gt = H.gt
@@ -2641,55 +3472,45 @@ function Packets.BreakVerified(targets, opts)
         Core.SyncOneHitHook(60)
         Core.EnsureBestDigEquipped()
     end
-    local cx, cy = 0, 0
-    for _, b in ipairs(list) do cx += b.tx; cy += b.ty end
-    GetcSkipper.EnsureRange(math.floor(cx / #list + 0.5), math.floor(cy / #list + 0.5), GetcSkipper.State.maxRangeTiles, 0.04, opts.shouldContinue)
-    -- 1 event 'act' dikirim sekali untuk batch, seluruh tile target dihancurkan serentak via pool
-    if opts.showHand ~= false and H.Net and H.Net.act and H.Net.act.send then
-        pcall(H.Net.act.send, { kind = 1, x = list[1].tx + 0.5, y = list[1].ty + 0.5 })
-        pcall(H.Net.act.send, { kind = 6, x = list[1].tx + 0.5, y = list[1].ty + 0.5 })
+    if opts.autoRange ~= false then
+        local cx, cy = 0, 0
+        for _, b in ipairs(list) do cx += b.tx; cy += b.ty end
+        Packets.EnsureActionReach(math.floor(cx / #list + 0.5), math.floor(cy / #list + 0.5), "break", opts.shouldContinue, opts)
     end
     local threads = clamp(toInt(opts.threads, #list), 1, 9)
     local okCount = 0
-    runPool(list, threads, function(b)
-        local noMirror = (opts.noLocalMirror ~= false) or (opts.oneHit == true)
-        for attempt = 1, 3 do
+    runPool(list, threads, function(b, workerIdx)
+        if workerIdx > 1 then task.wait(math.min(0.08, (workerIdx - 1) * 0.018)) end
+        for attempt = 1, 5 do
+            if type(opts.shouldContinue) == "function" and not opts.shouldContinue() then return end
             if Core.GetLayerTile(b.tx, b.ty, b.layer) == 0 then
                 okCount += 1
                 return
             end
-            local preDrops = countDropsInRadius(b.tx, b.ty, 1.8)
-            local sentAt = os.clock()
-            local useMultiFallback = (attempt >= 2)
-            Packets.HitDamage({
+            local okHit, hitReason = Packets.HitDamage({
                 tx = b.tx, ty = b.ty, layer = b.layer,
-                oneHit = opts.oneHit == true,
-                forceMultiHit = useMultiFallback,
-                hitDelay = opts.hitDelay,
-                showHand = false, autoRange = false,
-                noLocalMirror = noMirror,
-                rawTiming = true, skipPlaceCooldown = (attempt == 1),
+                oneHit = opts.oneHit == true and attempt == 1,
+                forceMultiHit = (attempt >= 2),
+                hitDelay = (attempt >= 2) and math.max(0.15, tonumber(opts.hitDelay) or 0.165) or opts.hitDelay,
+                showHand = (opts.showHand ~= false),
+                showVisual = opts.showVisual ~= false,
+                autoRange = (opts.autoRange ~= false),
+                preferWalk = opts.preferWalk,
+                preferHybrid = opts.preferHybrid,
+                noLocalMirror = (opts.noLocalMirror == true),
+                verifyTimeout = opts.verifyTimeout or 0.125,
+                rawTiming = true,
+                skipPlaceCooldown = (attempt == 1),
                 shouldContinue = opts.shouldContinue,
             })
-            local vOk = Packets.VerifyTile(b.tx, b.ty, b.layer, 0, {
-                sentAt = sentAt,
-                stable = opts.stable or 0.05,
-                timeout = opts.verifyTimeout or (opts.oneHit and attempt == 1 and 0.24 or 0.42),
-                noLocalMirror = noMirror,
-                requireServerAck = noMirror and H.serverTileEchoSeen,
-                shouldContinue = opts.shouldContinue,
-            })
-            if vOk then
+            if okHit or Core.GetLayerTile(b.tx, b.ty, b.layer) == 0 then
                 okCount += 1
                 return
             end
-            -- Hanya mirror 0 bila server tidak pernah echo tileChanged TAPI ada drop baru muncul nyata di tile target
-            if noMirror and not H.serverTileEchoSeen and countDropsInRadius(b.tx, b.ty, 1.8) > preDrops then
-                Core.MirrorLocalTile(b.layer, b.tx, b.ty, 0)
-                okCount += 1
+            if hitReason == "out_of_range_no_send" or hitReason == "unreachable_no_send" then
                 return
             end
-            task.wait(0.015)
+            task.wait(0.025)
         end
     end, opts.shouldContinue)
     return okCount, #list - okCount
@@ -2742,7 +3563,14 @@ function Packets.CollectVerified(tiles, opts)
                 if d.uid then H.takingUids[d.uid] = nil end
             end
         end
-        Packets.Collect({ radius = 5.5, stepMoveIfFar = attempt >= 3, collectDelay = opts.collectDelay or 0, shouldContinue = cont })
+        Packets.Collect({
+            radius = 4.6,
+            stepMoveIfFar = attempt >= 3,
+            preferWalk = opts.preferWalk,
+            preferHybrid = opts.preferHybrid,
+            collectDelay = opts.collectDelay or 0,
+            shouldContinue = cont,
+        })
         local t0 = os.clock()
         while (os.clock() - t0) < 0.20 and #pending() > 0 do
             if type(cont) == "function" and not cont() then return false end
@@ -2754,6 +3582,7 @@ end
 
 function Packets.Place(arg1, ty, itemId, layer, flip, showHand)
     Core.EnsureInit()
+    Core.EnsureChatWarnHook()
     local gt, net = H.gt, H.Net
     if not gt or not net or not net.tile or not net.tile.send then return false, "net nil" end
     local opts = type(arg1) == "table" and arg1 or { tx = arg1, ty = ty, itemId = itemId, layer = layer, flip = flip, showHand = showHand }
@@ -2763,8 +3592,43 @@ function Packets.Place(arg1, ty, itemId, layer, flip, showHand)
 
     local info = Core.GetItemInfo(id)
     local targetLayer = toInt(opts.layer, (info and info.background) and 2 or 1)
-    if Core.GetLayerTile(tx, py, targetLayer) ~= 0 and not opts.force then return false, "occupied" end
-    if opts.autoRange ~= false then GetcSkipper.EnsureRange(tx, py, GetcSkipper.State.maxRangeTiles) end
+    local preId = Core.GetLayerTile(tx, py, targetLayer)
+    if preId == id and not opts.force then return true, "matched" end
+    if preId ~= 0 and not opts.force then return false, "occupied" end
+
+    -- Validasi Jangkauan Build (Game.lua buildRange) + Anti Solid-Overlap Badan Player (Game.lua canPlace L3430)
+    if opts.autoRange ~= false then
+        local okR, msgR = Packets.EnsureActionReach(tx, py, "build", opts.shouldContinue, opts)
+        if not okR then return false, msgR end
+    elseif not Core.IsInActionReach(tx, py, "build") and Core.GetStopOrNoSendMode() ~= "off" then
+        H.lastActionBlockedAt = os.clock()
+        H.lastActionBlockedReason = "place_out_of_range_no_send"
+        return false, "out_of_range_no_send"
+    end
+
+    local okBody, bodyReason = Core.CanPlaceBodyOk(tx, py, info)
+    if not okBody and not opts.ignoreBodyOverlap then
+        H.lastActionBlockedAt = os.clock()
+        H.lastActionBlockedReason = bodyReason .. "_no_send"
+        return false, bodyReason .. "_no_send"
+    end
+
+    if opts.bypassPlaceThrottle ~= true then
+        if not reservePlaceSlot(opts.placeGap, opts.shouldContinue) then
+            return false, "cancelled"
+        end
+        local postId = Core.GetLayerTile(tx, py, targetLayer)
+        if postId == id and not opts.force then return true, "matched" end
+        if postId ~= 0 and not opts.force then return false, "occupied" end
+        if Core.CountItem(id) <= 0 and not opts.ignoreCount then return false, "no_item" end
+        if not Core.IsInActionReach(tx, py, "build") and Core.GetStopOrNoSendMode() ~= "off" then
+            return false, "out_of_range_no_send"
+        end
+        local okB2, bRsn2 = Core.CanPlaceBodyOk(tx, py, info)
+        if not okB2 and not opts.ignoreBodyOverlap then
+            return false, bRsn2 .. "_no_send"
+        end
+    end
 
     if opts.showHand ~= false and net.act and net.act.send then
         pcall(net.act.send, { kind = (info and info.kind == "seed") and 3 or 2, x = tx + 0.5, y = py + 0.5 })
@@ -2772,7 +3636,9 @@ function Packets.Place(arg1, ty, itemId, layer, flip, showHand)
     Core.MarkSelfTileEdit(targetLayer, tx, py)
     local ok = pcall(net.tile.send, { layer = targetLayer, x = tx, y = py, id = id, flip = opts.flip == true })
     if ok then
-        H.lastTileAt = os.clock()
+        local nowT = os.clock()
+        H.lastTileAt = nowT
+        gt.actAt = math.max(tonumber(gt.actAt) or 0, nowT + 0.16)
         if opts.noLocalMirror ~= true then
             Core.MirrorLocalTile(targetLayer, tx, py, id, opts.flip == true)
         end
@@ -2811,7 +3677,9 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
     local gt = H.gt
     if not gt or type(gt.dropList) ~= "function" then return { totalTaken = 0, gemsTaken = 0, itemsTaken = 0 } end
     local opts = type(arg1) == "table" and arg1 or { radius = arg1, filterId = filterId, stepMoveIfFar = stepMoveIfFar, collectDelay = collectDelay }
-    local radius, targetId, stepFar = tonumber(opts.radius) or 5, opts.filterId, opts.stepMoveIfFar == true
+    local pickupMax = 4.6
+    local radius = math.min(pickupMax, tonumber(opts.radius) or pickupMax)
+    local targetId, stepFar = opts.filterId, opts.stepMoveIfFar == true
     local delay = tonumber(opts.collectDelay) or 0.03
     local shouldContinueFn = opts.shouldContinue or opts.shouldContinueFn
     local okD, drops = pcall(gt.dropList)
@@ -2823,6 +3691,12 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
         if exp <= now then H.takingUids[uid] = nil end
     end
 
+    local function distToDrop(d, cp)
+        local distBody = math.max(math.abs(d.x - cp.x), math.abs(d.y - (cp.y - 0.5)))
+        local distTile = math.max(math.abs(d.x - (cp.tx + 0.5)), math.abs(d.y - (cp.ty + 0.5)))
+        return math.min(distBody, distTile)
+    end
+
     local pos = Core.ReadPos()
     local list = {}
     for i = 1, #drops do
@@ -2830,9 +3704,7 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
         if type(d) == "table" and d.uid and d.x and d.y and (d.n or 0) > 0 and (d.readyAt or 0) <= now then
             if not d.taking and (not H.takingUids[d.uid] or H.takingUids[d.uid] <= now) then
                 if not targetId or d.id == targetId then
-                    local distBody = math.max(math.abs(d.x - pos.x), math.abs(d.y - (pos.y - 0.5)))
-                    local distTile = math.max(math.abs(d.x - (pos.tx + 0.5)), math.abs(d.y - (pos.ty + 0.5)))
-                    local dist = math.min(distBody, distTile)
+                    local dist = distToDrop(d, pos)
                     if (dist <= radius or stepFar) and (d.id == 112 or Core.GetItemRoom(d.id) > 0) then
                         list[#list + 1] = { drop = d, dist = dist }
                     end
@@ -2844,13 +3716,6 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
     table.sort(list, function(a, b) return a.dist < b.dist end)
 
     local sum = { totalTaken = 0, gemsTaken = 0, itemsTaken = 0 }
-    local pickupRange = math.max(radius, 5.5)
-
-    local function distToDrop(d, cp)
-        local distBody = math.max(math.abs(d.x - cp.x), math.abs(d.y - (cp.y - 0.5)))
-        local distTile = math.max(math.abs(d.x - (cp.tx + 0.5)), math.abs(d.y - (cp.ty + 0.5)))
-        return math.min(distBody, distTile)
-    end
 
     local function collectBatchInRange()
         local cp = Core.ReadPos()
@@ -2859,7 +3724,8 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
         for _, item in ipairs(list) do
             local d = item.drop
             if (d.n or 0) > 0 and not d.taking and (not H.takingUids[d.uid] or H.takingUids[d.uid] <= tNow) then
-                if distToDrop(d, cp) <= pickupRange then
+                -- Anti No-Send: hanya kirim takeDrop bila benar-benar masuk dalam jangkauan pickup server <= 4.6 tile
+                if distToDrop(d, cp) <= pickupMax then
                     local want = math.min(d.n, (d.id == 112) and d.n or Core.GetItemRoom(d.id))
                     if want > 0 then
                         d.taking = true
@@ -2925,7 +3791,7 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
             local nextDrop, bestDist = nil, math.huge
             for _, item in ipairs(list) do
                 local d = item.drop
-                if (d.n or 0) > 0 and not d.taking then
+                if (d.n or 0) > 0 and not d.taking and (d.id == 112 or Core.GetItemRoom(d.id) > 0) then
                     local dist = distToDrop(d, cp)
                     if dist < bestDist then
                         bestDist = dist
@@ -2934,8 +3800,19 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
                 end
             end
             if not nextDrop then break end
-            if bestDist > 5 then
-                Packets.StepTeleport(math.floor(nextDrop.x), math.floor(nextDrop.y), 4, math.max(0.03, delay), shouldContinueFn)
+            if bestDist > pickupMax then
+                local dx, dy = math.floor(nextDrop.x), math.floor(nextDrop.y)
+                local movedOk = false
+                if opts.preferWalk == true then
+                    movedOk = Packets.MoveWalkNear(dx, dy, 2, shouldContinueFn, 7.0)
+                elseif opts.preferHybrid == true then
+                    movedOk = Packets.MoveHybrid(dx, dy, 2, shouldContinueFn, { stepSize = 3, stepDelay = math.max(0.048, delay) })
+                else
+                    movedOk = Packets.StepTeleport(dx, dy, 3, math.max(0.048, delay), shouldContinueFn)
+                end
+                if not movedOk and distToDrop(nextDrop, Core.ReadPos()) > pickupMax then
+                    break
+                end
             end
             local fired = collectBatchInRange()
             if fired == 0 then break end
@@ -2956,7 +3833,7 @@ local buildSYTMenuFn
 
 local Misc = {
     State = {
-        fly = false, flySpeed = 12, flyAntiBasePath = true, flyMaxCeilingY = 0.25,
+        fly = false, flySpeed = 14, flyMethod = "SteppedAnchor", flyAntiBasePath = true, flyMaxCeilingY = 0.25,
         seems = false, seemsPaused = false, seemsReason = "",
         fastRoulette = false, lastWheelSpin = nil, rouletteHistory = {},
         noClip = false, noClipAnchor = nil,
@@ -2969,6 +3846,118 @@ local Misc = {
     }
 }
 SYT_Logic.Misc = Misc
+
+-- Metode Fly Baru (SteppedAnchor): visual tetap halus & terlihat player lain via sync <= 3.4 tile/0.082s + grounded flags (anti BasePath rollback)
+function Core.StartSteppedAnchorFly()
+    local gt = H.gt
+    if not gt then return false end
+    local p0 = Core.ReadPos()
+    local visX, visY = p0.x, p0.y
+    local syncX, syncY = p0.x, p0.y
+    local lastSyncAt = os.clock()
+    local facing = 1
+    local blockedBefore = H.blockedMoveToCount or 0
+
+    -- Cari tombol sentuh mobile GameGui bila user bermain di executor mobile (Delta / Codex)
+    local touchBtns = { left = {}, right = {}, up = {}, down = {} }
+    pcall(function()
+        local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
+        local gg = pg and pg:FindFirstChild("GameGui")
+        if gg then
+            for _, d in ipairs(gg:GetDescendants()) do
+                if d:IsA("GuiButton") and d.Visible then
+                    local nm = string.lower(d.Name)
+                    if string.find(nm, "left", 1, true) then table.insert(touchBtns.left, d)
+                    elseif string.find(nm, "right", 1, true) then table.insert(touchBtns.right, d)
+                    elseif string.find(nm, "jump", 1, true) or string.find(nm, "up", 1, true) then table.insert(touchBtns.up, d)
+                    elseif string.find(nm, "down", 1, true) or string.find(nm, "crouch", 1, true) then table.insert(touchBtns.down, d) end
+                end
+            end
+        end
+    end)
+
+    local function anyTouchDown(list)
+        for _, b in ipairs(list) do
+            if b.Parent and b.Visible and b.GuiState == Enum.GuiState.Press then
+                return true
+            end
+        end
+        return false
+    end
+
+    gt.ghost = true
+    gt.stuckAt = nil
+    H.lastSentMove = { x = syncX, y = syncY, vx = 0, vy = 0, flags = 3, t = lastSyncAt }
+    H.antiBackAnchor = { x = visX, y = visY, t = lastSyncAt }
+    Packets.SendRawMove(syncX, syncY, 0, 0, (facing > 0 and 1 or 0) + 2)
+
+    H.flyConn = RunService.RenderStepped:Connect(function(dt)
+        if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then
+            if H.flyConn then H.flyConn:Disconnect(); H.flyConn = nil end
+            return
+        end
+        if not Misc.State.fly or Misc.State.flyMethod == "GhostHybrid" or H.gt ~= gt then
+            if H.flyConn then H.flyConn:Disconnect(); H.flyConn = nil end
+            return
+        end
+
+        gt.ghost = true
+        gt.stuckAt = nil
+        local frameDt = clamp(tonumber(dt) or 0.016, 0.004, 0.08)
+        local speed = clamp(tonumber(Misc.State.flySpeed) or 14, 6, 45)
+        local ceilY = clamp(tonumber(Misc.State.flyMaxCeilingY) or 0.25, 0.15, 0.95)
+        local maxY = math.max(1.0, (gt.h or 60) - 0.5)
+        local maxX = math.max(1.0, (gt.w or 100) - 0.5)
+
+        local mvX, mvY = 0, 0
+        if not UserInputService:GetFocusedTextBox() then
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.Left) or anyTouchDown(touchBtns.left) then mvX -= 1 end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) or UserInputService:IsKeyDown(Enum.KeyCode.Right) or anyTouchDown(touchBtns.right) then mvX += 1 end
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) or UserInputService:IsKeyDown(Enum.KeyCode.Up) or UserInputService:IsKeyDown(Enum.KeyCode.Space) or anyTouchDown(touchBtns.up) then mvY -= 1 end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.Down) or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or anyTouchDown(touchBtns.down) then mvY += 1 end
+        end
+
+        if mvX ~= 0 then facing = (mvX > 0) and 1 or -1 end
+        local mag = math.sqrt(mvX * mvX + mvY * mvY)
+        if mag > 0 then
+            mvX, mvY = mvX / mag, mvY / mag
+        end
+
+        -- Mode Stop: jika rollback sempat tertahan atau visual terpaut > 6.5 tile di depan server anchor, tahan sebentar agar server anchor menyusul halus
+        local now = os.clock()
+        if Core.GetStopOrNoSendMode() == "stop" and ((H.blockedMoveToCount or 0) > blockedBefore) then
+            blockedBefore = H.blockedMoveToCount or 0
+            visX, visY = syncX, syncY
+        elseif Core.GetStopOrNoSendMode() == "stop" and (math.abs(visX - syncX) > 6.5 or math.abs(visY - syncY) > 6.5) then
+            visX = syncX + clamp(visX - syncX, -5.0, 5.0)
+            visY = syncY + clamp(visY - syncY, -5.0, 5.0)
+        elseif not H.autoMove then
+            visX = clamp(visX + mvX * speed * frameDt, 0.5, maxX)
+            visY = clamp(visY + mvY * speed * frameDt, ceilY, maxY)
+        else
+            visX, visY = H.autoMove.x, H.autoMove.y
+        end
+
+        Core.SetLocalCoords(visX, visY, 0, 0)
+        H.flyLastValidPos = { x = visX, y = visY, vx = 0, vy = 0, t = now }
+        H.antiBackAnchor = { x = visX, y = visY, t = now }
+
+        -- Sync server secara stepped <= 3.4 tile per interval >= 0.082s dengan vx=0, vy=0, flags=grounded (visible ke player lain + anti-rollback)
+        local dH = math.abs(visX - syncX)
+        local dV = math.abs(visY - syncY)
+        local elapsed = now - lastSyncAt
+        local needStep = (dH >= 0.04 or dV >= 0.04) and (elapsed >= 0.082 or ((dH >= 3.2 or dV >= 3.0) and elapsed >= 0.068))
+        local needKeepAlive = (elapsed >= 0.65)
+        if needStep or needKeepAlive then
+            syncX = syncX + clamp(visX - syncX, -3.4, 3.4)
+            syncY = syncY + clamp(visY - syncY, -3.1, 3.1)
+            local fl = (facing > 0 and 1 or 0) + 2
+            Packets.SendRawMove(syncX, syncY, 0, 0, fl)
+            lastSyncAt = now
+        end
+    end)
+    return true
+end
 
 function Misc.SetFly(enabled, speed)
     Core.EnsureInit()
@@ -2999,13 +3988,14 @@ function Misc.SetFly(enabled, speed)
             if best then
                 local nx, ny = best.x + 0.5, best.y + 1
                 Core.SetLocalCoords(nx, ny, 0, 0)
-                Packets.SendRawMove(nx, ny, 0, 0, 2)
+                Packets.SendRawMove(nx, ny, 0, 0, 2, { t = 65535 })
             end
         end
         return false
     end
 
-    -- Pasang NetGuard agar server Net.moveTo tidak menarik balik ke BasePath/Spawn saat Fly
+    -- Pasang Anti-Back Guard & NetGuard agar server Net.moveTo / goTo tidak menarik balik ke BasePath/Spawn saat Fly
+    pcall(Core.InstallAntiBackGuard)
     if type(SYT_Logic.InstallNetGuard) == "function" then
         pcall(SYT_Logic.InstallNetGuard)
     end
@@ -3013,9 +4003,11 @@ function Misc.SetFly(enabled, speed)
     H.flyLastValidPos = { x = p0.x, y = p0.y, vx = 0, vy = 0, t = os.clock() }
     Core.SetLocalCoords(p0.x, p0.y, 0, 0) -- Sinkronkan goPrev/goAck ke posisi mulai terbang
 
-    -- Fly memakai mode 'ghost' engine Growblox agar terlihat oleh semua player, ditambah:
-    -- 1) Anti-BasePath rollback (menjaga goPrev/goAck & grounded bit tetap sinkron)
-    -- 2) High-Altitude ceiling override hingga y = 0.25 (melampaui batas clamp y >= 0.95 bawaan Game.lua)
+    if Misc.State.flyMethod ~= "GhostHybrid" then
+        return Core.StartSteppedAnchorFly()
+    end
+
+    -- Mode GhostHybrid (opsional): mode 'ghost' engine Growblox ditambah proteksi EnsureMoveHook & Anti-Back Guard
     gt.ghost = true
     gt.stuckAt = nil
     H.flyConn = RunService.Heartbeat:Connect(function(dt)
@@ -3626,6 +4618,10 @@ function Misc.SetGodMode(enabled)
         H.origDiedSend = H.origDiedSend or net.died.send
         net.died.send = Misc.State.godMode and (function() return nil end) or H.origDiedSend
     end
+    if net and net.hurt and type(net.hurt.send) == "function" then
+        H.origHurtSend = H.origHurtSend or net.hurt.send
+        net.hurt.send = Misc.State.godMode and (function() return nil end) or H.origHurtSend
+    end
 
     if H.stateObj then
         if type(H.stateObj.onHurt) == "function" then
@@ -3657,6 +4653,8 @@ function Misc.SetGodMode(enabled)
         end
     end
 
+    -- Pasang proteksi 3-Layer Anti-Back & Hazard Guard (goTo + WorldRemotes + ByteNet listeners)
+    pcall(Core.InstallAntiBackGuard)
     pcall(hookIncomingNetGuard)
 
     -- Hook touchingHurt, die & respawn di RenderStepped: HP tidak berkurang, tidak mati, tidak respawn
@@ -3706,10 +4704,13 @@ function Misc.SetGodMode(enabled)
             if H.renderFn then
                 if H.deadIdx then suv(H.renderFn, H.deadIdx, false) end
                 if H.hpIdx then suv(H.renderFn, H.hpIdx, 5) end
+                if H.lastHurtAtIdx then suv(H.renderFn, H.lastHurtAtIdx, os.clock() + 5) end
             end
             if gt then
                 if gt.deadSince then gt.deadSince = nil end
                 if gt.dying then gt.dying = nil end
+                if gt.hurtAt then gt.hurtAt = nil end
+                if gt.stuckAt then gt.stuckAt = nil end
                 if not Misc.State.fly and not Misc.State.noClip and not H.touchHurtIdx then
                     local p = Core.ReadPos()
                     local f1, f2 = Core.GetItemInfo(Core.GetFG(p.tx, p.ty)), Core.GetItemInfo(Core.GetFG(p.tx, p.ty + 1))
@@ -3722,6 +4723,11 @@ function Misc.SetGodMode(enabled)
     end
     return Misc.State.godMode
 end
+
+if type(SYT_Logic.InstallNetGuard) == "function" and SYT_Logic.InstallNetGuard ~= Core.InstallAntiBackGuard then
+    SYT_Logic._origInstallNetGuard = SYT_Logic.InstallNetGuard
+end
+SYT_Logic.InstallNetGuard = Core.InstallAntiBackGuard
 
 -- Auto Follow Player (Scrollable Dropdown via Walk)
 local function extractFollowName(raw)
@@ -4127,6 +5133,7 @@ function PNB.Start()
             end
 
             local spd, actGap, verifyWait, cycleWait = pnbTimingsForSpeed(S.speed)
+            local placeGap = math.max(H.adaptivePlaceGap or 0.155, clamp(0.28 / spd, 0.145, 0.28))
             local nThreads = clamp(toInt(S.breakThreads, 5), 1, 9)
             if S.oneHit then
                 Core.EnsureBestDigEquipped()
@@ -4134,9 +5141,9 @@ function PNB.Start()
 
             local breakOpts = {
                 layer = layer, threads = nThreads, oneHit = S.oneHit,
-                noLocalMirror = true, hitDelay = actGap, verifyTimeout = verifyWait,
+                noLocalMirror = false, hitDelay = math.max(0.08, actGap), verifyTimeout = verifyWait,
                 stable = clamp(0.05 / math.max(1, spd * 0.4), 0.015, 0.05),
-                showHand = S.showHand, shouldContinue = alive,
+                showHand = S.showHand, showVisual = true, shouldContinue = alive,
             }
             local function runCollectPhase(expectDrops)
                 if not (alive() and S.autoCollect) then return true end
@@ -4193,14 +5200,16 @@ function PNB.Start()
                         "Fase 1: Place",
                         string.format("Placed: %d/%d (Round %d)", #curSnap.placed, #targets, round)
                     )
-                    GetcSkipper.EnsureRange(needPlace[1].tx, needPlace[1].ty, GetcSkipper.State.maxRangeTiles, 0.03, alive)
+                    Packets.EnsureActionReach(needPlace[1].tx, needPlace[1].ty, "build", alive)
                     if S.showHand ~= false and H.Net and H.Net.act and H.Net.act.send then
                         pcall(H.Net.act.send, { kind = (info and info.kind == "seed") and 3 or 2, x = needPlace[1].tx + 0.5, y = needPlace[1].ty + 0.5 })
                     end
                     Packets.RunPool(needPlace, math.min(nThreads, #needPlace), function(t)
                         local ok = Packets.PlaceVerified(t.tx, t.ty, bid, layer, {
-                            showHand = false, delay = 0, noLocalMirror = true,
-                            verifyTimeout = clamp(0.45 / (0.6 + spd * 0.4), 0.14, 0.45),
+                            showHand = false, delay = 0, noLocalMirror = false,
+                            autoRange = false,
+                            placeGap = math.max(0.168, tonumber(placeGap) or 0.168),
+                            verifyTimeout = clamp(0.24 / (0.6 + spd * 0.4), 0.12, 0.24),
                             shouldContinue = alive,
                         })
                         if ok then placedAny = true end
@@ -4221,7 +5230,7 @@ function PNB.Start()
             elseif #snap.placed > 0 then
                 -- FASE 2: BREAK — hancurkan semua blok 1..N dan pastikan SEMUA terkonfirmasi pecah dari server
                 local breakVerified = false
-                for round = 1, 4 do
+                for round = 1, 5 do
                     if not alive() then break end
                     local curSnap = inspectPnbTargets(targets, bid, layer)
                     local toBreak = curSnap.placed
@@ -4549,12 +5558,13 @@ function Pabrik.Start()
             if not gt or gt.name == "" then break end
 
             if Core.CountItem(S.blockId) > 0 then
-                setPabrikStatus(string.format("PNB Block (%d)", Core.CountItem(S.blockId)))
-                Packets.StepTeleport(S.breakPos.x, S.breakPos.y, 4, 0.045, alive)
+                setPabrikStatus(string.format("TP x Walk -> BreakPos (%d)", Core.CountItem(S.blockId)))
+                Packets.MoveHybrid(S.breakPos.x, S.breakPos.y, 0, alive)
                 local offs = computePabrikBreakOffsets(S.breakTileCount)
+                local pabPlaceGap = math.max(H.adaptivePlaceGap or 0.155, tonumber(S.placeDelay) or 0.14)
                 while alive() and Core.CountItem(S.blockId) > 0 do
                     if evaluateSeems() then break end
-                    -- 1. Bersihkan dulu blok non-target sekaligus (3x Paralel)
+                    -- 1. Bersihkan dulu blok non-target sekaligus & punch sampai hancur penuh
                     local clearBatch, placeTargets = {}, {}
                     for _, off in ipairs(offs) do
                         local tx, ty = S.breakPos.x + off.dx, S.breakPos.y + off.dy
@@ -4567,22 +5577,25 @@ function Pabrik.Start()
                         end
                     end
                     if #clearBatch > 0 then
-                        Packets.BreakBlocksParallel(clearBatch, {
+                        Packets.BreakVerified(clearBatch, {
                             threads = 3, layer = layer, oneHit = S.oneHit,
-                            hitDelay = S.breakDelay, showHand = S.showHand,
-                            autoRange = false, shouldContinue = alive,
+                            hitDelay = math.max(0.12, tonumber(S.breakDelay) or 0.16),
+                            showHand = S.showHand, showVisual = true,
+                            noLocalMirror = false, autoRange = false, shouldContinue = alive,
                         })
                     end
-                    -- 2. Place block target ke 1-3 tile
+                    -- 2. Place block target ke 1-3 tile dengan verify visual==server & anti too-fast
                     for _, pt in ipairs(placeTargets) do
                         if not alive() or Core.CountItem(S.blockId) <= 0 then break end
                         if Core.GetLayerTile(pt.tx, pt.ty, layer) == 0 then
-                            Packets.Place({ tx = pt.tx, ty = pt.ty, itemId = S.blockId, layer = layer, showHand = S.showHand, autoRange = false })
-                            GetcSkipper.RandomizedWait(S.placeDelay, "tile", alive)
+                            Packets.PlaceVerified(pt.tx, pt.ty, S.blockId, layer, {
+                                showHand = S.showHand, delay = 0, noLocalMirror = false,
+                                retries = 2, placeGap = pabPlaceGap, shouldContinue = alive,
+                            })
                         end
                     end
-                    -- 3. Break seluruh tile terpasang bersamaan (hingga 3 blok paralel!)
-                    for _ = 1, 3 do
+                    -- 3. Break seluruh tile terpasang bersamaan (terus punch sampai benar-benar hancur)
+                    for _ = 1, 5 do
                         if not alive() then break end
                         local breakBatch = {}
                         for _, pt in ipairs(placeTargets) do
@@ -4591,28 +5604,32 @@ function Pabrik.Start()
                             end
                         end
                         if #breakBatch == 0 then break end
-                        Packets.BreakBlocksParallel(breakBatch, {
+                        Packets.BreakVerified(breakBatch, {
                             threads = 3, layer = layer, oneHit = S.oneHit,
-                            hitDelay = S.breakDelay, showHand = S.showHand,
-                            autoRange = false, shouldContinue = alive,
+                            hitDelay = math.max(0.12, tonumber(S.breakDelay) or 0.16),
+                            showHand = S.showHand, showVisual = true,
+                            noLocalMirror = false, autoRange = false, shouldContinue = alive,
                         })
                     end
                     if alive() then
-                        Packets.Collect({ radius = 5, stepMoveIfFar = true, collectDelay = S.collectDelay, shouldContinue = alive })
+                        Packets.Collect({ radius = 5, stepMoveIfFar = true, preferHybrid = true, collectDelay = S.collectDelay, shouldContinue = alive })
                         GetcSkipper.RandomizedWait(S.collectDelay, "take", alive)
                     end
                 end
             elseif Core.CountItem(S.seedId) > 0 then
-                Packets.Collect({ radius = 5, stepMoveIfFar = false, collectDelay = S.collectDelay, shouldContinue = alive })
+                Packets.Collect({ radius = 5, stepMoveIfFar = false, preferHybrid = true, collectDelay = S.collectDelay, shouldContinue = alive })
+                local seedPlaceGap = math.max(H.adaptivePlaceGap or 0.155, tonumber(S.placeDelay) or 0.14)
                 for _, t in ipairs(Pabrik.GetSortedTiles()) do
                     if not alive() or evaluateSeems() then break end
                     if Core.CountItem(S.blockId) > 0 or Core.CountItem(S.seedId) <= 0 then break end
                     if Core.IsPlantable(t.x, t.y) then
-                        setPabrikStatus(string.format("Plant (%d, %d)", t.x, t.y))
-                        GetcSkipper.EnsureRange(t.x, t.y, 4, 0.045, alive)
-                        if alive() then
-                            Packets.Place({ tx = t.x, ty = t.y, itemId = S.seedId, layer = 1, showHand = S.showHand, autoRange = false })
-                            GetcSkipper.RandomizedWait(S.placeDelay, "tile", alive)
+                        setPabrikStatus(string.format("TP x Walk -> Plant (%d, %d)", t.x, t.y))
+                        local okM = Packets.MoveHybrid(t.x, t.y, 4, alive)
+                        if okM and alive() then
+                            Packets.PlaceVerified(t.x, t.y, S.seedId, 1, {
+                                showHand = S.showHand, delay = 0, noLocalMirror = false,
+                                retries = 2, placeGap = seedPlaceGap, shouldContinue = alive,
+                            })
                         end
                     end
                 end
@@ -4636,7 +5653,7 @@ function Pabrik.Start()
 
             if #planted == 0 then
                 if Core.CountItem(S.blockId) == 0 and Core.CountItem(S.seedId) == 0 then
-                    Packets.Collect({ radius = 5, stepMoveIfFar = true, collectDelay = S.collectDelay, shouldContinue = alive })
+                    Packets.Collect({ radius = 5, stepMoveIfFar = true, preferHybrid = true, collectDelay = S.collectDelay, shouldContinue = alive })
                     setPabrikStatus("Menunggu seed/block (habis)")
                     GetcSkipper.RandomizedWait(0.45, nil, alive)
                 else
@@ -4646,19 +5663,24 @@ function Pabrik.Start()
                 setPabrikStatus(string.format("Grow %d/%d (~%.1fs)", #ready, #planted, minRem or 0))
                 GetcSkipper.RandomizedWait(0.35, nil, alive)
             else
-                setPabrikStatus(string.format("Harvesting %d trees", #ready))
+                setPabrikStatus(string.format("TP x Walk -> Harvest %d trees", #ready))
                 for _, t in ipairs(ready) do
                     if not alive() or evaluateSeems() then break end
-                    GetcSkipper.EnsureRange(t.x, t.y, 4, 0.045, alive)
-                    if not alive() then break end
-                    Packets.PunchBreak({ tx = t.x, ty = t.y, layer = 1, showHand = S.showHand, autoRange = false })
-                    GetcSkipper.RandomizedWait(S.breakDelay, "tile", alive)
-                    if alive() and Core.GetFG(t.x, t.y) == 0 then
-                        Packets.Collect({ radius = 5, stepMoveIfFar = false, collectDelay = S.collectDelay, shouldContinue = alive })
+                    local okM = Packets.MoveHybrid(t.x, t.y, 4, alive)
+                    if okM and alive() then
+                        Packets.HitDamage({
+                            tx = t.x, ty = t.y, layer = 1,
+                            oneHit = S.oneHit, hitDelay = math.max(0.12, tonumber(S.breakDelay) or 0.16),
+                            showHand = S.showHand, showVisual = true,
+                            noLocalMirror = false, autoRange = false, shouldContinue = alive,
+                        })
+                        if alive() and Core.GetFG(t.x, t.y) == 0 then
+                            Packets.Collect({ radius = 5, stepMoveIfFar = false, preferHybrid = true, collectDelay = S.collectDelay, shouldContinue = alive })
+                        end
                     end
                 end
                 if alive() then
-                    Packets.Collect({ radius = 5, stepMoveIfFar = true, collectDelay = S.collectDelay, shouldContinue = alive })
+                    Packets.Collect({ radius = 5, stepMoveIfFar = true, preferHybrid = true, collectDelay = S.collectDelay, shouldContinue = alive })
                     GetcSkipper.RandomizedWait(S.collectDelay, "take", alive)
                 end
             end
@@ -4798,55 +5820,8 @@ local function buildDfBlueprint(gt)
     }
 end
 
-local function findStandTileNear(tx, ty, maxRange)
-    local cur = Core.ReadPos()
-    local r = maxRange or 4
-    if math.max(math.abs(cur.tx - tx), math.abs(cur.ty - ty)) <= r then
-        return true, cur.tx, cur.ty, 0
-    end
-    local gt = H.gt
-    local w, h = (gt and gt.w) or 100, (gt and gt.h) or 60
-    local cands = {}
-    for dy = -r, r do
-        for dx = -r, r do
-            local ax, ay = tx + dx, ty + dy
-            if ax >= 0 and ax < w and ay >= 0 and ay < h and not Core.IsSolid(ax, ay) then
-                local distP = math.abs(ax - cur.tx) + math.abs(ay - cur.ty)
-                cands[#cands + 1] = { x = ax, y = ay, score = distP }
-            end
-        end
-    end
-    if #cands == 0 then return false, nil, nil, 999 end
-    table.sort(cands, function(a, b) return a.score < b.score end)
-    local limit = math.min(#cands, 12)
-    for idx = 1, limit do
-        local c = cands[idx]
-        local p = Packets.FindTilePath(cur.tx, cur.ty, c.x, c.y)
-        if p and #p >= 1 then
-            return true, c.x, c.y, #p
-        end
-    end
-    return false, nil, nil, 999
-end
-
 local function moveNearDfTile(tx, ty, shouldContinueFn)
-    local cur = Core.ReadPos()
-    if math.max(math.abs(cur.tx - tx), math.abs(cur.ty - ty)) <= 4 then
-        return true
-    end
-    local okFind, gx, gy = findStandTileNear(tx, ty, 4)
-    if not okFind or not gx then
-        return false, "unreachable"
-    end
-    local okMove, msg = Packets.StepTeleport(gx, gy, 2, 0.068, shouldContinueFn)
-    if not okMove then
-        local chk = Core.ReadPos()
-        if math.max(math.abs(chk.tx - tx), math.abs(chk.ty - ty)) <= 4 then
-            return true
-        end
-        return false, msg or "move_failed"
-    end
-    return true
+    return Packets.MoveWalkNear(tx, ty, 4, shouldContinueFn, 7.0)
 end
 
 local function dfBreakBatch(tasksBatch, aliveFn)
@@ -4868,24 +5843,49 @@ local function dfBreakBatch(tasksBatch, aliveFn)
         execList[1] = { tx = first.x, ty = first.y, layer = 1 }
     end
 
+    local dfHitGap = math.max(0.14, tonumber(S.breakDelay) or 0.16)
     Packets.BreakBlocksParallel(execList, {
         threads = 3, layer = 1, oneHit = S.oneHit,
-        hitDelay = S.breakDelay, showHand = S.showHand,
+        hitDelay = dfHitGap, showHand = S.showHand,
+        showVisual = true, noLocalMirror = false,
         autoRange = false, shouldContinue = aliveFn,
     })
-    GetcSkipper.RandomizedWait(S.breakDelay, "act", aliveFn)
-    if S.autoCollect then
-        Packets.Collect({ radius = 5, collectDelay = S.collectDelay, shouldContinue = aliveFn })
+
+    for _ = 1, 3 do
+        if type(aliveFn) == "function" and not aliveFn() then break end
+        local rem = {}
+        for _, bt in ipairs(execList) do
+            if Core.GetFG(bt.tx, bt.ty) ~= 0 and not Core.IsProtectedTile(Core.GetFG(bt.tx, bt.ty)) then
+                rem[#rem + 1] = bt
+            end
+        end
+        if #rem == 0 then break end
+        Packets.BreakVerified(rem, {
+            threads = 3, layer = 1, oneHit = false,
+            hitDelay = math.max(0.15, dfHitGap), showHand = S.showHand,
+            showVisual = true, noLocalMirror = false,
+            autoRange = false, shouldContinue = aliveFn,
+        })
     end
-    return #execList
+
+    local brokenCount = 0
+    for _, bt in ipairs(execList) do
+        if Core.GetFG(bt.tx, bt.ty) == 0 then
+            brokenCount += 1
+        end
+    end
+    if S.autoCollect and (type(aliveFn) ~= "function" or aliveFn()) then
+        Packets.Collect({ radius = 5, preferWalk = true, collectDelay = S.collectDelay, shouldContinue = aliveFn })
+    end
+    return brokenCount
 end
 
 local function dfPlaceDirt(tx, ty, dirtId, aliveFn)
     local S = DirtFarm.State
     if Core.CountItem(dirtId) <= 0 and S.autoCollect then
-        Packets.Collect({ radius = 10, filterId = dirtId, stepMoveIfFar = true, collectDelay = S.collectDelay, shouldContinue = aliveFn })
+        Packets.Collect({ radius = 10, filterId = dirtId, stepMoveIfFar = true, preferWalk = true, collectDelay = S.collectDelay, shouldContinue = aliveFn })
         if Core.CountItem(dirtId) <= 0 then
-            Packets.Collect({ radius = 8, stepMoveIfFar = true, collectDelay = S.collectDelay, shouldContinue = aliveFn })
+            Packets.Collect({ radius = 8, stepMoveIfFar = true, preferWalk = true, collectDelay = S.collectDelay, shouldContinue = aliveFn })
         end
     end
     if Core.CountItem(dirtId) <= 0 then
@@ -4893,8 +5893,11 @@ local function dfPlaceDirt(tx, ty, dirtId, aliveFn)
     end
     local okM = moveNearDfTile(tx, ty, aliveFn)
     if not okM then return false, "unreachable" end
-    local okP, msgP = Packets.Place({ tx = tx, ty = ty, itemId = dirtId, layer = 1, showHand = S.showHand, autoRange = false })
-    GetcSkipper.RandomizedWait(S.placeDelay, "tile", aliveFn)
+    local okP, msgP = Packets.PlaceVerified(tx, ty, dirtId, 1, {
+        showHand = S.showHand, delay = 0, noLocalMirror = false,
+        retries = 2, placeGap = math.max(H.adaptivePlaceGap or 0.155, tonumber(S.placeDelay) or 0.14),
+        shouldContinue = aliveFn,
+    })
     return okP, msgP
 end
 
@@ -5021,7 +6024,7 @@ function DirtFarm.Start()
                         setDfStatus(string.format("[%s] SELESAI -> Rotation ke %s", curW, nextWorld))
                         emitNotify("SYT Dirt Farm", string.format("DF %s selesai! Pindah ke %s...", curW, nextWorld))
                         if DirtFarm.State.autoCollect then
-                            Packets.Collect({ radius = 8, stepMoveIfFar = true, collectDelay = DirtFarm.State.collectDelay, shouldContinue = alive })
+                            Packets.Collect({ radius = 8, stepMoveIfFar = true, preferWalk = true, collectDelay = DirtFarm.State.collectDelay, shouldContinue = alive })
                         end
                         DirtFarm.State.switchingWorld = true
                         pcall(gt.enter, nextWorld)
@@ -5767,23 +6770,23 @@ buildSYTMenuFn = function()
             c:Header("Teleport & World Map", "Pilih koordinat manual atau ketuk langsung pada Peta World 2D", "Map")
 
             local ManualCard = c:Card("Koordinat & Metode Teleport", nil, "Teleports", {
-                Subtitle = "Non-Delay & Anti-Validate-Back mengikuti aturan [GETC SKIPER]"
+                Subtitle = "Anti-Back (Not Will Be Back) + Stop/No-Send Guard aktif otomatis"
             })
             ManualCard:Input("Target Tile X", "TpManualX", "0 .. 99", tostring(tpState.selectedX or 0))
             ManualCard:Input("Target Tile Y", "TpManualY", "0 .. 59", tostring(tpState.selectedY or 0))
             ManualCard:Button("Walk-Path Safe (Anti-Balik Base)", "WALK TP", "Teleports", function()
-                local ok, msg = Packets.WalkTeleport({ tx = tonumber(UI:GetValue("TpManualX")), ty = tonumber(UI:GetValue("TpManualY")), mode = "walk", speed = 13 })
-                UI:SetValue("ValidStatusDisplay", (ok and "[WALK] " or "[BLOCKED] ") .. tostring(msg))
+                local ok, msg = Packets.WalkTeleport({ tx = tonumber(UI:GetValue("TpManualX")), ty = tonumber(UI:GetValue("TpManualY")), mode = "walk", speed = 7.0 })
+                UI:SetValue("ValidStatusDisplay", (ok and "[WALK] " or "[STOP/BLOCKED] ") .. tostring(msg))
                 if UIHooks.refreshMap then UIHooks.refreshMap(true) end
             end)
-            ManualCard:Button("Step Teleport (Range Jauh Cepat)", "STEP TP", "Teleports", function()
-                local ok, msg = Packets.WalkTeleport({ tx = tonumber(UI:GetValue("TpManualX")), ty = tonumber(UI:GetValue("TpManualY")), mode = "step" })
-                UI:SetValue("ValidStatusDisplay", (ok and "[OK] " or "[INVALID] ") .. tostring(msg))
+            ManualCard:Button("Step Teleport (Anti-Back <= 3 Tile)", "STEP TP", "Teleports", function()
+                local ok, msg = Packets.WalkTeleport({ tx = tonumber(UI:GetValue("TpManualX")), ty = tonumber(UI:GetValue("TpManualY")), mode = "step", stepSize = 3 })
+                UI:SetValue("ValidStatusDisplay", (ok and "[OK] " or "[STOP/NO-SEND] ") .. tostring(msg))
                 if UIHooks.refreshMap then UIHooks.refreshMap(true) end
             end)
-            ManualCard:Button("Direct Teleport", "DIRECT TP", "Bolt", function()
+            ManualCard:Button("Direct Teleport (Auto-Step > 3.4 Tile)", "DIRECT TP", "Bolt", function()
                 local ok, msg = Packets.WalkTeleport({ tx = tonumber(UI:GetValue("TpManualX")), ty = tonumber(UI:GetValue("TpManualY")), mode = "direct" })
-                UI:SetValue("ValidStatusDisplay", (ok and "[OK] " or "[INVALID] ") .. tostring(msg))
+                UI:SetValue("ValidStatusDisplay", (ok and "[OK] " or "[NO-SEND] ") .. tostring(msg))
                 if UIHooks.refreshMap then UIHooks.refreshMap(true) end
             end)
 
@@ -5809,9 +6812,10 @@ buildSYTMenuFn = function()
             end)
             LiveTpCard:Button("TP ke White Door / Spawn", "SPAWN", "Teleports", function()
                 Core.EnsureInit()
+                Core.AllowMoveToWindow(1.2)
                 local sp = H.gt and H.gt.spawn
                 if sp then
-                    local ok, msg = Packets.WalkTeleport({ tx = math.floor(sp.X), ty = math.floor(sp.Y), mode = "step" })
+                    local ok, msg = Packets.WalkTeleport({ tx = math.floor(sp.X), ty = math.floor(sp.Y), mode = "step", stepSize = 3 })
                     UI:SetValue("ValidStatusDisplay", (ok and "[SPAWN] " or "[ERR] ") .. tostring(msg))
                     if UIHooks.refreshMap then UIHooks.refreshMap(true) end
                 end
@@ -5832,14 +6836,18 @@ buildSYTMenuFn = function()
         center = center(function(c)
             c:Header("Misc: Movement, Safety & Follow", "Fly Anti-BasePath, No Clip, God Mode & Auto Follow Player via Walk", "V1")
 
-            local MoveMisc = c:Card("Fly & No Clip (Anti-BasePath)", nil, "Teleports", {
-                Subtitle = "Fly bebas naik lebih tinggi (> batas 0.95) & terlindung dari rollback BasePath"
+            local MoveMisc = c:Card("Fly & No Clip (SteppedAnchor Anti-Back)", nil, "Teleports", {
+                Subtitle = "Terbang halus <= 3.4 tile/sync + grounded bit: terlihat player lain & bebas rollback"
             })
-            MoveMisc:Toggle("Fly Mode (WASD / Arrow / Space)", "MiscFlyToggle", Misc.State.fly, function(on)
+            MoveMisc:Toggle("Fly Mode (WASD / Arrow / Space / Touch)", "MiscFlyToggle", Misc.State.fly, function(on)
                 Misc.SetFly(on)
             end)
+            MoveMisc:Dropdown("Metode Fly", "MiscFlyMethod", { "SteppedAnchor", "GhostHybrid" }, Misc.State.flyMethod or "SteppedAnchor", function(v)
+                Misc.State.flyMethod = (v == "GhostHybrid") and "GhostHybrid" or "SteppedAnchor"
+                if Misc.State.fly then Misc.SetFly(true) end
+            end)
             MoveMisc:Slider("Kecepatan Fly", "MiscFlySpeed", 6, 45, Misc.State.flySpeed, " t/s", function(v)
-                Misc.State.flySpeed = clamp(tonumber(v) or 12, 6, 45)
+                Misc.State.flySpeed = clamp(tonumber(v) or 14, 6, 45)
             end)
             MoveMisc:Toggle("Fly Anti-BasePath & High Altitude", "MiscFlyAntiBase", Misc.State.flyAntiBasePath ~= false, function(on)
                 Misc.State.flyAntiBasePath = on == true
@@ -6221,13 +7229,28 @@ buildSYTMenuFn = function()
                 Spam.State.delay = math.max(1.65, tonumber(v) or 3.0)
             end, 0.1)
 
-            local GuardCard = c:Card("[GETC SKIPER] Range Jauh & Non-Validate-Back", nil, "Shield", {
-                Subtitle = "Hilangkan jeda artifisial pada jarak jauh & blokir rollback ke BasePath"
+            local GuardCard = c:Card("[ANTI-BACK & GUARD] Not-Will-Be-Back / Stop-or-No-Send", nil, "Shield", {
+                Subtitle = "Blokir MoveTo rollback, clamp step <= 3.4 tile & tahan paket di luar jangkauan server"
             })
-            GuardCard:Toggle("Aktifkan GetcSkipper Engine", "GuardEnabled", GetcSkipper.State.enabled, function(v)
+            GuardCard:Toggle("Aktifkan Guard & Skipper Engine", "GuardEnabled", GetcSkipper.State.enabled, function(v)
                 GetcSkipper.State.enabled = v == true
             end)
-            GuardCard:Toggle("Range Jauh Non-Delay (0 Jeda Artifisial)", "GuardLongRangeNoDelay", GetcSkipper.State.longRangeNoDelay == true, function(v)
+            GuardCard:Toggle("Anti-Back / Not Will Be Back (3-Layer Guard)", "GuardAntiBack", GetcSkipper.State.antiBack ~= false, function(v)
+                if type(GetcSkipper.SetAntiBack) == "function" then
+                    GetcSkipper.SetAntiBack(v)
+                else
+                    GetcSkipper.State.antiBack = v == true
+                end
+            end)
+            GuardCard:Dropdown("Mode Stop or No Send", "GuardStopOrNoSend", { "NoSend (Tahan Paket Liar)", "Stop (Hentikan Desync)", "Off" }, (GetcSkipper.State.stopOrNoSend == "stop" and "Stop (Hentikan Desync)") or (GetcSkipper.State.stopOrNoSend == "off" and "Off") or "NoSend (Tahan Paket Liar)", function(v)
+                if type(GetcSkipper.SetStopOrNoSend) == "function" then
+                    GetcSkipper.SetStopOrNoSend(v)
+                end
+            end)
+            GuardCard:Slider("Batas Step Aman (Tile/Paket)", "GuardSafeStepCap", 1, 3, GetcSkipper.State.safeStepCap or 3, " tile", function(v)
+                GetcSkipper.State.safeStepCap = clamp(toInt(v, 3), 1, 3)
+            end, 1)
+            GuardCard:Toggle("Range Jauh Cepat (Anti-Back Step <= 3)", "GuardLongRangeNoDelay", GetcSkipper.State.longRangeNoDelay == true, function(v)
                 GetcSkipper.State.longRangeNoDelay = v == true
             end)
             GuardCard:Toggle("Non-Validate-Back (Anti Rollback BasePath)", "GuardNoValidateBack", GetcSkipper.State.noValidateBack == true, function(v)
@@ -6256,15 +7279,16 @@ buildSYTMenuFn = function()
             end)
             SpamCtrl:Input("Status Spam", "SpamStatusDisplay", "Idle", Spam.State.status or "Idle")
 
-            local GuardCtrl = r:Card("Aksi & Status NetGuard", "Guard", "Shield", {
-                Subtitle = "Pastikan proteksi MoveTo / Anti-BasePath aktif pada world saat ini"
+            local GuardCtrl = r:Card("Aksi & Status Anti-Back Guard", "Guard", "Shield", {
+                Subtitle = "Pastikan proteksi goTo + WorldRemotes + ByteNet + EnsureMove aktif"
             })
-            GuardCtrl:Button("Pasang Ulang NetGuard (Anti-BasePath)", "HOOK", "Shield", function()
+            GuardCtrl:Button("Pasang Ulang Anti-Back & NetGuard", "HOOK", "Shield", function()
                 Core.EnsureMoveHook()
+                pcall(Core.InstallAntiBackGuard)
                 if type(SYT_Logic.InstallNetGuard) == "function" then
                     pcall(SYT_Logic.InstallNetGuard)
                 end
-                emitNotify("GETC SKIPER", "NetGuard Anti-Validate-Back terpasang!")
+                emitNotify("ANTI-BACK GUARD", string.format("Aktif! Blocked MoveTo: %d | Mode: %s", H.blockedMoveToCount or 0, Core.GetStopOrNoSendMode()))
             end)
         end)
     })
@@ -7062,8 +8086,8 @@ buildMountedCanvasesFn = function()
     zoomOutBtn.MouseButton1Click:Connect(function() applyZoom(mapTilePx - 1.5); renderMap(true) end)
     tpBtn.MouseButton1Click:Connect(function()
         if tpState.selectedX and tpState.selectedY then
-            local ok, msg = Packets.WalkTeleport({ tx = tpState.selectedX, ty = tpState.selectedY, mode = "step", stepSize = 4 })
-            UI:SetValue("ValidStatusDisplay", (ok and "[OK] " or "[INVALID] ") .. tostring(msg))
+            local ok, msg = Packets.WalkTeleport({ tx = tpState.selectedX, ty = tpState.selectedY, mode = "step", stepSize = 3 })
+            UI:SetValue("ValidStatusDisplay", (ok and "[OK] " or "[STOP/NO-SEND] ") .. tostring(msg))
             infoLbl.Text = tostring(msg)
             renderMap(true)
         end

@@ -242,8 +242,22 @@ local UI, ThemeChoices
 local function feature(...)
     return UI.feature(...)
 end
-local function center(fn) return fn end
-local function right(fn) return fn end
+local function center(fn)
+    return function(builder)
+        local ok, err = xpcall(fn, debug.traceback, builder)
+        if not ok then
+            warn("[SYT UI Center Error]: " .. tostring(err))
+        end
+    end
+end
+local function right(fn)
+    return function(builder)
+        local ok, err = xpcall(fn, debug.traceback, builder)
+        if not ok then
+            warn("[SYT UI Right Error]: " .. tostring(err))
+        end
+    end
+end
 
 local function initSYTWindow(themeOverride, scaleOverride, startHidden)
     cleanupSYTGuiContainers(nil)
@@ -685,11 +699,23 @@ local FALLBACK_FX = {
 }
 
 local function safeRequireShared(name)
-    local sh = ReplicatedStorage:FindFirstChild("Shared")
+    local sh = ReplicatedStorage and ReplicatedStorage:FindFirstChild("Shared")
     local mod = sh and sh:FindFirstChild(name)
-    if mod then
-        local ok, res = pcall(require, mod)
-        if ok and type(res) == "table" then return res end
+    if typeof(mod) == "Instance" and mod:IsA("ModuleScript") then
+        H._reqCache = H._reqCache or setmetatable({}, { __mode = "k" })
+        local cached = H._reqCache[mod]
+        if cached ~= nil then
+            return (type(cached) == "table") and cached or nil
+        end
+        local co = coroutine.create(require)
+        local ok, res = coroutine.resume(co, mod)
+        if ok and coroutine.status(co) == "dead" and type(res) == "table" then
+            H._reqCache[mod] = res
+            return res
+        end
+        if coroutine.status(co) == "dead" then
+            H._reqCache[mod] = false
+        end
     end
     return nil
 end
@@ -836,31 +862,6 @@ end
 local function scanSharedPacksAndRenderUpvalues(forceInvRefresh)
     local visitedTbl = {}
     local visitedFn = {}
-    local function inspectVal(val, depth)
-        local t = type(val)
-        if typeof(val) == "Instance" then
-            if val:IsA("ModuleScript") then
-                local reqTbl = safeRequireNoYield(val)
-                if type(reqTbl) == "table" then
-                    inspectVal(reqTbl, math.max(depth or 0, 2))
-                end
-            end
-            return
-        end
-        if t ~= "table" or visitedTbl[val] then return end
-        visitedTbl[val] = true
-        matchKnownGameTable(val, forceInvRefresh)
-        if (depth or 0) < 2 then
-            for _, sub in pairs(val) do
-                if type(sub) == "table" and not visitedTbl[sub] then
-                    inspectVal(sub, (depth or 0) + 1)
-                elseif typeof(sub) == "Instance" and sub:IsA("ModuleScript") then
-                    inspectVal(sub, (depth or 0) + 1)
-                end
-            end
-        end
-    end
-
     local function scanFnUvs(fn, depth)
         if type(fn) ~= "function" or visitedFn[fn] then return end
         visitedFn[fn] = true
@@ -886,50 +887,36 @@ local function scanSharedPacksAndRenderUpvalues(forceInvRefresh)
         end
     end
 
-    -- 1) Scan pack obfuscated di shared[k] & atribut "k" (termasuk ModuleScript di dalam pack)
+    local function inspectVal(val, depth)
+        local t = type(val)
+        if t == "function" then
+            scanFnUvs(val, 0)
+            return
+        end
+        if t ~= "table" or visitedTbl[val] then return end
+        visitedTbl[val] = true
+        matchKnownGameTable(val, forceInvRefresh)
+        if (depth or 0) < 2 then
+            for _, sub in pairs(val) do
+                local st = type(sub)
+                if st == "table" and not visitedTbl[sub] then
+                    inspectVal(sub, (depth or 0) + 1)
+                elseif st == "function" and not visitedFn[sub] then
+                    scanFnUvs(sub, 0)
+                end
+            end
+        end
+    end
+
+    -- 1) Scan tabel/fungsi pack obfuscated yang sudah termuat di shared[k] tanpa require ModuleScript sembarangan
     local sharedTbl = rawget(_G, "shared") or shared
     if type(sharedTbl) == "table" then
         for _, v in pairs(sharedTbl) do
             inspectVal(v, 0)
         end
-        local function scanAttrRoot(root)
-            if typeof(root) ~= "Instance" then return end
-            local okD, desc = pcall(root.GetDescendants, root)
-            if okD and type(desc) == "table" then
-                for _, inst in ipairs(desc) do
-                    if inst:IsA("LuaSourceContainer") or inst:IsA("ModuleScript") then
-                        local okK, kVal = pcall(inst.GetAttribute, inst, "k")
-                        if okK and kVal ~= nil and sharedTbl[kVal] ~= nil then
-                            inspectVal(sharedTbl[kVal], 0)
-                        end
-                    end
-                end
-            end
-        end
-        scanAttrRoot(ReplicatedStorage)
-        local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
-        scanAttrRoot(pg and pg:FindFirstChild("GameGui"))
     end
 
-    -- 2) Jika Net / ItemDB / Roles masih kosong (nama module ter-obfuscate), scan ReplicatedStorage.Shared tanpa yield
-    if not H.Net or not H.ItemDB or not H.Roles then
-        local sh = ReplicatedStorage and ReplicatedStorage:FindFirstChild("Shared")
-        if sh then
-            local okC, children = pcall(sh.GetDescendants, sh)
-            if okC and type(children) == "table" then
-                for _, inst in ipairs(children) do
-                    if inst:IsA("ModuleScript") then
-                        local reqTbl = safeRequireNoYield(inst)
-                        if type(reqTbl) == "table" then
-                            matchKnownGameTable(reqTbl, forceInvRefresh)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- 3) Scan semua koneksi RunService.RenderStepped untuk H.gt, H.renderFn, H.skillsObj, H.others, dll.
+    -- 2) Scan semua koneksi RunService.RenderStepped untuk H.gt, H.renderFn, H.skillsObj, H.others, dll.
     if type(getconnections) == "function" then
         local okConns, conns = pcall(getconnections, RunService.RenderStepped)
         if okConns and type(conns) == "table" then
@@ -2410,7 +2397,7 @@ function SYT_Logic.Init(forceRefresh)
         H.stopMoveUntil = 0
         Core.AllowMoveToWindow(2.0)
     end
-    if H.initialized and not forceRefresh and isValidGT(H.gt) and H.Net and H.ItemDB and isValidInv(H.inv) and H.stateObj and H.others and H.skillsObj and H.trees then
+    if H.initialized and not forceRefresh and isValidGT(H.gt) and H.Net and H.ItemDB and isValidInv(H.inv) and H.stateObj and H.others and H.skillsObj then
         Core.SyncBypassSystem("hooks_only")
         return true
     end
@@ -2448,17 +2435,19 @@ function SYT_Logic.Init(forceRefresh)
         end
     end
 
-    if H.gt and type(rawget(H.gt, "backpackNow")) == "function" then
-        local maybeInv = uv(H.gt.backpackNow, 1)
-        if isValidInv(maybeInv) then
-            H.inv = maybeInv
-        end
+    if isValidGT(H.gt) then
         H.lastWorldTag = rawget(H.gt, "name") or H.lastWorldTag
+        if type(rawget(H.gt, "backpackNow")) == "function" then
+            local maybeInv = uv(H.gt.backpackNow, 1)
+            if isValidInv(maybeInv) then
+                H.inv = maybeInv
+            end
+        end
     end
 
     pcall(scanSharedPacksAndRenderUpvalues, forceRefresh == true)
 
-    local needTableScan = (not isValidGT(H.gt) or not H.Net or not H.ItemDB or not isValidInv(H.inv) or not H.stateObj or not H.others or not H.skillsObj or not H.trees)
+    local needTableScan = (not isValidGT(H.gt) or not H.Net or not H.ItemDB or not isValidInv(H.inv) or not H.stateObj or not H.others or not H.skillsObj)
     if needTableScan and (nowT - (H.lastGcScanAt or 0) >= 4.0 or not isValidGT(H.gt) or not H.Net) then
         H.lastGcScanAt = nowT
         for _, v in ipairs(safeGetGC(true, true)) do
@@ -2468,12 +2457,14 @@ function SYT_Logic.Init(forceRefresh)
         end
     end
 
-    if H.gt and type(rawget(H.gt, "backpackNow")) == "function" then
-        local maybeInv = uv(H.gt.backpackNow, 1)
-        if isValidInv(maybeInv) then
-            H.inv = maybeInv
-        end
+    if isValidGT(H.gt) then
         H.lastWorldTag = rawget(H.gt, "name") or H.lastWorldTag
+        if type(rawget(H.gt, "backpackNow")) == "function" then
+            local maybeInv = uv(H.gt.backpackNow, 1)
+            if isValidInv(maybeInv) then
+                H.inv = maybeInv
+            end
+        end
     end
 
     if H.gt and not H.origTakeDrop and type(H.gt.takeDrop) == "function" then
@@ -6000,14 +5991,14 @@ SYT_Logic.InstallNetGuard = Core.InstallAntiBackGuard
 
 -- Auto Follow Player (Scrollable Dropdown via Walk)
 local function extractFollowName(raw)
-    local s = trim(tostring(raw or ""))
+    local s = string.match(tostring(raw or ""), "^%s*(.-)%s*$") or ""
     if s == "" or s == "Tidak ada player lain" then return "" end
     local bare = string.match(s, "^([^%(%[]+)")
-    return trim(bare or s)
+    return string.match(bare or s, "^%s*(.-)%s*$") or ""
 end
 
-function Misc.GetFollowCandidates()
-    Core.EnsureInit()
+function Misc.GetFollowCandidates(skipInit)
+    if not skipInit then Core.EnsureInit() end
     local out = {}
     for _, op in ipairs(Core.GetInWorldPlayers(false)) do
         local label = op.gameName
@@ -8678,8 +8669,8 @@ function Visual.FindWearableByKeywords(slotName, keywords, fallbackId)
     return fallbackId
 end
 
-function Visual.GetWearableOptionsForSlot(slotName, searchFilter)
-    ensureVisualRefs()
+function Visual.GetWearableOptionsForSlot(slotName, searchFilter, skipInit)
+    if not skipInit then ensureVisualRefs() end
     local out = { "Default (Keep Real)", "Kosong / Remove (0)" }
     local db = H.ItemDB
     if type(db) ~= "table" then return out end
@@ -9667,7 +9658,7 @@ buildSYTMenuFn = function()
             local FollowCard = c:Card("Auto Follow Player (Via Walk)", nil, "Player", {
                 Subtitle = "Pilih target dari dropdown lalu aktifkan Auto Follow"
             })
-            local okCands, initCands = pcall(Misc.GetFollowCandidates)
+            local okCands, initCands = pcall(Misc.GetFollowCandidates, true)
             initCands = (okCands and type(initCands) == "table" and #initCands > 0) and initCands or { "(Belum ada player lain)" }
             local defFollow = (Misc.State.followTarget ~= "" and Misc.State.followTarget) or initCands[1]
             FollowCard:Dropdown("Pilih Player Target (Scroll)", "MiscFollowTarget", initCands, defFollow, function(v)
@@ -9785,7 +9776,7 @@ buildSYTMenuFn = function()
             PnbCtrl:Button("[PNB] Start / Stop Engine", "TOGGLE", "Bolt", function()
                 PNB.Toggle()
             end)
-            PnbCtrl:Input("Block Terpilih", "PnbSelectedDisplay", "Belum dipilih", PNB.State.selectedBlockId and string.format("%s (ID:%d)", Core.GetItemName(PNB.State.selectedBlockId), PNB.State.selectedBlockId) or "Belum dipilih")
+            PnbCtrl:Input("Block Terpilih", "PnbSelectedDisplay", "Belum dipilih", PNB.State.selectedBlockId and string.format("%s (ID:%d)", (H.ItemDB and H.ItemDB[PNB.State.selectedBlockId] and H.ItemDB[PNB.State.selectedBlockId].name) or ("Item#" .. tostring(PNB.State.selectedBlockId)), PNB.State.selectedBlockId) or "Belum dipilih")
             PnbCtrl:Input("Fase Berjalan", "PnbPhaseDisplay", "Idle", PNB.State.phase or "Idle")
             PnbCtrl:Input("Verifikasi Visual & Server", "PnbVerifyDisplay", "-", PNB.State.verifySummary or "-")
             PnbCtrl:Input("Status PNB Detail", "PnbStatusDisplay", "Idle", PNB.State.status or "Idle")
@@ -10033,7 +10024,7 @@ buildSYTMenuFn = function()
                     UI._DropRefresh.SpoofWearPick(Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot, Visual.State.wearSearch))
                 end
             end)
-            OutfitCard:Dropdown("Pilih Item Wearable (ItemDB)", "SpoofWearPick", Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot or "back", ""), "Default (Keep Real)", function(v)
+            OutfitCard:Dropdown("Pilih Item Wearable (ItemDB)", "SpoofWearPick", Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot or "back", "", true), "Default (Keep Real)", function(v)
                 Visual.ApplySlotItem(Visual.State.selectedSlot or "back", v)
             end)
             OutfitCard:Input("Custom Item ID Untuk Slot Terpilih", "SpoofCustomItemId", "Masukkan angka ID / 0 untuk lepas", Visual.State.customSlotId or "", function(txt)
@@ -11353,6 +11344,20 @@ end)
         pcall(SYT_Logic.Init, false)
         pcall(scanResponsiveButtons)
         pcall(UIHooks.updateButtons)
+        if UI and UI._DropRefresh then
+            if UI._DropRefresh.MiscFollowTarget then
+                pcall(function() UI._DropRefresh.MiscFollowTarget(Misc.GetFollowCandidates(true)) end)
+            end
+            if UI._DropRefresh.SpoofWearPick and H.ItemDB then
+                Visual._wearInitSynced = true
+                pcall(function()
+                    UI._DropRefresh.SpoofWearPick(Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot or "back", Visual.State.wearSearch, true))
+                end)
+            end
+        end
+        if UI and PNB and PNB.State and PNB.State.selectedBlockId then
+            UI:SetValue("PnbSelectedDisplay", string.format("%s (ID:%d)", Core.GetItemName(PNB.State.selectedBlockId), PNB.State.selectedBlockId))
+        end
         if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
         if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end
     end)
@@ -11362,12 +11367,14 @@ end
 cleanupSYTGuiContainers(nil)
 ensureSharedModulesReady(2.0)
 LP = LP or Players.LocalPlayer
+UIHooks.rerunning = true
 pcall(SYT_Logic.Init, false)
 
 do
     local okInit, initErr = safeInitSYTWindow(UIHooks.theme or "Minimalist Monochrome", UIHooks.scale or 1.0, false)
     if not okInit then
         warn("[SYT] Gagal init UI: " .. tostring(initErr))
+        UIHooks.rerunning = false
     else
         local okB, buildErr = xpcall(buildSYTMenuFn, debug.traceback)
         if not okB then
@@ -11380,6 +11387,7 @@ do
             local sg = getActiveMenuGui()
             if sg and sg.Parent and menuIsReady() then
                 sg.Enabled = true
+                UIHooks.rerunning = false
                 task.defer(function()
                     if UI and type(UI.SyncNavCanvas) == "function" then
                         pcall(UI.SyncNavCanvas)
@@ -11399,7 +11407,7 @@ do
     end
 end
 
--- Watchdog: bila ScreenGui/canvas menu hilang karena sistem/game/sleep (bukan ditutup user), buka ulang otomatis
+-- Watchdog: bila ScreenGui/MainWindow atau fitur menu hilang setelah boot (bukan ditutup user), buka ulang tanpa mematikan otomasi
 task.spawn(function()
     local missing = 0
     task.wait(2.0)
@@ -11407,13 +11415,16 @@ task.spawn(function()
         task.wait(1.2)
         if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN or UIHooks.userDestroy then break end
         if not UIHooks.rerunning then
-            if menuIsReady() then
+            local sg = getActiveMenuGui()
+            local windowAlive = sg and sg.Parent and (not UI or not UI.MainWindow or UI.MainWindow.Parent ~= nil)
+            local featuresOk = UI and type(UI.Features) == "table" and #UI.Features >= 8
+            if windowAlive and featuresOk and menuIsReady() then
                 missing = 0
             else
                 missing += 1
                 if missing >= 2 then
                     missing = 0
-                    SYT_Logic.RebuildMenu("Watchdog: menu terhapus sistem/game", 0.15, true)
+                    SYT_Logic.RebuildMenu("Watchdog: menu terhapus sistem/game", 0.15, false)
                 end
             end
         end

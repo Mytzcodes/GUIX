@@ -410,17 +410,7 @@ local function getAllGuiRoots()
     return roots
 end
 
-local function safeGetGC(includeTables, forceAllowGc)
-    local gs = SYT_Logic and SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
-    if not forceAllowGc and (not gs or gs.antiGetgcMode ~= false) then
-        return {}
-    end
-    if type(getgc) == "function" then
-        local ok, res = pcall(getgc, includeTables == true)
-        if ok and type(res) == "table" then return res end
-    end
-    return {}
-end
+-- safeGetGC dideklarasikan setelah tabel H agar pembacaan status antiGetgcMode selalu valid (tanpa forward reference)
 
 local _debug = debug or {}
 local function uv(fn, idx)
@@ -644,7 +634,20 @@ local H = {
     collectConn      = nil,
     rouletteGui      = nil,
     onNotify         = nil,
+    antiGetgcMode    = true,
+    _reqCache        = {},
 }
+
+local function safeGetGC(includeTables, forceAllowGc)
+    if not forceAllowGc and H.antiGetgcMode ~= false then
+        return {}
+    end
+    if type(getgc) == "function" then
+        local ok, res = pcall(getgc, includeTables == true)
+        if ok and type(res) == "table" then return res end
+    end
+    return {}
+end
 
 local UIHooks = {
     refreshMap     = nil,
@@ -757,6 +760,40 @@ local function isTreeMapCandidate(tbl)
     return false
 end
 
+local function isWheelMapCandidate(tbl)
+    if type(tbl) ~= "table" or tbl == H.gt or tbl == H.ItemDB or tbl == H.Net or tbl == H.inv then
+        return false
+    end
+    for k, v in pairs(tbl) do
+        if type(k) == "number" and type(v) == "table" and type(v.ends) == "number" and v.n ~= nil then
+            return true
+        end
+        return false
+    end
+    return false
+end
+
+local function safeRequireNoYield(mod)
+    if typeof(mod) ~= "Instance" or not mod:IsA("ModuleScript") then
+        return nil
+    end
+    H._reqCache = H._reqCache or setmetatable({}, { __mode = "k" })
+    local cached = H._reqCache[mod]
+    if cached ~= nil then
+        return (cached ~= false) and cached or nil
+    end
+    local co = coroutine.create(require)
+    local ok, res = coroutine.resume(co, mod)
+    if ok and coroutine.status(co) == "dead" and res ~= nil then
+        H._reqCache[mod] = res
+        return res
+    end
+    if coroutine.status(co) == "dead" then
+        H._reqCache[mod] = false
+    end
+    return nil
+end
+
 local function matchKnownGameTable(v, forceInvRefresh)
     if type(v) ~= "table" then return end
     if not H.gt and isValidGT(v) then
@@ -797,25 +834,63 @@ local function matchKnownGameTable(v, forceInvRefresh)
 end
 
 local function scanSharedPacksAndRenderUpvalues(forceInvRefresh)
-    local visited = {}
-    local function inspectTbl(tbl, depth)
-        if type(tbl) ~= "table" or visited[tbl] then return end
-        visited[tbl] = true
-        matchKnownGameTable(tbl, forceInvRefresh)
-        if (depth or 0) < 1 then
-            for _, sub in pairs(tbl) do
-                if type(sub) == "table" and not visited[sub] then
-                    matchKnownGameTable(sub, forceInvRefresh)
+    local visitedTbl = {}
+    local visitedFn = {}
+    local function inspectVal(val, depth)
+        local t = type(val)
+        if typeof(val) == "Instance" then
+            if val:IsA("ModuleScript") then
+                local reqTbl = safeRequireNoYield(val)
+                if type(reqTbl) == "table" then
+                    inspectVal(reqTbl, math.max(depth or 0, 2))
+                end
+            end
+            return
+        end
+        if t ~= "table" or visitedTbl[val] then return end
+        visitedTbl[val] = true
+        matchKnownGameTable(val, forceInvRefresh)
+        if (depth or 0) < 2 then
+            for _, sub in pairs(val) do
+                if type(sub) == "table" and not visitedTbl[sub] then
+                    inspectVal(sub, (depth or 0) + 1)
+                elseif typeof(sub) == "Instance" and sub:IsA("ModuleScript") then
+                    inspectVal(sub, (depth or 0) + 1)
                 end
             end
         end
     end
 
-    -- 1) Cek pack obfuscated di shared[k] & atribut "k" dari ReplicatedStorage / GameGui
+    local function scanFnUvs(fn, depth)
+        if type(fn) ~= "function" or visitedFn[fn] then return end
+        visitedFn[fn] = true
+        local ups = guvs(fn)
+        if type(ups) == "table" then
+            for _, val in pairs(ups) do
+                if type(val) == "table" then
+                    matchKnownGameTable(val, forceInvRefresh)
+                elseif type(val) == "function" and (depth or 0) < 1 then
+                    scanFnUvs(val, (depth or 0) + 1)
+                end
+            end
+        else
+            for idx = 1, 180 do
+                local val = uv(fn, idx)
+                if val == nil and idx > 110 then break end
+                if type(val) == "table" then
+                    matchKnownGameTable(val, forceInvRefresh)
+                elseif type(val) == "function" and (depth or 0) < 1 then
+                    scanFnUvs(val, (depth or 0) + 1)
+                end
+            end
+        end
+    end
+
+    -- 1) Scan pack obfuscated di shared[k] & atribut "k" (termasuk ModuleScript di dalam pack)
     local sharedTbl = rawget(_G, "shared") or shared
     if type(sharedTbl) == "table" then
         for _, v in pairs(sharedTbl) do
-            inspectTbl(v, 0)
+            inspectVal(v, 0)
         end
         local function scanAttrRoot(root)
             if typeof(root) ~= "Instance" then return end
@@ -825,7 +900,7 @@ local function scanSharedPacksAndRenderUpvalues(forceInvRefresh)
                     if inst:IsA("LuaSourceContainer") or inst:IsA("ModuleScript") then
                         local okK, kVal = pcall(inst.GetAttribute, inst, "k")
                         if okK and kVal ~= nil and sharedTbl[kVal] ~= nil then
-                            inspectTbl(sharedTbl[kVal], 0)
+                            inspectVal(sharedTbl[kVal], 0)
                         end
                     end
                 end
@@ -836,30 +911,53 @@ local function scanSharedPacksAndRenderUpvalues(forceInvRefresh)
         scanAttrRoot(pg and pg:FindFirstChild("GameGui"))
     end
 
-    -- 2) Cek upvalues dari H.renderFn & fungsi gt bila sudah ditemukan
-    local function scanFnUvs(fn)
-        if type(fn) ~= "function" then return end
-        local ups = guvs(fn)
-        if type(ups) == "table" then
-            for _, val in pairs(ups) do
-                if type(val) == "table" then
-                    matchKnownGameTable(val, forceInvRefresh)
-                end
-            end
-        else
-            for idx = 1, 160 do
-                local val = uv(fn, idx)
-                if type(val) == "table" then
-                    matchKnownGameTable(val, forceInvRefresh)
+    -- 2) Jika Net / ItemDB / Roles masih kosong (nama module ter-obfuscate), scan ReplicatedStorage.Shared tanpa yield
+    if not H.Net or not H.ItemDB or not H.Roles then
+        local sh = ReplicatedStorage and ReplicatedStorage:FindFirstChild("Shared")
+        if sh then
+            local okC, children = pcall(sh.GetDescendants, sh)
+            if okC and type(children) == "table" then
+                for _, inst in ipairs(children) do
+                    if inst:IsA("ModuleScript") then
+                        local reqTbl = safeRequireNoYield(inst)
+                        if type(reqTbl) == "table" then
+                            matchKnownGameTable(reqTbl, forceInvRefresh)
+                        end
+                    end
                 end
             end
         end
     end
-    scanFnUvs(H.renderFn)
-    if H.gt then
-        for _, fnName in ipairs({ "goTo", "tileChanged", "dropList", "touchBlocks" }) do
-            if type(rawget(H.gt, fnName)) == "function" then
-                scanFnUvs(rawget(H.gt, fnName))
+
+    -- 3) Scan semua koneksi RunService.RenderStepped untuk H.gt, H.renderFn, H.skillsObj, H.others, dll.
+    if type(getconnections) == "function" then
+        local okConns, conns = pcall(getconnections, RunService.RenderStepped)
+        if okConns and type(conns) == "table" then
+            for _, c in ipairs(conns) do
+                local fn = type(c) == "table" and (c.Function or c["function"]) or nil
+                if type(fn) == "function" then
+                    scanFnUvs(fn, 0)
+                    if not H.renderFn and H.gt and uv(fn, 1) == H.gt then
+                        for idx = 1, 140 do
+                            local val = uv(fn, idx)
+                            if val == nil and idx > 110 then break end
+                            if typeof(val) == "Instance" and val:IsA("UIScale") then
+                                H.renderFn = fn
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- 4) Traversal upvalue graf dari H.renderFn, fungsi H.gt, H.Net listeners, H.others & H.stateObj
+    scanFnUvs(H.renderFn, 0)
+    if type(H.gt) == "table" then
+        for _, v in pairs(H.gt) do
+            if type(v) == "function" then
+                scanFnUvs(v, 0)
             end
         end
         if (not isValidInv(H.inv) or forceInvRefresh) and type(rawget(H.gt, "backpackNow")) == "function" then
@@ -869,14 +967,48 @@ local function scanSharedPacksAndRenderUpvalues(forceInvRefresh)
             end
         end
     end
+    if type(H.Net) == "table" then
+        for _, ch in pairs(H.Net) do
+            if type(ch) == "table" then
+                if type(rawget(ch, "getListeners")) == "function" then
+                    local okL, ls = pcall(ch.getListeners)
+                    if okL and type(ls) == "table" then
+                        for _, lfn in ipairs(ls) do
+                            scanFnUvs(lfn, 0)
+                        end
+                    end
+                end
+                if type(rawget(ch, "listen")) == "function" then
+                    scanFnUvs(rawget(ch, "listen"), 1)
+                end
+            elseif type(ch) == "function" then
+                scanFnUvs(ch, 0)
+            end
+        end
+    end
+    if type(H.others) == "table" then
+        for _, v in pairs(H.others) do
+            if type(v) == "function" then
+                scanFnUvs(v, 0)
+            end
+        end
+    end
+    if type(H.stateObj) == "table" then
+        for _, v in pairs(H.stateObj) do
+            if type(v) == "function" then
+                scanFnUvs(v, 0)
+            end
+        end
+    end
+
     if not H.mobileControls then
         pcall(function()
             local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
             local gg = pg and pg:FindFirstChild("GameGui")
             local mcMod = gg and gg:FindFirstChild("MobileControls")
             if mcMod and mcMod:IsA("ModuleScript") then
-                local okReq, modTbl = pcall(require, mcMod)
-                if okReq and type(modTbl) == "table" then
+                local modTbl = safeRequireNoYield(mcMod)
+                if type(modTbl) == "table" then
                     H._mcModRef = modTbl
                     if type(modTbl.current) == "table" then
                         H.mobileControls = modTbl.current
@@ -885,19 +1017,6 @@ local function scanSharedPacksAndRenderUpvalues(forceInvRefresh)
             end
         end)
     end
-end
-
-local function isWheelMapCandidate(tbl)
-    if type(tbl) ~= "table" or tbl == H.gt or tbl == H.ItemDB or tbl == H.Net then
-        return false
-    end
-    for k, v in pairs(tbl) do
-        if type(k) == "number" and type(v) == "table" and type(v.ends) == "number" and v.n ~= nil then
-            return true
-        end
-        return false
-    end
-    return false
 end
 
 local function inspectUpvalues(gt)
@@ -1237,9 +1356,10 @@ function Core.GetActionRange(kind)
     end
     local sk = H.skillsObj
     local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
-    local shieldOn = not (gs and gs.antiKickShield == false)
-    local allowSpoof = (not shieldOn) and gs and gs.spoofServerReach == true
-    local src = (sk and H.skillsHookedFor == sk and H.origSkills and not allowSpoof) and H.origSkills or sk
+    if gs and gs.enabled and (gs.bypassClientRange or gs.spoofServerReach) then
+        return clamp(tonumber(gs.maxRangeTiles) or 12, 3.5, 16.0)
+    end
+    local src = (sk and H.skillsHookedFor == sk and H.origSkills) and H.origSkills or sk
     local r = 2.5
     if src then
         if kind == "build" or kind == "place" then
@@ -1257,7 +1377,7 @@ function Core.GetActionRange(kind)
             end
         end
     end
-    return math.max(2.35, r - 0.05)
+    return math.max(r - 0.05, 3.35)
 end
 
 function Core.IsInActionReach(tx, ty, kind, posOverride)
@@ -1540,19 +1660,20 @@ function Core.SanitizeOutboundMove(pkt, fromBot, forceBypass)
     end
     local gt = H.gt
     if gt and gt.w and gt.h then
-        if px < -0.5 or px > (gt.w + 0.5) or py < -2.0 or py > (gt.h + 1.5) then
-            return nil, "out_of_world_bounds"
-        end
+        px = clamp(px, 0.05, gt.w - 0.05)
+        py = clamp(py, 0.05, gt.h - 0.05)
     end
 
     local now = os.clock()
+    if fromBot then
+        H.lastBotMoveAt = now
+    end
     local vx = tonumber(pkt.vx) or 0
     local vy = tonumber(pkt.vy) or 0
     local flags = toInt(pkt.flags, 2)
     local ts = clamp(math.floor(tonumber(pkt.t) or ((now * 1000) % 65535)), 0, 65535)
     local miscRef = SYT_Logic.Misc
     local ms = miscRef and miscRef.State
-    local stopNoSend = Core.GetStopOrNoSendMode()
     local antiBack = Core.IsAntiBackActive()
 
     if ms and ms.noClip and ms.noClipAnchor and not fromBot and not forceBypass then
@@ -1565,15 +1686,8 @@ function Core.SanitizeOutboundMove(pkt, fromBot, forceBypass)
         return { x = am.x, y = am.y, vx = am.vx or 0, vy = am.vy or 0, flags = am.flags or 2, t = ts }
     end
 
-    -- Bila mode Stop aktif karena rollback baru saja terdeteksi (di luar Fly aktif), tahan paket liar hingga aman kembali
-    local flyActive = (ms and ms.fly == true)
-    if not flyActive and stopNoSend == "stop" and now < (H.stopMoveUntil or 0) and not forceBypass then
-        H.lastActionBlockedAt = now
-        H.lastActionBlockedReason = "stop_move_guard"
-        return nil, "stop_move_guard"
-    end
-
     -- Ketika SteppedAnchor Fly memegang kontrol terbang, tahan broadcast Others.lua yang mengirim vy/ungrounded liar
+    local flyActive = (ms and ms.fly == true)
     if flyActive and ms.flyMethod ~= "GhostHybrid" and not fromBot and not forceBypass then
         return nil, "fly_anchor_owns_move"
     end
@@ -1586,7 +1700,7 @@ function Core.SanitizeOutboundMove(pkt, fromBot, forceBypass)
         flags = facingBit + groundedBit
     end
 
-    -- Validasi step delta terhadap paket Move terakhir agar tidak memicu server BasePath rollback atau Speed Kick
+    -- Validasi step delta terhadap paket Move terakhir agar tidak memicu server BasePath rollback atau Speed Kick tanpa membuang paket
     local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
     local shieldOn = not (gs and gs.antiKickShield == false)
     local prev = H.lastSentMove
@@ -1595,40 +1709,39 @@ function Core.SanitizeOutboundMove(pkt, fromBot, forceBypass)
         local dy = py - prev.y
         local absDx, absDy = math.abs(dx), math.abs(dy)
         if not flyActive and not fromBot and (absDx > 6.5 or absDy > 6.5) then
-            if stopNoSend == "stop" then
-                H.stopMoveUntil = now + 0.30
+            if now < (H.goToAllowedUntil or 0) or now <= (H.allowNextMoveToUntil or 0) or (now - (H.lastBotMoveAt or 0)) < 0.60 then
+                prev = nil
             end
-            H.lastActionBlockedAt = now
-            H.lastActionBlockedReason = "no_send_huge_delta"
-            return nil, "no_send_huge_delta"
         end
-        local dt = clamp(now - (prev.t or now), 0.016, 0.25)
-        local capH, capV
-        if flyActive then
-            capH = shieldOn and 1.35 or 1.45
-            capV = shieldOn and 1.45 or 1.55
-        elseif shieldOn then
-            local safeRate = clamp(tonumber(gs and gs.safeWalkSpeedCap) or 10.4, 7.2, 13.5)
-            capH = clamp(dt * safeRate + 0.30, 0.34, 2.35)
-            capV = clamp(dt * 24.5 + 0.45, 0.45, 3.35)
-        else
-            capH = 3.55
-            capV = 3.35
-        end
-        if absDx > capH or absDy > capV then
-            local cdx = clamp(dx, -capH, capH)
-            local cdy = clamp(dy, -capV, capV)
-            px = prev.x + cdx
-            py = prev.y + cdy
+        if prev then
+            local dt = clamp(now - (prev.t or now), 0.016, 0.25)
+            local capH, capV
             if flyActive then
-                local dtPrev = math.max(0.055, now - (prev.t or now))
-                vx = clamp(cdx / dtPrev, -18.0, 18.0)
-                vy = clamp(cdy / dtPrev, -22.0, 24.0)
+                capH = shieldOn and 1.35 or 1.45
+                capV = shieldOn and 1.45 or 1.55
+            elseif shieldOn then
+                local safeRate = clamp(tonumber(gs and gs.safeWalkSpeedCap) or 10.4, 7.2, 13.5)
+                capH = clamp(dt * safeRate + 0.30, 0.34, 2.35)
+                capV = clamp(dt * 24.5 + 0.45, 0.45, 3.35)
             else
-                vx = clamp(vx, -10.5, 10.5)
-                vy = clamp(vy, -24.0, 24.0)
-                local facingBit = (math.floor(flags) % 2 == 1) and 1 or 0
-                flags = facingBit + 2
+                capH = 3.55
+                capV = 3.35
+            end
+            if absDx > capH or absDy > capV then
+                local cdx = clamp(dx, -capH, capH)
+                local cdy = clamp(dy, -capV, capV)
+                px = prev.x + cdx
+                py = prev.y + cdy
+                if flyActive then
+                    local dtPrev = math.max(0.055, now - (prev.t or now))
+                    vx = clamp(cdx / dtPrev, -18.0, 18.0)
+                    vy = clamp(cdy / dtPrev, -22.0, 24.0)
+                else
+                    vx = clamp(vx, -10.5, 10.5)
+                    vy = clamp(vy, -24.0, 24.0)
+                    local facingBit = (math.floor(flags) % 2 == 1) and 1 or 0
+                    flags = facingBit + 2
+                end
             end
         end
     end
@@ -1636,13 +1749,6 @@ function Core.SanitizeOutboundMove(pkt, fromBot, forceBypass)
     if shieldOn and not flyActive and not forceBypass then
         vx = clamp(vx, -12.0, 12.0)
         vy = clamp(vy, -26.0, 26.0)
-    end
-
-    if shieldOn and not flyActive and not fromBot and not forceBypass and prev and (now - (H.fwMoveLastSentAt or 0)) < 0.026 then
-        local sameGrounded = (math.floor(flags) % 4 >= 2) == (math.floor(prev.flags or 2) % 4 >= 2)
-        if sameGrounded and math.abs(px - prev.x) < 0.14 and math.abs(py - prev.y) < 0.14 then
-            return nil, "move_rate_coalesce"
-        end
     end
 
     local cleanPkt = { x = px, y = py, vx = vx, vy = vy, flags = flags, t = ts }
@@ -1733,8 +1839,11 @@ function Core.EnsureOutboundFirewall()
         return false
     end
 
-    local function allowWindow(chan, maxCount, winSec)
-        local now = os.clock()
+    local function canYieldThread()
+        return type(coroutine.isyieldable) == "function" and coroutine.isyieldable() == true
+    end
+
+    local function pruneWindow(chan, winSec, now)
         local q = H.fwBucket[chan]
         if not q then q = {}; H.fwBucket[chan] = q end
         local cut = now - winSec
@@ -1746,10 +1855,31 @@ function Core.EnsureOutboundFirewall()
             end
         end
         for i = writeIdx, #q do q[i] = nil end
-        if #q >= maxCount then
-            return false
+        return q
+    end
+
+    local function paceWindow(chan, maxCount, winSec)
+        local now = os.clock()
+        local q = pruneWindow(chan, winSec, now)
+        if #q >= maxCount and q[1] then
+            local waitSec = (q[1] + winSec + 0.004) - now
+            if waitSec > 0 and canYieldThread() then
+                task.wait(math.min(waitSec, 0.10))
+                now = os.clock()
+                q = pruneWindow(chan, winSec, now)
+            end
         end
-        q[#q + 1] = now
+        q[#q + 1] = os.clock()
+        return true
+    end
+
+    local function paceGap(lastAt, minGap)
+        local tLast = tonumber(lastAt) or 0
+        if tLast <= 0 or minGap <= 0 then return true end
+        local rem = (tLast + minGap) - os.clock()
+        if rem > 0 and canYieldThread() then
+            task.wait(math.min(rem, 0.12))
+        end
         return true
     end
 
@@ -1776,19 +1906,11 @@ function Core.EnsureOutboundFirewall()
         return false
     end
 
-    local function withinRealReach(tx, ty, kind, tol)
-        local pos = Core.ReadPos()
-        local r = Core.GetRealServerRange(kind) + (tol or 0.68)
-        local dx = math.abs((tx + 0.5) - pos.x)
-        local dy = math.abs((ty + 0.5) - (pos.y - 0.475))
-        return dx <= r and dy <= r
-    end
-
     if net.tile and type(net.tile.send) == "function" then
         local origTile = net.tile.send
         H.origNetSendMap.tile = origTile
         net.tile.send = function(pkt)
-            if shieldActive() and type(pkt) == "table" then
+            if type(pkt) == "table" then
                 local gt = H.gt
                 local tx, ty = toInt(pkt.x), toInt(pkt.y)
                 local lyr = toInt(pkt.layer, 1)
@@ -1796,36 +1918,20 @@ function Core.EnsureOutboundFirewall()
                 if not tx or not ty or (gt and (tx < 0 or tx >= gt.w or ty < 0 or ty >= gt.h)) then
                     return blockPacket("tile_oob")
                 end
-                if type(Core.CanRealEditTile) == "function" and not Core.CanRealEditTile(tx, ty) then
-                    return blockPacket("tile_locked_area")
-                end
-                local curId = Core.GetLayerTile(tx, ty, lyr)
-                if curId ~= 0 and Core.IsProtectedTile(curId) then
-                    return blockPacket("tile_protected")
-                end
-                local kind = (id == 0) and "break" or "place"
-                if not withinRealReach(tx, ty, kind, 0.72) then
-                    return blockPacket("tile_out_of_real_range")
-                end
-                local now = os.clock()
-                if id ~= 0 then
-                    local rejAt = H.lastPlaceRejectedAt or 0
-                    if (rejAt > 0 and (now - rejAt) < 0.28) or (now - (H.fwLastPlaceSentAt or 0)) < 0.140 then
-                        return blockPacket("place_flood")
+                if shieldActive() then
+                    if id ~= 0 then
+                        if (H.lastPlaceRejectedAt or 0) > 0 then
+                            paceGap(H.lastPlaceRejectedAt, 0.28)
+                        end
+                        paceGap(H.fwLastPlaceSentAt, 0.140)
+                        paceWindow("place", 6, 0.90)
+                        H.fwLastPlaceSentAt = os.clock()
+                    else
+                        local tk = tostring(lyr) .. ":" .. tostring(tx) .. "," .. tostring(ty)
+                        paceGap(H.fwTileLastAt[tk], 0.055)
+                        paceWindow("break_tile", 10, 0.28)
+                        H.fwTileLastAt[tk] = os.clock()
                     end
-                    if not allowWindow("place", 6, 0.90) then
-                        return blockPacket("place_burst")
-                    end
-                    H.fwLastPlaceSentAt = now
-                else
-                    local tk = tostring(lyr) .. ":" .. tostring(tx) .. "," .. tostring(ty)
-                    if (now - (H.fwTileLastAt[tk] or 0)) < 0.055 then
-                        return blockPacket("break_same_tile_flood")
-                    end
-                    if not allowWindow("break_tile", 10, 0.28) then
-                        return blockPacket("break_tile_burst")
-                    end
-                    H.fwTileLastAt[tk] = now
                 end
             end
             return origTile(pkt)
@@ -1837,20 +1943,7 @@ function Core.EnsureOutboundFirewall()
         H.origNetSendMap.punch = origPunch
         net.punch.send = function(pkt)
             if shieldActive() and type(pkt) == "table" then
-                local tx = tonumber(pkt.tx or pkt.x)
-                local ty = tonumber(pkt.ty or pkt.y)
-                if tx and ty then
-                    local itx, ity = math.floor(tx), math.floor(ty)
-                    if not withinRealReach(itx, ity, "punch", 0.75) then
-                        return blockPacket("punch_out_of_range")
-                    end
-                    if type(Core.CanRealEditTile) == "function" and not Core.CanRealEditTile(itx, ity) then
-                        return blockPacket("punch_locked_area")
-                    end
-                end
-                if not allowWindow("punch", 10, 0.30) then
-                    return blockPacket("punch_burst")
-                end
+                paceWindow("punch", 10, 0.30)
             end
             return origPunch(pkt)
         end
@@ -1861,17 +1954,7 @@ function Core.EnsureOutboundFirewall()
         H.origNetSendMap.act = origAct
         net.act.send = function(pkt)
             if shieldActive() and type(pkt) == "table" then
-                local px, py = tonumber(pkt.x), tonumber(pkt.y)
-                if px and py then
-                    local tx, ty = math.floor(px), math.floor(py)
-                    local kind = (pkt.kind == 2 or pkt.kind == 3) and "place" or "punch"
-                    if not withinRealReach(tx, ty, kind, 1.15) then
-                        return blockPacket("act_out_of_range")
-                    end
-                end
-                if not allowWindow("act", 26, 0.28) then
-                    return blockPacket("act_burst")
-                end
+                paceWindow("act", 26, 0.28)
             end
             return origAct(pkt)
         end
@@ -1881,17 +1964,14 @@ function Core.EnsureOutboundFirewall()
         local origHarv = net.harvest.send
         H.origNetSendMap.harvest = origHarv
         net.harvest.send = function(pkt)
-            if shieldActive() and type(pkt) == "table" then
+            if type(pkt) == "table" then
+                local gt = H.gt
                 local tx, ty = toInt(pkt.x), toInt(pkt.y)
-                if not tx or not ty then return blockPacket("harvest_bad") end
-                if not withinRealReach(tx, ty, "punch", 0.75) then
-                    return blockPacket("harvest_out_of_range")
+                if not tx or not ty or (gt and (tx < 0 or tx >= gt.w or ty < 0 or ty >= gt.h)) then
+                    return blockPacket("harvest_bad")
                 end
-                if type(Core.CanRealEditTile) == "function" and not Core.CanRealEditTile(tx, ty) then
-                    return blockPacket("harvest_locked")
-                end
-                if not allowWindow("harvest", 8, 0.30) then
-                    return blockPacket("harvest_burst")
+                if shieldActive() then
+                    paceWindow("harvest", 8, 0.30)
                 end
             end
             return origHarv(pkt)
@@ -1902,18 +1982,14 @@ function Core.EnsureOutboundFirewall()
         local origSpl = net.splice.send
         H.origNetSendMap.splice = origSpl
         net.splice.send = function(pkt)
-            if shieldActive() and type(pkt) == "table" then
+            if type(pkt) == "table" then
+                local gt = H.gt
                 local tx, ty = toInt(pkt.x or pkt.tx), toInt(pkt.y or pkt.ty)
-                if tx and ty then
-                    if not withinRealReach(tx, ty, "place", 0.75) then
-                        return blockPacket("splice_out_of_range")
-                    end
-                    if type(Core.CanRealEditTile) == "function" and not Core.CanRealEditTile(tx, ty) then
-                        return blockPacket("splice_locked")
-                    end
+                if tx and ty and gt and (tx < 0 or tx >= gt.w or ty < 0 or ty >= gt.h) then
+                    return blockPacket("splice_oob")
                 end
-                if not allowWindow("splice", 5, 0.75) then
-                    return blockPacket("splice_burst")
+                if shieldActive() then
+                    paceWindow("splice", 5, 0.75)
                 end
             end
             return origSpl(pkt)
@@ -1925,11 +2001,8 @@ function Core.EnsureOutboundFirewall()
         H.origNetSendMap.drop = origDrop
         net.drop.send = function(pkt)
             if shieldActive() then
-                local now = os.clock()
-                if (now - (H.fwLastDropSentAt or 0)) < 1.05 then
-                    return blockPacket("drop_cooldown")
-                end
-                H.fwLastDropSentAt = now
+                paceGap(H.fwLastDropSentAt, 1.05)
+                H.fwLastDropSentAt = os.clock()
             end
             return origDrop(pkt)
         end
@@ -1939,8 +2012,8 @@ function Core.EnsureOutboundFirewall()
         local origTake = net.take.send
         H.origNetSendMap.take = origTake
         net.take.send = function(pkt)
-            if shieldActive() and not allowWindow("take", 16, 0.35) then
-                return blockPacket("take_burst")
+            if shieldActive() then
+                paceWindow("take", 16, 0.35)
             end
             return origTake(pkt)
         end
@@ -1950,8 +2023,8 @@ function Core.EnsureOutboundFirewall()
         local origWear = net.wear.send
         H.origNetSendMap.wear = origWear
         net.wear.send = function(pkt)
-            if shieldActive() and not allowWindow("wear", 3, 0.80) then
-                return blockPacket("wear_burst")
+            if shieldActive() then
+                paceWindow("wear", 3, 0.80)
             end
             return origWear(pkt)
         end
@@ -1966,9 +2039,7 @@ function Core.EnsureOutboundFirewall()
                 if subCmd ~= "msg" and not realIsStaff() then
                     return blockPacket("nonstaff_modcommand")
                 end
-                if not allowWindow("modcommand_msg", 1, 2.35) then
-                    return blockPacket("modcommand_flood")
-                end
+                paceWindow("modcommand_msg", 1, 2.35)
             end
             return origCall(remoteName, ...)
         end
@@ -2277,6 +2348,9 @@ function Core.InstallGetgcBypassHooks()
 end
 
 function Core.SyncBypassSystem(forceInit)
+    if SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State then
+        H.antiGetgcMode = (SYT_Logic.GetcSkipper.State.antiGetgcMode ~= false)
+    end
     if forceInit == true or (forceInit ~= "hooks_only" and not H.initialized) then
         Core.EnsureInit(forceInit == true)
     elseif not H.skillsObj or not isValidGT(H.gt) or not H.Net or not isValidInv(H.inv) then
@@ -2336,7 +2410,7 @@ function SYT_Logic.Init(forceRefresh)
         H.stopMoveUntil = 0
         Core.AllowMoveToWindow(2.0)
     end
-    if H.initialized and not forceRefresh and isValidGT(H.gt) and H.Net and H.ItemDB and H.inv then
+    if H.initialized and not forceRefresh and isValidGT(H.gt) and H.Net and H.ItemDB and isValidInv(H.inv) and H.stateObj and H.others and H.skillsObj and H.trees then
         Core.SyncBypassSystem("hooks_only")
         return true
     end
@@ -2384,9 +2458,8 @@ function SYT_Logic.Init(forceRefresh)
 
     pcall(scanSharedPacksAndRenderUpvalues, forceRefresh == true)
 
-    local needTableScan = (not isValidGT(H.gt) or not H.Net or not H.ItemDB or not H.inv or not H.stateObj or not H.others or not H.skillsObj or not H.nameTagObj)
-    local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
-    if needTableScan and gs and gs.antiGetgcMode == false and (nowT - (H.lastGcScanAt or 0) >= 4.0 or not isValidGT(H.gt)) then
+    local needTableScan = (not isValidGT(H.gt) or not H.Net or not H.ItemDB or not isValidInv(H.inv) or not H.stateObj or not H.others or not H.skillsObj or not H.trees)
+    if needTableScan and (nowT - (H.lastGcScanAt or 0) >= 4.0 or not isValidGT(H.gt) or not H.Net) then
         H.lastGcScanAt = nowT
         for _, v in ipairs(safeGetGC(true, true)) do
             if type(v) == "table" then
@@ -2475,8 +2548,7 @@ function Core.EnsureManualInputHook()
         end
     end
 
-    local gsMc = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
-    if #list == 0 and H.gt and gsMc and gsMc.antiGetgcMode == false and (os.clock() - (H.lastMcGcScanAt or 0)) > 1.5 then
+    if #list == 0 and H.gt and (os.clock() - (H.lastMcGcScanAt or 0)) > 1.5 then
         H.lastMcGcScanAt = os.clock()
         for _, obj in ipairs(safeGetGC(true, true)) do
             if type(obj) == "table"
@@ -2800,7 +2872,7 @@ function Core.GetLiveInventory()
     end
     if not isValidInv(H.inv) and (os.clock() - (H.lastInvGcAt or 0)) >= 3.0 then
         H.lastInvGcAt = os.clock()
-        for _, v in ipairs(safeGetGC(true)) do
+        for _, v in ipairs(safeGetGC(true, true)) do
             if isValidInv(v) then
                 H.inv = v
                 break
@@ -3287,6 +3359,9 @@ end
 
 function GetcSkipper.SetBypassOption(key, val)
     GetcSkipper.State[key] = val
+    if key == "antiGetgcMode" then
+        H.antiGetgcMode = (val ~= false)
+    end
     Core.SyncBypassSystem(false)
     return GetcSkipper.State[key]
 end
@@ -3610,9 +3685,6 @@ local function executeServerSyncedPath(tx, ty, speedH, speedV, shouldContinueFn,
     end
     local gt = H.gt
     if not gt then return false, "gt nil" end
-    if stopMode == "stop" and os.clock() < (H.stopMoveUntil or 0) then
-        return false, "stopped_cooldown"
-    end
     tx = clamp(math.floor(tx), 0, gt.w - 1)
     ty = clamp(math.floor(ty), 0, gt.h - 1)
 
@@ -4139,9 +4211,7 @@ function Packets.EnsureActionReach(tx, ty, kind, shouldContinueFn, opts)
         gx, gy = cands[1].x, cands[1].y
     end
     if not gx then
-        H.lastActionBlockedAt = os.clock()
-        H.lastActionBlockedReason = "unreachable_no_send"
-        return false, "unreachable_no_send"
+        return true, "direct_reach"
     end
 
     if opts.preferWalk == true then
@@ -4153,12 +4223,7 @@ function Packets.EnsureActionReach(tx, ty, kind, shouldContinueFn, opts)
         Packets.StepTeleport(gx, gy, 3, math.max(0.048, tonumber(opts.stepDelay) or 0.050), shouldContinueFn)
     end
 
-    if Core.IsInActionReach(tx, ty, kind) then
-        return true, "moved_in_reach"
-    end
-    H.lastActionBlockedAt = os.clock()
-    H.lastActionBlockedReason = "out_of_range_no_send"
-    return false, "out_of_range_no_send"
+    return true, Core.IsInActionReach(tx, ty, kind) and "moved_in_reach" or "best_effort_reach"
 end
 
 local function waitPacketInterval(delaySec, rawTiming, packetKind, shouldContinueFn)
@@ -4235,14 +4300,10 @@ function Packets.PunchBreak(arg1, ty, layer, flip, showHand)
     if not opts.ignoreProtected and Core.IsProtectedTile(curId) then return false, "protected_no_send" end
     if not Core.CanEditTile(tx, py) and not opts.ignoreProtected then return false, "no_edit_no_send" end
 
-    -- Validasi Jangkauan Punch (Game.lua punchRange): Stop / No-Send jika gagal menjangkau
+    -- Validasi Jangkauan Punch (Game.lua punchRange)
     if opts.autoRange ~= false then
         local okR, msgR = Packets.EnsureActionReach(tx, py, "punch", opts.shouldContinue, opts)
         if not okR then return false, msgR end
-    elseif not Core.IsInActionReach(tx, py, "punch") and Core.GetStopOrNoSendMode() ~= "off" then
-        H.lastActionBlockedAt = os.clock()
-        H.lastActionBlockedReason = "punch_out_of_range_no_send"
-        return false, "out_of_range_no_send"
     end
 
     if not opts.skipPlaceCooldown then
@@ -4301,10 +4362,6 @@ function Packets.HitDamage(arg1, ty, oneHit, customHits, hitDelay, layer, showHa
     if opts.autoRange ~= false then
         local okR, msgR = Packets.EnsureActionReach(tx, py, "break", opts.shouldContinue, opts)
         if not okR then return false, msgR end
-    elseif not Core.IsInActionReach(tx, py, "break") and Core.GetStopOrNoSendMode() ~= "off" then
-        H.lastActionBlockedAt = os.clock()
-        H.lastActionBlockedReason = "break_out_of_range_no_send"
-        return false, "out_of_range_no_send"
     end
 
     if opts.oneHit == true then
@@ -4364,9 +4421,6 @@ function Packets.HitDamage(arg1, ty, oneHit, customHits, hitDelay, layer, showHa
     for _ = 1, math.max(0, totalHits - 1) do
         if type(cont) == "function" and not cont() then return false, "cancelled" end
         if Core.GetLayerTile(tx, py, targetLayer) == 0 then return true, "broken" end
-        if not Core.IsInActionReach(tx, py, "break") and Core.GetStopOrNoSendMode() ~= "off" then
-            return false, "moved_out_of_range_no_send"
-        end
         if net.act and net.act.send then
             pcall(net.act.send, { kind = 1, x = tx + 0.5, y = py + 0.5 })
             pcall(net.act.send, { kind = 6, x = tx + 0.5, y = py + 0.5 })
@@ -4383,9 +4437,6 @@ function Packets.HitDamage(arg1, ty, oneHit, customHits, hitDelay, layer, showHa
     for extraPass = 0, maxExtra do
         if type(cont) == "function" and not cont() then return false, "cancelled" end
         if Core.GetLayerTile(tx, py, targetLayer) == 0 then return true, "broken" end
-        if not Core.IsInActionReach(tx, py, "break") and Core.GetStopOrNoSendMode() ~= "off" then
-            return false, "moved_out_of_range_no_send"
-        end
         local sentAt = os.clock()
         local preDrops = countDropsInRadius(tx, py, 1.8)
         Packets.PunchBreak({
@@ -4844,10 +4895,6 @@ function Packets.Place(arg1, ty, itemId, layer, flip, showHand)
     if opts.autoRange ~= false then
         local okR, msgR = Packets.EnsureActionReach(tx, py, "build", opts.shouldContinue, opts)
         if not okR then return false, msgR end
-    elseif not Core.IsInActionReach(tx, py, "build") and Core.GetStopOrNoSendMode() ~= "off" then
-        H.lastActionBlockedAt = os.clock()
-        H.lastActionBlockedReason = "place_out_of_range_no_send"
-        return false, "out_of_range_no_send"
     end
 
     local okBody, bodyReason = Core.CanPlaceBodyOk(tx, py, info)
@@ -4865,9 +4912,6 @@ function Packets.Place(arg1, ty, itemId, layer, flip, showHand)
         if postId == id and not opts.force then return true, "matched" end
         if postId ~= 0 and not opts.force then return false, "occupied" end
         if Core.CountItem(id) <= 0 and not opts.ignoreCount then return false, "no_item" end
-        if not Core.IsInActionReach(tx, py, "build") and Core.GetStopOrNoSendMode() ~= "off" then
-            return false, "out_of_range_no_send"
-        end
         local okB2, bRsn2 = Core.CanPlaceBodyOk(tx, py, info)
         if not okB2 and not opts.ignoreBodyOverlap then
             return false, bRsn2 .. "_no_send"

@@ -178,6 +178,81 @@ local function patchR8FrameworkSource(raw)
         'SyncRightPanelVisibility%(%)%s*\n(%s*)end%s*\n(%s*)return FeatureObj',
         'SyncRightPanelVisibility()\n%1    if type(Self.SyncNavCanvas) == "function" then task.defer(Self.SyncNavCanvas) end\n%1end\n%2return FeatureObj'
     )
+    local extIcons = [==[
+    elseif key == "system" or key == "security" then
+        Outline(sizePx * 0.64, sizePx * 0.72, 0.5, 0.5, 5, 1.8)
+        Bar(sizePx * 0.30, 2, 0.5, 0.46, 0, 1)
+        Bar(2, sizePx * 0.34, 0.5, 0.50, 0, 1)
+    elseif key == "spaming" or key == "spam" then
+        Outline(sizePx * 0.72, sizePx * 0.54, 0.5, 0.45, 5, 1.8)
+        Bar(sizePx * 0.36, 2, 0.5, 0.39, 0, 1)
+        Bar(sizePx * 0.24, 2, 0.44, 0.52, 0, 1)
+        Bar(sizePx * 0.18, 2, 0.33, 0.76, -35, 1)
+    elseif key == "pnb" or key == "pickaxe" then
+        Outline(sizePx * 0.40, sizePx * 0.40, 0.64, 0.66, 2, 1.7)
+        Bar(sizePx * 0.52, 2.1, 0.40, 0.48, -45, 1)
+        Bar(sizePx * 0.34, 2.4, 0.29, 0.29, 45, 1)
+    elseif key == "pabrik" or key == "factory" then
+        Outline(sizePx * 0.72, sizePx * 0.44, 0.5, 0.64, 2, 1.7)
+        Bar(sizePx * 0.16, sizePx * 0.28, 0.28, 0.32, 0, 1)
+        Bar(sizePx * 0.14, sizePx * 0.20, 0.50, 0.36, 0, 1)
+        Bar(sizePx * 0.14, 2, 0.70, 0.32, 0, 1)
+        Bar(sizePx * 0.36, 2, 0.5, 0.64, 0, 1)
+    elseif key == "dirtfarm" or key == "farm" or key == "df" then
+        Bar(2.2, sizePx * 0.72, 0.20, 0.50, 0, 1)
+        Bar(2.2, sizePx * 0.72, 0.80, 0.50, 0, 1)
+        Bar(sizePx * 0.42, 2.2, 0.50, 0.26, 0, 1)
+        Bar(sizePx * 0.42, 2.2, 0.50, 0.50, 0, 1)
+        Bar(sizePx * 0.42, 2.2, 0.50, 0.74, 0, 1)
+    elseif key == "clearworld" or key == "clear" or key == "eraser" or key == "cw" then
+        Bar(sizePx * 0.52, 2.2, 0.58, 0.38, -45, 1)
+        Bar(sizePx * 0.40, sizePx * 0.18, 0.33, 0.64, 45, 2)
+        Bar(sizePx * 0.20, 1.8, 0.26, 0.26, 0, 1)
+        Bar(1.8, sizePx * 0.20, 0.26, 0.26, 0, 1)
+    elseif key == "moveblock" or key == "move" or key == "transfer" then
+        Bar(sizePx * 0.46, 2.1, 0.46, 0.33, 0, 1)
+        Bar(sizePx * 0.18, 2.1, 0.68, 0.28, 45, 1)
+        Bar(sizePx * 0.18, 2.1, 0.68, 0.38, -45, 1)
+        Bar(sizePx * 0.46, 2.1, 0.54, 0.67, 0, 1)
+        Bar(sizePx * 0.18, 2.1, 0.32, 0.62, -45, 1)
+        Bar(sizePx * 0.18, 2.1, 0.32, 0.72, 45, 1)
+    elseif key == "discordhooks" or key == "webhook" or key == "discord" or key == "bell" then
+        Outline(sizePx * 0.26, sizePx * 0.26, 0.50, 0.25, sizePx, 1.7)
+        Outline(sizePx * 0.26, sizePx * 0.26, 0.27, 0.71, sizePx, 1.7)
+        Outline(sizePx * 0.26, sizePx * 0.26, 0.73, 0.71, sizePx, 1.7)
+        Bar(sizePx * 0.34, 2, 0.38, 0.48, -60, 1)
+        Bar(sizePx * 0.34, 2, 0.62, 0.48, 60, 1)
+        Bar(sizePx * 0.32, 2, 0.50, 0.71, 0, 1)
+    elseif key == "proxy" or key == "terminal" or key == "command" then
+        Outline(sizePx * 0.78, sizePx * 0.64, 0.5, 0.5, 3, 1.7)
+        Bar(sizePx * 0.22, 2, 0.34, 0.43, 38, 1)
+        Bar(sizePx * 0.22, 2, 0.34, 0.57, -38, 1)
+        Bar(sizePx * 0.22, 2, 0.64, 0.62, 0, 1)
+    elseif key == "active" or key == "queue" or key == "list" then
+        Bar(3, 3, 0.24, 0.30, 0, 99)
+        Bar(sizePx * 0.44, 2, 0.58, 0.30, 0, 1)
+        Bar(3, 3, 0.24, 0.50, 0, 99)
+        Bar(sizePx * 0.44, 2, 0.58, 0.50, 0, 1)
+        Bar(3, 3, 0.24, 0.70, 0, 99)
+        Bar(sizePx * 0.44, 2, 0.58, 0.70, 0, 1)
+    else
+        Outline(sizePx * 0.56, sizePx * 0.56, 0.5, 0.5, 4, 1.8)]==]
+    patched = string.gsub(
+        patched,
+        '    else%s*\n%s*Outline%(sizePx %* 0%.56, sizePx %* 0%.56, 0%.5, 0%.5, 4, 1%.8%)',
+        function() return extIcons end,
+        1
+    )
+    patched = string.gsub(
+        patched,
+        'local vecTabIcon, recolor = DrawVectorIcon%(NavBtn, logo or name, 20, nil, nil%)%s*\n(%s*)vecTabIcon%.Position = UDim2%.new%(0, 14, 0%.5, %-10%)',
+        'local vecTabIcon, recolor = DrawVectorIcon(NavBtn, logo or name, 16, nil, nil)\n%1vecTabIcon.Position = UDim2.new(0, 12, 0.5, -8)'
+    )
+    patched = string.gsub(
+        patched,
+        'NameLbl%.Position = UDim2%.new%(0, 44, 0, 0%)%s*\n(%s*)NameLbl%.Size = UDim2%.new%(1, %-52, 1, 0%)',
+        'NameLbl.Position = UDim2.new(0, 36, 0, 0)\n%1NameLbl.Size = UDim2.new(1, -44, 1, 0)'
+    )
     return patched
 end
 
@@ -190,20 +265,22 @@ local function loadR8Framework(forceReload)
         env.__SYT_R8_SOURCE_V2 = nil
         env.__SYT_R8_LOADER_V3 = nil
         env.__SYT_R8_SOURCE_V3 = nil
+        env.__SYT_R8_LOADER_V4 = nil
+        env.__SYT_R8_SOURCE_V4 = nil
     end
     if not forceReload and type(cachedR8Loader) == "function" then
         return cachedR8Loader()
     end
     if not forceReload and type(env) == "table" then
-        if type(env.__SYT_R8_LOADER_V4) == "function" then
-            cachedR8Loader = env.__SYT_R8_LOADER_V4
-            if type(env.__SYT_R8_SOURCE_V4) == "string" then
-                cachedR8Source = env.__SYT_R8_SOURCE_V4
+        if type(env.__SYT_R8_LOADER_V5) == "function" then
+            cachedR8Loader = env.__SYT_R8_LOADER_V5
+            if type(env.__SYT_R8_SOURCE_V5) == "string" then
+                cachedR8Source = env.__SYT_R8_SOURCE_V5
             end
             return cachedR8Loader()
         end
-        if type(env.__SYT_R8_SOURCE_V4) == "string" and #env.__SYT_R8_SOURCE_V4 > 128 then
-            cachedR8Source = env.__SYT_R8_SOURCE_V4
+        if type(env.__SYT_R8_SOURCE_V5) == "string" and #env.__SYT_R8_SOURCE_V5 > 128 then
+            cachedR8Source = env.__SYT_R8_SOURCE_V5
         end
     end
     if not cachedR8Source or #cachedR8Source < 128 or forceReload then
@@ -222,14 +299,14 @@ local function loadR8Framework(forceReload)
         assert(okFetch and type(rawScript) == "string" and #rawScript > 128, "[SYT] Gagal mengunduh r&8_dv.lua: " .. tostring(fetchErr or "timeout/kosong"))
         cachedR8Source = patchR8FrameworkSource(rawScript)
         if type(env) == "table" then
-            env.__SYT_R8_SOURCE_V4 = cachedR8Source
+            env.__SYT_R8_SOURCE_V5 = cachedR8Source
         end
     end
     local loader, loadErr = loadstring(cachedR8Source)
     assert(type(loader) == "function", "[SYT] Compile error r&8_dv: " .. tostring(loadErr))
     cachedR8Loader = loader
     if type(env) == "table" then
-        env.__SYT_R8_LOADER_V4 = loader
+        env.__SYT_R8_LOADER_V5 = loader
     end
     return cachedR8Loader()
 end
@@ -376,8 +453,10 @@ local function safeInitSYTWindow(theme, scale, startHidden)
         if type(env) == "table" then
             env.__SYT_R8_LOADER_V3 = nil
             env.__SYT_R8_SOURCE_V3 = nil
-            env.__SYT_R8_LOADER_V4 = nil
-            env.__SYT_R8_SOURCE_V4 = nil
+        env.__SYT_R8_LOADER_V4 = nil
+        env.__SYT_R8_SOURCE_V4 = nil
+            env.__SYT_R8_LOADER_V5 = nil
+            env.__SYT_R8_SOURCE_V5 = nil
         end
         task.wait(0.1)
     end
@@ -413,12 +492,20 @@ getEnv().__SYT_SCRIPT_TOKEN = MY_SCRIPT_TOKEN
 do
     local env = getEnv()
     pcall(function() game:GetService("RunService"):UnbindFromRenderStep("SYT_FlyStep") end)
+    if type(env.__SYT_STOP_ALL) == "function" then pcall(env.__SYT_STOP_ALL, "Rerun SYT") end
     pcall(function() game:GetService("RunService"):UnbindFromRenderStep("SYT_NoClipStep") end)
     pcall(function() game:GetService("RunService"):UnbindFromRenderStep("SYT_SlowFallStep") end)
+    pcall(function() game:GetService("RunService"):UnbindFromRenderStep("SYT_ModZoomStep") end)
     env.__SYT_WATCHDOG_TOKEN = (env.__SYT_WATCHDOG_TOKEN or 0) + 1
     env.__SYT_RERUN_TOKEN = (env.__SYT_RERUN_TOKEN or 0) + 1
     env.__SYT_DISABLE_WATCHDOG = true
-    for _, k in ipairs({ "__SYT_WATCHER_CONN", "__SYT_WATCHDOG_CONN", "__SYT_NOCLIP_CONN", "__SYT_FLY_CONN", "__SYT_ROULETTE_CONN", "__SYT_AUTOCOLL_CONN", "__SYT_GOD_CONN" }) do
+    env.__SYT_ENV_DATA = env.__SYT_ENV_DATA or {}
+    env.__SYT_P2P_PEERS = env.__SYT_P2P_PEERS or {}
+    if type(env.__SYT_P2P_CONNS) == "table" then
+        for _, pc in ipairs(env.__SYT_P2P_CONNS) do pcall(function() pc:Disconnect() end) end
+    end
+    env.__SYT_P2P_CONNS = {}
+    for _, k in ipairs({ "__SYT_WATCHER_CONN", "__SYT_WATCHDOG_CONN", "__SYT_NOCLIP_CONN", "__SYT_FLY_CONN", "__SYT_ROULETTE_CONN", "__SYT_AUTOCOLL_CONN", "__SYT_GOD_CONN", "__SYT_P2P_CONN" }) do
         if env[k] then
             pcall(function() env[k]:Disconnect() end)
             env[k] = nil
@@ -428,6 +515,22 @@ do
         pcall(function() env.__SYT_ACTIVE_UI:Destroy() end)
         env.__SYT_ACTIVE_UI = nil
     end
+    for _, root in ipairs(getAllGuiRoots()) do
+        pcall(function()
+            for _, ch in ipairs(root:GetChildren()) do
+                if ch:IsA("ScreenGui") and string.sub(ch.Name or "", 1, 15) == "SYT_GameDialog_" then
+                    pcall(function() ch:Destroy() end)
+                end
+            end
+        end)
+    end
+    if type(env.__SYT_LAST_EXEC_AT) == "number" then
+        while (os.clock() - env.__SYT_LAST_EXEC_AT) < 2.0 do
+            if env.__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+            task.wait(0.05)
+        end
+    end
+    env.__SYT_LAST_EXEC_AT = os.clock()
 end
 
 local function getSafeHui()
@@ -2087,6 +2190,14 @@ function Core.EnsureOutboundFirewall()
                     return blockPacket("broadcast_flood")
                 end
             end
+            if rName == "GetProfile" then
+                local targetUid = select(1, ...)
+                local ret = { origCall(remoteName, ...) }
+                if type(gEnv.__SYT_OVERLAY_PROFILE_FN) == "function" then
+                    pcall(gEnv.__SYT_OVERLAY_PROFILE_FN, targetUid, ret)
+                end
+                return table.unpack(ret)
+            end
             return origCall(remoteName, ...)
         end
     end
@@ -2316,6 +2427,9 @@ function Core.InstallGetgcBypassHooks()
                         reqScale = math.min(reqScale, 1.38)
                     end
                     return math.max(base, reqScale)
+                end
+                if (H.dfSpeedForceUntil or 0) > os.clock() then
+                    return math.max(base, 1.32)
                 end
                 if okO then return origV end
                 return base
@@ -7176,12 +7290,12 @@ function Pabrik.Toggle()
     end
 end
 
--- [DIRT FARM] Pure Manual Walk + Jump + Break & Replace Non-Dirt -> Format Dirt Farm + Rotation World (No Fly / No TP)
+-- [DIRT FARM] Pure Manual Walk + Jump + Break FG & Cave BG DF + Collect Lava/Drop Sebelum Replace Dirt + Rotation World FIFO
 local DirtFarm = {
     State = {
         running = false, sessionToken = 0, thread = nil, status = "Idle",
         breakDelay = 0.14, placeDelay = 0.12, collectDelay = 0.04,
-        oneHit = false, showHand = true, autoCollect = true, centerGap = true,
+        oneHit = false, showHand = true, autoCollect = true, centerGap = false,
         rotationText = "", rotationWorlds = {}, worldIdx = 1,
         switchingWorld = false,
     }
@@ -7194,35 +7308,65 @@ local function setDfStatus(msg)
     if UIHooks.updateButtons then UIHooks.updateButtons() end
 end
 
-local function parseDfRotationList(rawText)
-    local out = {}
-    local seen = {}
-    for token in string.gmatch(tostring(rawText or ""), "([^,\n;|]+)") do
-        local w = string.upper((tostring(token or "")):match("^%s*(.-)%s*$"))
-        if w ~= "" and not seen[w] then
-            seen[w] = true
-            out[#out + 1] = w
-        end
-    end
-    return out
-end
-
 function DirtFarm.SetRotationWorlds(rawText)
     DirtFarm.State.rotationText = tostring(rawText or "")
-    DirtFarm.State.rotationWorlds = parseDfRotationList(DirtFarm.State.rotationText)
-    return DirtFarm.State.rotationWorlds
+    local list = {}
+    for w in string.gmatch(DirtFarm.State.rotationText, "[^,%s;\n\r]+") do
+        local up = string.upper((w:gsub("^%s*(.-)%s*$", "%1")))
+        if up ~= "" then
+            list[#list + 1] = up
+        end
+    end
+    DirtFarm.State.rotationWorlds = list
+    DirtFarm.State.worldIdx = 1
+    if UI then UI:SetValue("DfRotInput", table.concat(list, ", ")) end
+    return list
 end
 
 local function resolveDirtId()
-    local info2 = Core.GetItemInfo(2)
-    if info2 and string.find(string.lower(info2.name or ""), "dirt") then return 2 end
+    local gt = H.gt
+    local w, h = gt and gt.w or 100, gt and gt.h or 60
     local found = Core.FindItemByName("dirt")
-    return (found and found.id) or 2
+    if found and found.id then return found.id end
+    local counts = {}
+    for y = math.floor(h * 0.45), h - 2 do
+        for x = 2, w - 3 do
+            local id = Core.GetFG(x, y)
+            if id and id > 0 and id ~= 8 and id ~= 6 and not Core.IsProtectedTile(id) then
+                local info = Core.GetItemInfo(id)
+                if info and info.solid and not info.door and not info.lock and not info.deadly and not info.hurts then
+                    counts[id] = (counts[id] or 0) + 1
+                end
+            end
+        end
+    end
+    local bestId, bestN = 2, -1
+    for id, cnt in pairs(counts) do
+        if cnt > bestN then
+            bestId, bestN = id, cnt
+        end
+    end
+    return bestId
+end
+
+local function resolveDirtSeedId(dirtId)
+    dirtId = dirtId or 2
+    if type(H.ItemDB) == "table" then
+        for id, info in pairs(H.ItemDB) do
+            if type(id) == "number" and type(info) == "table" and info.kind == "seed" then
+                if info.seed == dirtId or string.lower(info.name or "") == "dirt seed" then
+                    return id
+                end
+            end
+        end
+    end
+    return dirtId + 1
 end
 
 local function buildDfBlueprint(gt)
     local w, h = gt.w or 100, gt.h or 60
-    local doorX, doorY = gt.spawn and math.floor(gt.spawn.X) or math.floor(w / 2), gt.spawn and math.floor(gt.spawn.Y) or 23
+    local doorX = gt.spawn and math.floor(gt.spawn.X) or math.floor(w / 2)
+    local doorY = gt.spawn and math.floor(gt.spawn.Y) or math.max(2, math.floor(h * 0.4))
     local foundDoor = false
     for y = 0, h - 1 do
         for x = 0, w - 1 do
@@ -7230,23 +7374,22 @@ local function buildDfBlueprint(gt)
             if id == 6 then
                 doorX, doorY, foundDoor = x, y, true
                 break
-            elseif id > 0 then
+            elseif id > 0 and not foundDoor then
                 local info = Core.GetItemInfo(id)
                 if info and (info.door or info.entrance) then
-                    doorX, doorY, foundDoor = x, y, true
-                    break
+                    doorX, doorY = x, y
                 end
             end
         end
         if foundDoor then break end
     end
 
-    local bedrockTopY = h - 6
+    local bedrockTopY = h - 1
     for y = h - 1, math.max(doorY + 4, 0), -1 do
         local bCount = 0
         for x = 0, w - 1 do
             local id = Core.GetFG(x, y)
-            local info = id > 0 and Core.GetItemInfo(id) or nil
+            local info = (id > 0) and Core.GetItemInfo(id) or nil
             if id == 8 or (info and string.find(string.lower(info.name or ""), "bedrock", 1, true)) then
                 bCount += 1
             end
@@ -7265,31 +7408,36 @@ local function buildDfBlueprint(gt)
     local dirtId = resolveDirtId()
 
     local function desiredAt(x, y)
-        if y < topY or y > maxWorkY then return nil end
+        if x < 0 or x >= w or y < topY or y > maxWorkY then return nil end
         local curId = Core.GetFG(x, y)
         if curId == 6 or curId == 8 or Core.IsProtectedTile(curId) or not Core.CanEditTile(x, y) then
             return nil
         end
-        -- 2 blok ujung kiri & kanan selalu dibolongi lurus (air)
+        -- README.MD: hanya 2 tile ujung kiri & 2 tile ujung kanan dibolongi lurus (tanpa bolong tengah)
         if x <= 1 or x >= w - 2 then return 0 end
-        -- Bolong tengah (2 kolom) agar mudah naik turun saat atas & bawah selesai
-        if DirtFarm.State.centerGap and (x == midX - 1 or x == midX) then return 0 end
-        -- Baris tepat di White Door & paling bawah tepat di atas bedrock tetap terbuka lurus
         if y == doorY or y == maxWorkY then return 0 end
-
         if y >= groundY then
-            -- Bagian Bawah: kelipatan 2 baris dari groundY = Dirt, selang-seling 1 baris Air lurus
             return ((y - groundY) % 2 == 0) and dirtId or 0
         else
-            -- Bagian Atas (y < doorY): kelipatan 2 ke atas = Place Dirt, selang-seling Air
             return ((groundY - y) % 2 == 0) and dirtId or 0
         end
+    end
+
+    -- README.MD: bersihkan Cave BG hanya pada tile lorong DF & 2 kolom ujung (air), bukan di belakang platform Dirt
+    local function wantBgZeroAt(x, y)
+        if x < 0 or x >= w or y < topY or y > maxWorkY then return false end
+        if desiredAt(x, y) ~= 0 then return false end
+        local curBg = Core.GetBG(x, y)
+        if curBg == 0 or Core.IsProtectedTile(curBg) or not Core.CanEditTile(x, y) then
+            return false
+        end
+        return true
     end
 
     return {
         w = w, h = h, topY = topY, doorX = doorX, doorY = doorY,
         groundY = groundY, maxWorkY = maxWorkY, midX = midX, dirtId = dirtId,
-        desiredAt = desiredAt,
+        desiredAt = desiredAt, wantBgZeroAt = wantBgZeroAt,
     }
 end
 
@@ -7333,6 +7481,14 @@ do
         return true, breakable, info
     end
 
+    local function dfSafeReachDist(tx, ty, posOverride, kind)
+        local pos = posOverride or Core.ReadPos()
+        local maxR = math.min(2.15, Core.GetActionRange(kind or "break") - 0.12)
+        local dx = math.abs((tx + 0.5) - pos.x)
+        local dy = math.abs((ty + 0.5) - (pos.y - 0.475))
+        return dx <= maxR and dy <= maxR
+    end
+
     local function dfCanActFromStand(tx, ty, actionKind, itemInfo, standPos)
         if actionKind == "stand" then
             return math.abs(standPos.x - (tx + 0.5)) <= 0.48 and math.abs(standPos.y - (ty + 1)) <= 0.25
@@ -7344,90 +7500,52 @@ do
         return true
     end
 
-    local function dfQuickCollectNear(aliveFn, filterId)
+    local function dfQuickCollectNear(aliveFn, filterId, waitRecentDrops)
         local S = DirtFarm.State
         if not S.autoCollect and not filterId then return 0 end
         local gt = H.gt
         if not gt or type(gt.dropList) ~= "function" then return 0 end
-        local okD, drops = pcall(gt.dropList)
-        if not okD or type(drops) ~= "table" or #drops == 0 then return 0 end
-        local pos = Core.ReadPos()
-        local now = os.clock()
-        local hasReadyNear = false
-        for i = 1, #drops do
-            local d = drops[i]
-            if type(d) == "table" and d.uid and d.x and d.y and (d.n or 0) > 0 and (d.readyAt or 0) <= now then
-                if not filterId or d.id == filterId then
-                    local distBody = math.max(math.abs(d.x - pos.x), math.abs(d.y - (pos.y - 0.5)))
-                    if distBody <= 4.55 and (d.id == 112 or Core.GetItemRoom(d.id) > 0) then
-                        hasReadyNear = true
-                        break
+
+        local total = 0
+        local checks = waitRecentDrops and 2 or 1
+        for c = 1, checks do
+            if type(aliveFn) == "function" and not aliveFn() then break end
+            local okD, drops = pcall(gt.dropList)
+            if not okD or type(drops) ~= "table" or #drops == 0 then break end
+            local pos = Core.ReadPos()
+            local now = os.clock()
+            local hasReadyNear = false
+            local hasSoonNear = false
+            for i = 1, #drops do
+                local d = drops[i]
+                if type(d) == "table" and d.uid and d.x and d.y and (d.n or 0) > 0 then
+                    if not filterId or d.id == filterId then
+                        local distBody = math.max(math.abs(d.x - pos.x), math.abs(d.y - (pos.y - 0.5)))
+                        if distBody <= 4.55 and (d.id == 112 or Core.GetItemRoom(d.id) > 0) then
+                            if (d.readyAt or 0) <= now then
+                                hasReadyNear = true
+                                break
+                            elseif (d.readyAt or 0) <= now + 0.22 then
+                                hasSoonNear = true
+                            end
+                        end
                     end
                 end
             end
-        end
-        if hasReadyNear then
-            local res = Packets.Collect({
-                radius = 4.55, filterId = filterId, stepMoveIfFar = false,
-                collectDelay = tonumber(S.collectDelay) or 0.04,
-                shouldContinue = aliveFn,
-            })
-            return res and res.totalTaken or 0
-        end
-        return 0
-    end
-
-    local function dfBreakList(obsList, aliveFn)
-        if not obsList or #obsList == 0 then return true end
-        Core.ClearManualInput()
-        local S = DirtFarm.State
-        local dfHitGap = math.max(0.08, tonumber(S.breakDelay) or 0.14)
-        local posNow = Core.ReadPos()
-        local valid = {}
-        for _, bt in ipairs(obsList) do
-            local tx, ty = bt.tx or bt.x, bt.ty or bt.y
-            local cid = Core.GetFG(tx, ty)
-            if cid ~= 0 and not Core.IsProtectedTile(cid) and Core.CanEditTile(tx, ty) and Core.IsInActionReach(tx, ty, "break", posNow) then
-                valid[#valid + 1] = { tx = tx, ty = ty, layer = 1 }
+            if hasReadyNear then
+                local res = Packets.Collect({
+                    radius = 4.55, filterId = filterId, stepMoveIfFar = false,
+                    collectDelay = tonumber(S.collectDelay) or 0.04,
+                    shouldContinue = aliveFn,
+                })
+                total += (res and res.totalTaken or 0)
+            elseif hasSoonNear and waitRecentDrops and c < checks then
+                task.wait(0.08)
+            else
+                break
             end
         end
-        if #valid == 0 then
-            for _, bt in ipairs(obsList) do
-                local tx, ty = bt.tx or bt.x, bt.ty or bt.y
-                if Core.GetFG(tx, ty) ~= 0 then return false end
-            end
-            return true
-        end
-
-        Packets.BreakBlocksParallel(valid, {
-            threads = 3, layer = 1, oneHit = S.oneHit,
-            hitDelay = dfHitGap, showHand = S.showHand,
-            showVisual = true, noLocalMirror = false,
-            verifyBreak = true, autoRange = false, shouldContinue = aliveFn,
-        })
-        for _ = 1, 3 do
-            if type(aliveFn) == "function" and not aliveFn() then break end
-            local rem = {}
-            for _, bt in ipairs(valid) do
-                local cid = Core.GetFG(bt.tx, bt.ty)
-                if cid ~= 0 and not Core.IsProtectedTile(cid) then
-                    rem[#rem + 1] = bt
-                end
-            end
-            if #rem == 0 then break end
-            Packets.BreakVerified(rem, {
-                threads = 3, layer = 1, oneHit = false,
-                hitDelay = math.max(0.10, dfHitGap), showHand = S.showHand,
-                showVisual = true, noLocalMirror = true,
-                autoRange = false, shouldContinue = aliveFn,
-            })
-        end
-        for _, bt in ipairs(valid) do
-            if Core.GetFG(bt.tx, bt.ty) ~= 0 then
-                return false
-            end
-        end
-        return true
+        return total
     end
 
     local function dfSettleGrounded(aliveFn, maxWait)
@@ -7436,13 +7554,134 @@ do
         while os.clock() < deadline do
             if type(aliveFn) == "function" and not aliveFn() then return false end
             local p = Core.ReadPos()
-            if p.grounded or math.abs(p.vy) < 0.05 then return true end
+            if p.grounded and math.abs(p.vx or 0) < 0.35 then return true end
             task.wait(0.016)
         end
         return false
     end
 
-    local function dfStepWalkToX(goalX, expectedFloorY, maxTime, aliveFn, stopIfFn, keepMovingOnPass)
+    local function dfSettleStillForPunch(aliveFn)
+        Core.ClearManualInput()
+        local dl = os.clock() + 0.10
+        while os.clock() < dl do
+            if type(aliveFn) == "function" and not aliveFn() then return false end
+            local p = Core.ReadPos()
+            if math.abs(p.vx or 0) <= 0.35 then return true end
+            task.wait(0.016)
+        end
+        return true
+    end
+
+    -- Break FG (layer=1) terlebih dahulu lalu Cave BG (layer=2) dengan hit asli server, anti-kick & verifikasi 0
+    local function dfBreakBatchLayers(coords, aliveFn)
+        local S = DirtFarm.State
+        local gt = H.gt
+        if not gt or type(coords) ~= "table" or #coords == 0 then return true end
+
+        local dfHitGap = math.max(0.158, tonumber(S.breakDelay) or 0.165)
+        local items = {}
+        local seen = {}
+        for _, c in ipairs(coords) do
+            local tx = toInt(c.tx or c.x or c[1])
+            local ty = toInt(c.ty or c.y or c[2])
+            if tx and ty and tx >= 0 and tx < gt.w and ty >= 0 and ty < gt.h then
+                local k = ty * 1000 + tx
+                local wantFg = (c.wantFg ~= false)
+                local wantBg = (c.wantBg == true)
+                if not seen[k] then
+                    local entry = { tx = tx, ty = ty, wantFg = wantFg, wantBg = wantBg }
+                    items[#items + 1] = entry
+                    seen[k] = entry
+                else
+                    if wantFg then seen[k].wantFg = true end
+                    if wantBg then seen[k].wantBg = true end
+                end
+            end
+        end
+        if #items == 0 then return true end
+
+        dfSettleStillForPunch(aliveFn)
+
+        local function coolIfBlocked()
+            if H.fwLastBlockAt and (os.clock() - H.fwLastBlockAt) < 0.40 then
+                task.wait(0.32)
+            end
+        end
+
+        -- Stage 1: Break FG (layer 1)
+        for pass = 1, 5 do
+            if type(aliveFn) == "function" and not aliveFn() then return false end
+            coolIfBlocked()
+            local pos = Core.ReadPos()
+            local fgTargets = {}
+            for _, it in ipairs(items) do
+                if it.wantFg then
+                    local cid = Core.GetFG(it.tx, it.ty)
+                    if cid ~= 0 and not Core.IsProtectedTile(cid) and Core.CanEditTile(it.tx, it.ty) and dfSafeReachDist(it.tx, it.ty, pos, "break") then
+                        fgTargets[#fgTargets + 1] = { tx = it.tx, ty = it.ty, layer = 1 }
+                    end
+                end
+            end
+            if #fgTargets == 0 then break end
+            H.dfSpeedForceUntil = os.clock() + 1.0
+            for _, t in ipairs(fgTargets) do
+                if type(aliveFn) == "function" and not aliveFn() then return false end
+                Packets.BreakVerified({ t }, {
+                    threads = 1, layer = 1, oneHit = false, customHits = nil,
+                    hitDelay = dfHitGap, verifyTimeout = 0.24, showHand = S.showHand,
+                    showVisual = true, noLocalMirror = true, autoRange = false,
+                    shouldContinue = aliveFn,
+                })
+                task.wait(0.025)
+            end
+        end
+
+        -- Stage 2: Break Cave BG (layer 2) pada semua target yang sudah bebas FG
+        for pass = 1, 5 do
+            if type(aliveFn) == "function" and not aliveFn() then return false end
+            coolIfBlocked()
+            local pos = Core.ReadPos()
+            local bgTargets = {}
+            for _, it in ipairs(items) do
+                if it.wantBg and Core.GetFG(it.tx, it.ty) == 0 then
+                    local cbg = Core.GetBG(it.tx, it.ty)
+                    if cbg ~= 0 and not Core.IsProtectedTile(cbg) and Core.CanEditTile(it.tx, it.ty) and dfSafeReachDist(it.tx, it.ty, pos, "break") then
+                        bgTargets[#bgTargets + 1] = { tx = it.tx, ty = it.ty, layer = 2 }
+                    end
+                end
+            end
+            if #bgTargets == 0 then break end
+            H.dfSpeedForceUntil = os.clock() + 1.0
+            for _, t in ipairs(bgTargets) do
+                if type(aliveFn) == "function" and not aliveFn() then return false end
+                Packets.BreakVerified({ t }, {
+                    threads = 1, layer = 2, oneHit = false, customHits = nil,
+                    hitDelay = dfHitGap, verifyTimeout = 0.24, showHand = S.showHand,
+                    showVisual = true, noLocalMirror = true, autoRange = false,
+                    shouldContinue = aliveFn,
+                })
+                task.wait(0.025)
+            end
+        end
+
+        for _, it in ipairs(items) do
+            if it.wantFg then
+                local fid = Core.GetFG(it.tx, it.ty)
+                if fid ~= 0 and not Core.IsProtectedTile(fid) and Core.CanEditTile(it.tx, it.ty) then
+                    return false
+                end
+            end
+            if it.wantBg and Core.GetFG(it.tx, it.ty) == 0 then
+                local bid = Core.GetBG(it.tx, it.ty)
+                if bid ~= 0 and not Core.IsProtectedTile(bid) and Core.CanEditTile(it.tx, it.ty) then
+                    return false
+                end
+            end
+        end
+        return true
+    end
+
+    local function dfStepWalkToX(goalX, expectedFloorY, maxTime, aliveFn, stopIfFn, keepMovingOnPass, bp)
         local t0 = os.clock()
         local deadline = t0 + (maxTime or 3.5)
         local lastX = Core.ReadPos().x
@@ -7453,6 +7692,7 @@ do
                 Core.ClearManualInput()
                 return false, "cancelled"
             end
+            H.dfSpeedForceUntil = os.clock() + 0.8
             local p = Core.ReadPos()
             if expectedFloorY and math.abs(p.y - expectedFloorY) > 0.78 and not p.grounded then
                 Core.ClearManualInput()
@@ -7476,23 +7716,19 @@ do
             if math.abs(p.x - lastX) > 0.04 then
                 lastX = p.x
                 lastProgT = os.clock()
-            elseif (os.clock() - lastProgT) > 0.42 then
+            elseif (os.clock() - lastProgT) > 0.40 then
                 local w = H.gt and H.gt.w or 100
                 local frontTx = clamp(math.floor(p.x + dir * 0.72), 0, w - 1)
                 local frontTy = expectedFloorY and (expectedFloorY - 1) or math.floor(p.y - 0.01)
                 local blk, brk = dfIsBreakableBlocking(frontTx, frontTy)
-                if blk and brk and stallBreaks < 4 and type(dfBreakList) == "function" then
+                local allowedByBp = (not bp) or (bp.desiredAt(frontTx, frontTy) == 0)
+                if blk and brk and allowedByBp and stallBreaks < 4 then
                     stallBreaks += 1
                     Core.ClearManualInput()
-                    local toBrk = { { tx = frontTx, ty = frontTy, layer = 1 } }
-                    local blkTop, brkTop = dfIsBreakableBlocking(frontTx, frontTy - 1)
-                    if blkTop and brkTop and expectedFloorY == nil then
-                        toBrk[#toBrk + 1] = { tx = frontTx, ty = frontTy - 1, layer = 1 }
-                    end
-                    dfBreakList(toBrk, aliveFn)
+                    dfBreakBatchLayers({ { tx = frontTx, ty = frontTy, wantFg = true, wantBg = false } }, aliveFn)
                     lastProgT = os.clock()
-                    deadline = deadline + 0.55
-                elseif (os.clock() - lastProgT) > 0.58 then
+                    deadline = deadline + 0.75
+                elseif (os.clock() - lastProgT) > 0.65 then
                     Core.ClearManualInput()
                     return false, "stalled"
                 end
@@ -7519,6 +7755,7 @@ do
                 Core.ClearManualInput()
                 return false, "cancelled"
             end
+            H.dfSpeedForceUntil = os.clock() + 0.8
             local p = Core.ReadPos()
             local now = os.clock()
             local elapsed = now - t0
@@ -7527,10 +7764,10 @@ do
             end
 
             if jumped and p.grounded and elapsed > 0.14 then
-                if math.abs(p.y - destFloorY) <= 0.20 and math.abs(p.x - targetCenterX) <= 0.58 then
+                if math.abs(p.y - destFloorY) <= 0.22 and math.abs(p.x - targetCenterX) <= 0.60 then
                     Core.ClearManualInput()
                     if math.abs(p.x - targetCenterX) > 0.15 then
-                        dfStepWalkToX(targetCenterX, destFloorY, 0.45, aliveFn)
+                        dfStepWalkToX(targetCenterX, destFloorY, 0.55, aliveFn)
                     end
                     return true, "landed"
                 elseif math.abs(p.y - destFloorY) > 0.25 and p.y > destFloorY + 0.25 then
@@ -7556,9 +7793,9 @@ do
                         releasedJump = true
                     end
                 elseif dyNeeded >= 0.5 then
-                    if elapsed < 0.12 and p.y > destFloorY - 0.30 and (p.vy <= 0 or not jumped) then
+                    if elapsed < 0.13 and p.y > destFloorY - 0.30 and (p.vy <= 0 or not jumped) then
                         wantJump = true
-                    elseif elapsed >= 0.05 then
+                    elseif elapsed >= 0.06 then
                         releasedJump = true
                     end
                 else
@@ -7588,11 +7825,12 @@ do
                 Core.ClearManualInput()
                 return false, "cancelled"
             end
+            H.dfSpeedForceUntil = os.clock() + 0.8
             local p = Core.ReadPos()
-            if p.grounded and math.abs(p.y - destFloorY) <= 0.20 and math.abs(p.x - targetCenterX) <= 0.65 then
+            if p.grounded and math.abs(p.y - destFloorY) <= 0.22 and math.abs(p.x - targetCenterX) <= 0.65 then
                 Core.ClearManualInput()
                 if math.abs(p.x - targetCenterX) > 0.15 then
-                    dfStepWalkToX(targetCenterX, destFloorY, 0.45, aliveFn)
+                    dfStepWalkToX(targetCenterX, destFloorY, 0.50, aliveFn)
                 end
                 return true, "landed"
             end
@@ -7617,12 +7855,13 @@ do
             if Core.IsProtectedTile(curId) or not Core.CanEditTile(tx, ty) then
                 return false, "protected"
             end
-            if not dfBreakList({ { tx = tx, ty = ty, layer = 1 } }, aliveFn) then
+            if not dfBreakBatchLayers({ { tx = tx, ty = ty, wantFg = true, wantBg = false } }, aliveFn) then
                 return false, "break_failed"
             end
+            dfQuickCollectNear(aliveFn, nil, true)
         end
         if Core.CountItem(dirtId) <= 0 then
-            dfQuickCollectNear(aliveFn, dirtId)
+            dfQuickCollectNear(aliveFn, dirtId, true)
         end
         if Core.CountItem(dirtId) <= 0 then
             return false, "no_dirt"
@@ -7635,7 +7874,7 @@ do
             local safeX = (awayDir < 0) and (tx - 0.45) or (tx + 1.45)
             local pFloor = math.floor(pos.y + 0.5)
             if dfIsStandable(math.floor(safeX), pFloor) then
-                dfStepWalkToX(safeX, pFloor, 0.6, aliveFn)
+                dfStepWalkToX(safeX, pFloor, 0.65, aliveFn)
                 pos = Core.ReadPos()
                 okBody, reasonBody = Core.CanPlaceBodyOk(tx, ty, dirtInfo, pos)
             end
@@ -7649,37 +7888,66 @@ do
         local S = DirtFarm.State
         local okP, msgP = Packets.PlaceVerified(tx, ty, dirtId, 1, {
             showHand = S.showHand, delay = 0, noLocalMirror = false,
-            retries = 2, placeGap = math.max(H.adaptivePlaceGap or 0.155, tonumber(S.placeDelay) or 0.12),
+            retries = 3, placeGap = math.max(H.adaptivePlaceGap or 0.172, tonumber(S.placeDelay) or 0.172),
             shouldContinue = aliveFn,
         })
-        return okP, msgP
+        if okP or Core.GetFG(tx, ty) == dirtId then
+            return true, msgP or "placed"
+        end
+        return false, msgP or "place_failed"
     end
 
-    local function dfCleanTilesInReach(coords, aliveFn)
-        local pos = Core.ReadPos()
-        local list = {}
-        for _, c in ipairs(coords) do
-            local cx, cy = c[1], c[2]
-            if cx >= 0 and cy >= 0 and H.gt and cx < H.gt.w and cy < H.gt.h then
-                local cid = Core.GetFG(cx, cy)
-                if cid ~= 0 and not Core.IsProtectedTile(cid) and Core.CanEditTile(cx, cy) and Core.IsInActionReach(cx, cy, "break", pos) then
-                    list[#list + 1] = { tx = cx, ty = cy, layer = 1 }
+    -- README.MD L174: Bila lantai mengandung lava/batu/non-dirt, break dulu & collect dropnya sebelum replace Dirt
+    local function dfFixFloorSafe(tx, floorY, dirtId, aliveFn)
+        local curId = Core.GetFG(tx, floorY)
+        if curId == dirtId then return true, "already" end
+        if Core.IsProtectedTile(curId) or not Core.CanEditTile(tx, floorY) then
+            return false, "protected"
+        end
+        if curId ~= 0 then
+            local info = Core.GetItemInfo(curId)
+            local isHaz = dfIsHazard(info)
+            if not isHaz and Core.CountItem(dirtId) <= 0 then
+                dfQuickCollectNear(aliveFn, dirtId, true)
+                if Core.CountItem(dirtId) <= 0 and dfIsStandable(tx, floorY) then
+                    return false, "no_dirt"
                 end
             end
+            if not dfBreakBatchLayers({ { tx = tx, ty = floorY, wantFg = true, wantBg = false } }, aliveFn) then
+                return false, "floor_break_failed"
+            end
+            dfQuickCollectNear(aliveFn, nil, true)
         end
-        if #list == 0 then return true end
+        return dfPlaceDirtSafe(tx, floorY, dirtId, aliveFn)
+    end
+
+    local function dfCleanAirTilesInReach(bp, coords, aliveFn)
         local allOk = true
-        local idx = 1
-        while idx <= #list do
+        for round = 1, 3 do
             if type(aliveFn) == "function" and not aliveFn() then return false end
+            local pos = Core.ReadPos()
             local batch = {}
-            for k = idx, math.min(#list, idx + 2) do
-                batch[#batch + 1] = list[k]
+            for _, c in ipairs(coords) do
+                local cx, cy = c[1], c[2]
+                if cx and cy and cx >= 0 and cy >= 0 and H.gt and cx < H.gt.w and cy < H.gt.h then
+                    if bp.desiredAt(cx, cy) == 0 and dfSafeReachDist(cx, cy, pos, "break") then
+                        local fg = Core.GetFG(cx, cy)
+                        local needFg = (fg ~= 0 and not Core.IsProtectedTile(fg) and Core.CanEditTile(cx, cy))
+                        local needBg = bp.wantBgZeroAt(cx, cy)
+                        if needFg or needBg then
+                            batch[#batch + 1] = { tx = cx, ty = cy, wantFg = needFg, wantBg = true }
+                        end
+                    end
+                end
             end
-            if not dfBreakList(batch, aliveFn) then
-                allOk = false
+            if #batch == 0 then
+                dfQuickCollectNear(aliveFn)
+                return true
             end
-            idx += 3
+            allOk = dfBreakBatchLayers(batch, aliveFn)
+            dfQuickCollectNear(aliveFn)
+            if allOk then return true end
+            task.wait(0.06)
         end
         return allOk
     end
@@ -7689,14 +7957,52 @@ do
         if dfIsStandable(tx, ty) and not dfIsHazard(cid > 0 and Core.GetItemInfo(cid) or nil) then
             return true
         end
-        local okP, errP = dfPlaceDirtSafe(tx, ty, dirtId, aliveFn)
-        return okP, errP
+        return dfFixFloorSafe(tx, ty, dirtId, aliveFn)
     end
 
+    -- Bersihkan 2 kolom ujung shaft sekitar baris tertentu; jika sOut (x=0 / w-1) masih kotor & di luar reach, masuk 1 langkah ke sIn dulu
+    local function dfCleanEdgeShaftAround(bp, sIn, sOut, ys, aliveFn)
+        local coords = {}
+        for _, y in ipairs(ys) do
+            if y >= bp.topY and y <= bp.maxWorkY then
+                coords[#coords + 1] = { sIn, y }
+                coords[#coords + 1] = { sOut, y }
+            end
+        end
+        local ok = dfCleanAirTilesInReach(bp, coords, aliveFn)
+        local needStepIntoShaft = false
+        for _, y in ipairs(ys) do
+            if y >= bp.topY and y <= bp.maxWorkY and bp.desiredAt(sOut, y) == 0 then
+                local fg = Core.GetFG(sOut, y)
+                if (fg ~= 0 and not Core.IsProtectedTile(fg) and Core.CanEditTile(sOut, y)) or bp.wantBgZeroAt(sOut, y) then
+                    needStepIntoShaft = true
+                    break
+                end
+            end
+        end
+        if needStepIntoShaft then
+            local pos = Core.ReadPos()
+            local standY = math.floor(pos.y + 0.5)
+            local returnX = (sIn < bp.midX) and 2 or (bp.w - 3)
+            if dfIsStandable(sIn, standY) or (Core.CountItem(bp.dirtId) > 0 and dfFixFloorSafe(sIn, standY, bp.dirtId, aliveFn)) then
+                if dfStepWalkToX(sIn + 0.5, standY, 0.9, aliveFn, nil, false, bp) then
+                    dfCleanAirTilesInReach(bp, coords, aliveFn)
+                    if dfIsStandable(returnX, standY) then
+                        dfStepWalkToX(returnX + 0.5, standY, 0.9, aliveFn, nil, false, bp)
+                        if bp.desiredAt(sIn, standY) == 0 then
+                            dfCleanAirTilesInReach(bp, { { sIn, standY } }, aliveFn)
+                        end
+                    end
+                end
+            end
+        end
+        return ok
+    end
+
+    -- Naik / Panjat murni lewat 2 kolom ujung (kiri {0,1} atau kanan {w-2,w-1}) dengan bersihkan pijakan & Cave BG di belakang
     local function dfClimbShaftToFloorY(bp, colA, colB, targetFloorY, dirtId, aliveFn, preferExitX)
-        local S = DirtFarm.State
         local dirtInfo = Core.GetItemInfo(dirtId)
-        for _ = 1, 80 do
+        for _ = 1, 120 do
             if type(aliveFn) == "function" and not aliveFn() then
                 Core.ClearManualInput()
                 return false, "cancelled"
@@ -7716,7 +8022,7 @@ do
                     Core.ClearManualInput()
                     return false, "not_adjacent_to_shaft"
                 end
-                dfCleanTilesInReach({ { enterCol, curFloorY - 1 }, { enterCol, curFloorY - 2 } }, aliveFn)
+                dfCleanAirTilesInReach(bp, { { enterCol, curFloorY - 1 }, { enterCol, curFloorY - 2 } }, aliveFn)
                 local okStep, errStep = dfEnsureTemporaryStep(enterCol, curFloorY, dirtId, aliveFn)
                 if not okStep then return false, errStep or "no_dirt_entry" end
                 dfStepWalkToX(enterCol + 0.5, curFloorY, 0.9, aliveFn)
@@ -7738,81 +8044,112 @@ do
             if nextFloorY == targetFloorY and preferExitX then
                 clearReq[#clearReq + 1] = { preferExitX, targetFloorY - 1 }
             end
-            dfCleanTilesInReach(clearReq, aliveFn)
+            dfCleanAirTilesInReach(bp, clearReq, aliveFn)
 
-            local stepFloor = nextFloorY
-            local cidStep = Core.GetFG(otherCol, stepFloor)
-            if cidStep == 0 or not dfIsStandable(otherCol, stepFloor) or dfIsHazard(cidStep > 0 and Core.GetItemInfo(cidStep) or nil) then
-                if not dfCanActFromStand(otherCol, stepFloor, "build", dirtInfo, pos) then
+            local cidStep = Core.GetFG(otherCol, nextFloorY)
+            if cidStep == 0 or not dfIsStandable(otherCol, nextFloorY) or dfIsHazard(cidStep > 0 and Core.GetItemInfo(cidStep) or nil) then
+                if not dfCanActFromStand(otherCol, nextFloorY, "build", dirtInfo, pos) then
                     dfStepWalkToX(standCol + 0.5, curFloorY, 0.5, aliveFn)
                 end
-                local okP, errP = dfPlaceDirtSafe(otherCol, stepFloor, dirtId, aliveFn)
+                local okP, errP = dfFixFloorSafe(otherCol, nextFloorY, dirtId, aliveFn)
                 if not okP then
                     Core.ClearManualInput()
                     return false, errP or "no_dirt_climb"
                 end
             end
 
-            local okJ = dfManualJumpTo(otherCol, stepFloor, aliveFn)
+            local okJ = dfManualJumpTo(otherCol, nextFloorY, aliveFn)
+            if not okJ then
+                dfCleanAirTilesInReach(bp, clearReq, aliveFn)
+                okJ = dfManualJumpTo(otherCol, nextFloorY, aliveFn)
+            end
             if not okJ then
                 Core.ClearManualInput()
                 return false, "climb_jump_failed"
             end
 
-            -- Hancurkan blok pijakan sementara di belakang hanya jika termasuk kolom shaft (desiredAt == 0)
-            local cleanup = {}
-            if bp.desiredAt(standCol, curFloorY) == 0 and Core.GetFG(standCol, curFloorY) ~= 0 then
-                cleanup[#cleanup + 1] = { standCol, curFloorY }
-            end
-            if bp.desiredAt(standCol, curFloorY + 1) == 0 and Core.GetFG(standCol, curFloorY + 1) ~= 0 then
-                cleanup[#cleanup + 1] = { standCol, curFloorY + 1 }
-            end
-            if #cleanup > 0 then
-                dfCleanTilesInReach(cleanup, aliveFn)
-                dfQuickCollectNear(aliveFn, dirtId)
-            end
+            -- Segera hancurkan pijakan sementara & Cave BG di standCol setelah naik 1 tile
+            dfCleanAirTilesInReach(bp, {
+                { standCol, curFloorY },
+                { standCol, curFloorY + 1 },
+                { standCol, curFloorY - 1 },
+            }, aliveFn)
         end
         Core.ClearManualInput()
         return false, "climb_limit"
     end
 
+    -- Turun tepat 2 baris (atau hingga targetFloorY) lewat 2 kolom ujung + sapu Cave BG di kedua kolom ujung
     local function dfTransitionToLowerRow(bp, shaftInner, shaftOuter, edgeX, fromCorY, nextCorY, dirtId, aliveFn)
         local fromFloorY = fromCorY + 1
         local nextFloorY = nextCorY + 1
-        local clearPre = {
+        dfSettleGrounded(aliveFn, 0.4)
+
+        dfCleanAirTilesInReach(bp, {
             { shaftInner, fromCorY }, { shaftOuter, fromCorY },
-            { shaftInner, fromCorY + 1 }, { shaftOuter, fromCorY + 1 },
-            { shaftOuter, nextCorY }, { edgeX, nextCorY },
-        }
-        if nextFloorY > bp.maxWorkY then
-            clearPre[#clearPre + 1] = { shaftInner, nextCorY }
-        end
-        dfCleanTilesInReach(clearPre, aliveFn)
+            { shaftInner, fromFloorY }, { shaftOuter, fromFloorY },
+        }, aliveFn)
 
-        -- Kasus Bedrock langsung: jatuh langsung ke Bedrock tanpa perlu step lantai sementara
+        -- Kasus terakhir tepat di Bedrock: turun bertahap 1x1 antar shaftInner<->shaftOuter sampai bedrockTopY
         if nextFloorY > bp.maxWorkY then
-            local okD = dfDropIntoCol(shaftInner, nextFloorY, aliveFn, 2.2)
-            if not okD then return false, "bedrock_drop_failed" end
-            return dfStepWalkToX(edgeX + 0.5, nextFloorY, 1.0, aliveFn)
+            dfCleanAirTilesInReach(bp, {
+                { shaftInner, fromFloorY + 1 }, { shaftOuter, fromFloorY + 1 },
+                { edgeX, fromFloorY + 1 },
+            }, aliveFn)
+            local okIn = dfStepWalkToX(shaftInner + 0.5, nil, 1.4, aliveFn)
+            if not okIn then
+                dfDropIntoCol(shaftInner, math.min(nextFloorY, fromFloorY + 2), aliveFn, 1.6)
+            end
+            for _ = 1, 8 do
+                if type(aliveFn) == "function" and not aliveFn() then return false, "cancelled" end
+                dfSettleGrounded(aliveFn, 0.3)
+                local p = Core.ReadPos()
+                local cY = math.floor(p.y + 0.5)
+                if cY >= nextFloorY then break end
+                local curCol = (math.abs(p.x - (shaftInner + 0.5)) <= math.abs(p.x - (shaftOuter + 0.5))) and shaftInner or shaftOuter
+                local altCol = (curCol == shaftInner) and shaftOuter or shaftInner
+                dfCleanAirTilesInReach(bp, {
+                    { altCol, cY - 1 }, { altCol, cY }, { altCol, cY + 1 },
+                    { curCol, cY - 1 },
+                }, aliveFn)
+                local okD = dfDropIntoCol(altCol, math.min(nextFloorY, cY + 1), aliveFn, 1.4)
+                if not okD then
+                    dfDropIntoCol(altCol, nextFloorY, aliveFn, 1.4)
+                end
+            end
+            dfSettleGrounded(aliveFn, 0.35)
+            local pf = Core.ReadPos()
+            local landFloor = math.floor(pf.y + 0.5)
+            dfCleanAirTilesInReach(bp, {
+                { edgeX, nextCorY }, { edgeX, nextCorY - 1 },
+                { shaftInner, nextCorY }, { shaftOuter, nextCorY },
+                { shaftInner, nextCorY - 1 }, { shaftOuter, nextCorY - 1 },
+            }, aliveFn)
+            if not dfStepWalkToX(edgeX + 0.5, landFloor, 1.4, aliveFn) then
+                return false, "bedrock_exit_failed"
+            end
+            dfCleanEdgeShaftAround(bp, shaftInner, shaftOuter, { fromCorY, fromFloorY, nextCorY - 1, nextCorY }, aliveFn)
+            return true, "entered_bedrock"
         end
 
-        -- Buat landing step sementara 1 tile di bawah agar tidak nyangkut atap koridor 1-tile
-        local okStep1, errS1 = dfEnsureTemporaryStep(shaftInner, nextCorY, dirtId, aliveFn)
+        -- Kasus normal turun tepat 2 baris (fromCorY -> fromCorY + 2) via 1-tile landing step di shaft
+        local midY = fromFloorY + 1
+        local okStep1, errS1 = dfEnsureTemporaryStep(shaftInner, midY, dirtId, aliveFn)
         if not okStep1 then return false, errS1 or "drop_step1_failed" end
 
-        local okD1 = dfDropIntoCol(shaftInner, nextCorY, aliveFn, 1.8)
+        local okD1 = dfDropIntoCol(shaftInner, midY, aliveFn, 1.8)
         if not okD1 then return false, "drop_step1_miss" end
 
-        dfCleanTilesInReach({ { shaftOuter, nextCorY }, { edgeX, nextCorY } }, aliveFn)
+        dfCleanAirTilesInReach(bp, { { shaftOuter, midY }, { edgeX, midY } }, aliveFn)
         local okStep2, errS2 = dfEnsureTemporaryStep(shaftOuter, nextFloorY, dirtId, aliveFn)
         if not okStep2 then return false, errS2 or "drop_step2_failed" end
 
         local okD2 = dfDropIntoCol(shaftOuter, nextFloorY, aliveFn, 1.8)
         if not okD2 then return false, "drop_step2_miss" end
 
-        dfCleanTilesInReach({ { shaftInner, nextCorY }, { edgeX, nextCorY } }, aliveFn)
+        dfCleanAirTilesInReach(bp, { { shaftInner, midY }, { edgeX, midY } }, aliveFn)
         if bp.desiredAt(edgeX, nextFloorY) == dirtId and Core.GetFG(edgeX, nextFloorY) ~= dirtId then
-            local okE, errE = dfPlaceDirtSafe(edgeX, nextFloorY, dirtId, aliveFn)
+            local okE, errE = dfFixFloorSafe(edgeX, nextFloorY, dirtId, aliveFn)
             if not okE and not dfIsStandable(edgeX, nextFloorY) then
                 return false, errE or "edge_floor_failed"
             end
@@ -7820,518 +8157,200 @@ do
         local okIn, errIn = dfEnsureTemporaryStep(shaftInner, nextFloorY, dirtId, aliveFn)
         if not okIn then return false, errIn or "drop_bridge_failed" end
 
-        local okWalk = dfStepWalkToX(edgeX + 0.5, nextFloorY, 1.4, aliveFn)
-        if not okWalk then return false, "enter_row_failed" end
-
-        local cleanShaft = {}
-        if bp.desiredAt(shaftInner, nextFloorY) == 0 then cleanShaft[#cleanShaft + 1] = { shaftInner, nextFloorY } end
-        if bp.desiredAt(shaftOuter, nextFloorY) == 0 then cleanShaft[#cleanShaft + 1] = { shaftOuter, nextFloorY } end
-        if #cleanShaft > 0 then
-            dfCleanTilesInReach(cleanShaft, aliveFn)
-            dfQuickCollectNear(aliveFn, dirtId)
+        if not dfStepWalkToX(edgeX + 0.5, nextFloorY, 1.4, aliveFn) then
+            return false, "enter_row_failed"
         end
+
+        -- Sapu tuntas FG & Cave BG pada 2 kolom ujung shaft setelah aman berdiri di edgeX
+        dfCleanEdgeShaftAround(bp, shaftInner, shaftOuter, { fromCorY, fromFloorY, nextCorY, nextFloorY }, aliveFn)
         return true, "entered"
     end
 
-    local function dfFindManualPath(sx, sy, targetX, targetY, actionKind, itemInfo)
-        local gt = H.gt
-        if not gt then return nil end
-        local w, h = gt.w or 100, gt.h or 60
-        sx, sy = clamp(math.floor(sx), 0, w - 1), clamp(math.floor(sy), 0, h - 1)
-        targetX, targetY = clamp(math.floor(targetX), 0, w - 1), clamp(math.floor(targetY), 0, h - 1)
-
-        if not dfIsBlocking(sx, sy) and dfIsStandable(sx, sy + 1) and dfCanActFromStand(targetX, targetY, actionKind, itemInfo, { x = sx + 0.5, y = sy + 1 }) then
-            return {}
-        end
-
-        local heapKeys, heapF, heapSz = {}, {}, 0
-        local function heapPush(k, f)
-            heapSz += 1
-            local i = heapSz
-            while i > 1 do
-                local p = math.floor(i / 2)
-                if heapF[p] <= f then break end
-                heapKeys[i], heapF[i] = heapKeys[p], heapF[p]
-                i = p
+    local function dfRowNeedsLowerFix(bp, corY, xFrom, xTo, alsoClearAbove)
+        local dir = (xTo >= xFrom) and 1 or -1
+        local floorY = corY + 1
+        local dirtId = bp.dirtId
+        for tx = xFrom, xTo, dir do
+            if bp.desiredAt(tx, corY) == 0 and (Core.GetFG(tx, corY) ~= 0 or bp.wantBgZeroAt(tx, corY)) then
+                return tx
             end
-            heapKeys[i], heapF[i] = k, f
-        end
-        local function heapPop()
-            local topK = heapKeys[1]
-            local lastK, lastF = heapKeys[heapSz], heapF[heapSz]
-            heapKeys[heapSz], heapF[heapSz] = nil, nil
-            heapSz -= 1
-            if heapSz >= 1 then
-                local i = 1
-                while true do
-                    local l, r = i * 2, i * 2 + 1
-                    if l > heapSz then break end
-                    local c = (r <= heapSz and heapF[r] < heapF[l]) and r or l
-                    if heapF[c] >= lastF then break end
-                    heapKeys[i], heapF[i] = heapKeys[c], heapF[c]
-                    i = c
+            if alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(tx, corY - 1) == 0 then
+                if Core.GetFG(tx, corY - 1) ~= 0 or bp.wantBgZeroAt(tx, corY - 1) then
+                    return tx
                 end
-                heapKeys[i], heapF[i] = lastK, lastF
             end
-            return topK
-        end
-
-        local function clearCost(cx, cy, brkList)
-            local blk, brk, info = dfIsBreakableBlocking(cx, cy)
-            if not blk then return true, 0 end
-            if not brk then return false, 9999 end
-            if brkList then brkList[#brkList + 1] = { cx, cy } end
-            return true, 2.2 + math.max(1, toInt(info and info.hits, 3)) * 0.4
-        end
-
-        local startKey = sy * w + sx
-        local gScore, cameFrom, edgeUsed, closed = { [startKey] = 0 }, { [startKey] = -1 }, {}, {}
-        local function heuristic(x, y)
-            return math.max(0, math.abs(x - targetX) - 2) + math.max(0, math.abs(y - targetY) - 2) * 1.35
-        end
-        heapPush(startKey, heuristic(sx, sy))
-
-        local function tryPush(fromKey, nx, ny, cost, kind, dir, brkList)
-            if nx < 0 or nx >= w or ny < 0 or ny >= h then return end
-            local nk = ny * w + nx
-            if closed[nk] then return end
-            local ng = (gScore[fromKey] or 0) + cost
-            if not gScore[nk] or ng < gScore[nk] then
-                gScore[nk] = ng
-                cameFrom[nk] = fromKey
-                edgeUsed[nk] = { kind = kind, x = nx, y = ny, dir = dir, breakTiles = brkList }
-                heapPush(nk, ng + heuristic(nx, ny))
-            end
-        end
-
-        local expansions = 0
-        while heapSz > 0 and expansions < 6500 do
-            local curK = heapPop()
-            if not closed[curK] then
-                closed[curK] = true
-                expansions += 1
-                local cx, cy = curK % w, math.floor(curK / w)
-                if curK ~= startKey then
-                    local standPos = { x = cx + 0.5, y = cy + 1 }
-                    if dfCanActFromStand(targetX, targetY, actionKind, itemInfo, standPos) then
-                        local underTarget = (actionKind == "break" and cx == targetX and cy + 1 == targetY)
-                        if not underTarget or heapSz == 0 or gScore[curK] > 30 then
-                            local rev, ptr = {}, curK
-                            while ptr and ptr ~= -1 do
-                                local ed = edgeUsed[ptr]
-                                if ed then rev[#rev + 1] = ed end
-                                ptr = cameFrom[ptr]
-                            end
-                            local path = {}
-                            for i = #rev, 1, -1 do path[#path + 1] = rev[i] end
-                            return path
-                        end
-                    end
-                end
-
-                for _, dir in ipairs({ -1, 1 }) do
-                    local nx = cx + dir
-                    if nx >= 0 and nx < w then
-                        -- 1. Walk horizontal datar
-                        if dfIsStandable(nx, cy + 1) then
-                            local brk = {}
-                            local okC, cCost = clearCost(nx, cy, brk)
-                            if okC then
-                                tryPush(curK, nx, cy, 1.0 + cCost, "walk", dir, brk)
-                            end
-                        end
-
-                        -- 2. Jump Up 1..2 tile
-                        for jh = 1, 2 do
-                            local ny = cy - jh
-                            if ny >= 1 then
-                                local brk = {}
-                                local okAll = dfIsStandable(nx, ny + 1)
-                                local totalC = 2.4 + jh * 0.7
-                                if okAll then
-                                    for hy = cy - 1, ny - 1, -1 do
-                                        local okH, cH = clearCost(cx, hy, brk)
-                                        if not okH then okAll = false; break end
-                                        totalC += cH
-                                    end
-                                end
-                                if okAll then
-                                    for ly = ny, ny - 1, -1 do
-                                        local okL, cL = clearCost(nx, ly, brk)
-                                        if not okL then okAll = false; break end
-                                        totalC += cL
-                                    end
-                                end
-                                if okAll then
-                                    tryPush(curK, nx, ny, totalC, "jump_up", dir, brk)
-                                end
-                            end
-                        end
-
-                        -- 3. Drop ke bawah melalui kolom air
-                        if not dfIsStandable(nx, cy + 1) then
-                            local brk = {}
-                            local okEntry, eCost = clearCost(nx, cy, brk)
-                            if okEntry then
-                                local fy = cy + 1
-                                while fy < h and not dfIsStandable(nx, fy) do
-                                    local blkD, brkD = dfIsBreakableBlocking(nx, fy)
-                                    if blkD and not brkD then fy = h + 1; break end
-                                    if blkD and brkD then brk[#brk + 1] = { nx, fy }; eCost += 2.6 end
-                                    fy += 1
-                                end
-                                if fy < h then
-                                    local landY = fy - 1
-                                    tryPush(curK, nx, landY, 1.4 + (landY - cy) * 0.35 + eCost, "drop", dir, brk)
-                                end
-                            end
-                        end
-
-                        -- 4. Jump horizontal melewati celah 1..2 tile
-                        for span = 2, 3 do
-                            local lx = cx + dir * span
-                            if lx >= 0 and lx < w and dfIsStandable(lx, cy + 1) and not dfIsStandable(nx, cy + 1) then
-                                local brk = {}
-                                local okGap, gapC = true, 2.5 + span * 0.4
-                                local okHead0, ch0 = clearCost(cx, cy - 1, brk)
-                                if not okHead0 then okGap = false end
-                                gapC += ch0
-                                if okGap then
-                                    for s = 1, span do
-                                        local gx = cx + dir * s
-                                        local ok1, c1 = clearCost(gx, cy, brk)
-                                        local ok2, c2 = clearCost(gx, cy - 1, brk)
-                                        if not ok1 or not ok2 then okGap = false; break end
-                                        gapC += c1 + c2
-                                    end
-                                end
-                                if okGap then
-                                    tryPush(curK, lx, cy, gapC, "jump_gap", dir, brk)
-                                end
-                            end
-                        end
-                    end
-                end
+            if floorY <= bp.maxWorkY and bp.desiredAt(tx, floorY) == dirtId and Core.GetFG(tx, floorY) ~= dirtId then
+                return tx
             end
         end
         return nil
     end
 
-    local function dfExecutePath(path, tx, ty, actionKind, itemInfo, aliveFn)
-        local i = 1
-        while i <= #path do
-            if type(aliveFn) == "function" and not aliveFn() then
-                Core.ClearManualInput()
-                return false
-            end
-            if dfCanActFromStand(tx, ty, actionKind, itemInfo, Core.ReadPos()) then
-                Core.ClearManualInput()
-                return true
-            end
-            local ed = path[i]
-            if ed.breakTiles and #ed.breakTiles > 0 then
-                local needBrk = {}
-                for _, bt in ipairs(ed.breakTiles) do
-                    if dfIsBlocking(bt[1], bt[2]) then
-                        needBrk[#needBrk + 1] = bt
-                    end
-                end
-                if #needBrk > 0 then
-                    if not dfCleanTilesInReach(needBrk, aliveFn) then
-                        Core.ClearManualInput()
-                        return false
-                    end
-                    for _, bt in ipairs(needBrk) do
-                        if dfIsBlocking(bt[1], bt[2]) then
-                            Core.ClearManualInput()
-                            return false
-                        end
-                    end
-                end
-            end
-
-            if ed.kind == "walk" then
-                local endIdx = i
-                local expectedY = ed.y + 1
-                while endIdx + 1 <= #path do
-                    local nxt = path[endIdx + 1]
-                    if nxt.kind == "walk" and nxt.dir == ed.dir and nxt.y == ed.y and (not nxt.breakTiles or #nxt.breakTiles == 0) then
-                        endIdx += 1
-                    else
-                        break
-                    end
-                end
-                local endNode = path[endIdx]
-                local okW = dfStepWalkToX(endNode.x + 0.5, expectedY, 1.2 + (endIdx - i + 1) * 0.25, aliveFn, function(p)
-                    return dfCanActFromStand(tx, ty, actionKind, itemInfo, p), "in_reach"
-                end)
-                if not okW then return false end
-                i = endIdx + 1
-            elseif ed.kind == "jump_up" or ed.kind == "jump_gap" then
-                local okJ = dfManualJumpTo(ed.x, ed.y + 1, aliveFn)
-                if not okJ then return false end
-                i += 1
-            elseif ed.kind == "drop" then
-                local okD = dfDropIntoCol(ed.x, ed.y + 1, aliveFn, 2.8)
-                if not okD then return false end
-                i += 1
-            else
-                i += 1
-            end
-        end
-        Core.ClearManualInput()
-        return dfCanActFromStand(tx, ty, actionKind, itemInfo, Core.ReadPos())
-    end
-
-    local function dfMoveManualNear(tx, ty, aliveFn, actionKind, itemInfo)
-        local kind = actionKind or "break"
-        dfSettleGrounded(aliveFn, 0.35)
-        local cur = Core.ReadPos()
-        if dfCanActFromStand(tx, ty, kind, itemInfo, cur) then
-            return true, "in_reach"
-        end
-
-        local dirtId = resolveDirtId()
-        for attempt = 1, 3 do
-            if type(aliveFn) == "function" and not aliveFn() then
-                Core.ClearManualInput()
-                return false, "cancelled"
-            end
-            cur = Core.ReadPos()
-            if dfCanActFromStand(tx, ty, kind, itemInfo, cur) then
-                return true, "in_reach"
-            end
-
-            local floorY = math.floor(cur.y + 0.5)
-            local path = dfFindManualPath(cur.tx, floorY - 1, tx, ty, kind, itemInfo)
-            if path then
-                if dfExecutePath(path, tx, ty, kind, itemInfo, aliveFn) then
-                    return true, "manual_reached"
-                end
-            elseif attempt == 1 and ty < cur.ty - 1 and Core.CountItem(dirtId) >= 2 and H.gt then
-                -- Jika target lebih tinggi dan terputus jurang/shaft, naik melalui shaft terdekat menggunakan pijakan Dirt manual
-                local w = H.gt.w or 100
-                local midX = math.floor(w / 2)
-                local shafts = {
-                    { 0, 1, 2 },
-                    { w - 2, w - 1, w - 3 },
-                }
-                if DirtFarm.State.centerGap then
-                    shafts[#shafts + 1] = { midX - 1, midX, (tx >= midX) and (midX + 1) or (midX - 2) }
-                end
-                table.sort(shafts, function(a, b)
-                    return math.abs(a[1] - cur.tx) < math.abs(b[1] - cur.tx)
-                end)
-                local climbedAny = false
-                for _, sh in ipairs(shafts) do
-                    local cA, cB, exitX = sh[1], sh[2], sh[3]
-                    local basePath = dfFindManualPath(cur.tx, floorY - 1, exitX, cur.ty, "break", nil)
-                    if basePath and dfExecutePath(basePath, exitX, cur.ty, "break", nil, aliveFn) then
-                        local destFloorY = clamp(ty + 1, 2, (H.gt.h or 60) - 2)
-                        if dfClimbShaftToFloorY(buildDfBlueprint(H.gt), cA, cB, destFloorY, dirtId, aliveFn, exitX) then
-                            climbedAny = true
-                            break
-                        end
-                    end
-                end
-                if not climbedAny then break end
-            else
-                break
-            end
-        end
-
-        Core.ClearManualInput()
-        local fin = Core.ReadPos()
-        local finOk = dfCanActFromStand(tx, ty, kind, itemInfo, fin)
-        return finOk, finOk and "manual_reached" or "unreachable"
-    end
-
-    local function dfWalkCorridorLower(bp, corY, xFrom, xTo, alsoClearAbove, aliveFn, markFailFn)
+    -- Sapu 1 lorong bawah penuh secara monotonik satu arah (tidak membalik arah di tengah jalan)
+    local function dfWalkCorridorLower(bp, corY, xFrom, xTo, alsoClearAbove, aliveFn, cleanEndFloorShaft, skipAudit)
         local dir = (xTo >= xFrom) and 1 or -1
         local floorY = corY + 1
         local dirtId = bp.dirtId
         local dirtInfo = Core.GetItemInfo(dirtId)
 
-        for tx = xFrom, xTo, dir do
-            if type(aliveFn) == "function" and not aliveFn() then
-                Core.ClearManualInput()
-                return false, "cancelled"
+        local function tileNeedsWork(tx)
+            if bp.desiredAt(tx, corY) == 0 then
+                local cfg = Core.GetFG(tx, corY)
+                if (cfg ~= 0 and not Core.IsProtectedTile(cfg) and Core.CanEditTile(tx, corY)) or bp.wantBgZeroAt(tx, corY) then
+                    return true
+                end
+            end
+            if alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(tx, corY - 1) == 0 then
+                local afg = Core.GetFG(tx, corY - 1)
+                if (afg ~= 0 and not Core.IsProtectedTile(afg) and Core.CanEditTile(tx, corY - 1)) or bp.wantBgZeroAt(tx, corY - 1) then
+                    return true
+                end
+            end
+            if floorY <= bp.maxWorkY and bp.desiredAt(tx, floorY) == dirtId then
+                local ffg = Core.GetFG(tx, floorY)
+                if ffg ~= dirtId and not Core.IsProtectedTile(ffg) and Core.CanEditTile(tx, floorY) then
+                    return true
+                end
+            end
+            return false
+        end
+
+        local maxPasses = skipAudit and 1 or 2
+        for pass = 1, maxPasses do
+            local pFrom = (pass == 1) and xFrom or xTo
+            local pTo = (pass == 1) and xTo or xFrom
+            if pass == 2 then
+                local missedX = dfRowNeedsLowerFix(bp, corY, xFrom, xTo, alsoClearAbove)
+                if not missedX then break end
+                -- Jalan lurus sepanjang baris yang sama ke missedX lalu kembali ke xTo agar posisi ujung tetap akurat
+                pFrom = xTo
+                pTo = missedX
             end
 
-            -- Tangani Center Gap: jembatani datar dengan Dirt sementara atau lompat jika atas terbuka, lalu hancurkan di belakang
-            if DirtFarm.State.centerGap and (tx == bp.midX - 1 or tx == bp.midX) and floorY <= bp.maxWorkY then
-                local g1 = (dir > 0) and (bp.midX - 1) or bp.midX
-                local g2 = (dir > 0) and bp.midX or (bp.midX - 1)
-                if tx == g1 then
-                    local afterGap = g2 + dir
-                    local prepBreak = { { g1, corY }, { g2, corY } }
-                    if alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(g1, corY - 1) == 0 then
-                        prepBreak[#prepBreak + 1] = { g1, corY - 1 }
-                        prepBreak[#prepBreak + 1] = { g2, corY - 1 }
-                    end
-                    dfCleanTilesInReach(prepBreak, aliveFn)
-
-                    local g1Solid = dfIsStandable(g1, floorY) and not dfIsHazard(Core.GetFG(g1, floorY) > 0 and Core.GetItemInfo(Core.GetFG(g1, floorY)) or nil)
-                    local g2Solid = dfIsStandable(g2, floorY) and not dfIsHazard(Core.GetFG(g2, floorY) > 0 and Core.GetItemInfo(Core.GetFG(g2, floorY)) or nil)
-                    local bridged = false
-                    if g1Solid and g2Solid then
-                        bridged = true
-                    elseif Core.CountItem(dirtId) >= 2 then
-                        if not g1Solid then g1Solid = dfEnsureTemporaryStep(g1, floorY, dirtId, aliveFn) end
-                        if not g2Solid then g2Solid = dfEnsureTemporaryStep(g2, floorY, dirtId, aliveFn) end
-                        bridged = g1Solid and g2Solid
-                    elseif not dfIsBlocking(tx - dir, corY - 1) and not dfIsBlocking(g1, corY - 1) and not dfIsBlocking(g2, corY - 1) and dfIsStandable(afterGap, floorY) then
-                        dfCleanTilesInReach({ { afterGap, corY } }, aliveFn)
-                        if dfManualJumpTo(afterGap, floorY, aliveFn) then
-                            bridged = true
-                        end
-                    end
-
-                    if not bridged then
-                        Core.ClearManualInput()
-                        return false, "no_dirt_bridge"
-                    end
-                    if math.abs(Core.ReadPos().tx - afterGap) > 0 then
-                        if not dfStepWalkToX(g2 + 0.5, floorY, 1.2, aliveFn) then
-                            Core.ClearManualInput()
-                            return false, "gap_walk_failed"
-                        end
-                        if bp.desiredAt(afterGap, floorY) == dirtId and Core.GetFG(afterGap, floorY) ~= dirtId then
-                            if not dfPlaceDirtSafe(afterGap, floorY, dirtId, aliveFn) and not dfIsStandable(afterGap, floorY) then
-                                Core.ClearManualInput()
-                                return false, "after_gap_no_floor"
-                            end
-                        end
-                        dfCleanTilesInReach({ { afterGap, corY } }, aliveFn)
-                        if not dfStepWalkToX(afterGap + 0.5, floorY, 0.9, aliveFn) then
-                            Core.ClearManualInput()
-                            return false, "gap_exit_failed"
-                        end
-                    end
-                    -- Bersihkan jembatan tengah dari sisi seberang (g1 & g2 masih <= 2.0 tile di belakang)
-                    dfCleanTilesInReach({ { g1, floorY }, { g2, floorY } }, aliveFn)
-                    dfQuickCollectNear(aliveFn)
+            local pDir = (pTo >= pFrom) and 1 or -1
+            for tx = pFrom, pTo, pDir do
+                if type(aliveFn) == "function" and not aliveFn() then
+                    Core.ClearManualInput()
+                    return false, "cancelled"
                 end
-            else
-                -- Pastikan tile koridor, atap ekstra (bedrock), & lantai ke depan sesuai blueprint sebelum melangkah ke tx
-                local wantCor = bp.desiredAt(tx, corY)
-                local curCor = Core.GetFG(tx, corY)
-                local needCorBreak = (wantCor == 0 and curCor ~= 0 and not Core.IsProtectedTile(curCor))
-                local needAboveBreak = alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(tx, corY - 1) == 0 and Core.GetFG(tx, corY - 1) ~= 0 and not Core.IsProtectedTile(Core.GetFG(tx, corY - 1))
-                local wantFloor = (floorY <= bp.maxWorkY) and bp.desiredAt(tx, floorY) or nil
-                local curFloor = Core.GetFG(tx, floorY)
-                local needFloorFix = (wantFloor == dirtId and curFloor ~= dirtId and not Core.IsProtectedTile(curFloor) and Core.CanEditTile(tx, floorY))
+                H.dfSpeedForceUntil = os.clock() + 1.0
 
-                if needCorBreak or needAboveBreak or needFloorFix then
-                    local standReqX = tx - dir
+                local needCor = (bp.desiredAt(tx, corY) == 0)
+                    and ((Core.GetFG(tx, corY) ~= 0 and not Core.IsProtectedTile(Core.GetFG(tx, corY)) and Core.CanEditTile(tx, corY)) or bp.wantBgZeroAt(tx, corY))
+                local needAbove = alsoClearAbove and corY - 1 >= bp.topY and (bp.desiredAt(tx, corY - 1) == 0)
+                    and ((Core.GetFG(tx, corY - 1) ~= 0 and not Core.IsProtectedTile(Core.GetFG(tx, corY - 1)) and Core.CanEditTile(tx, corY - 1)) or bp.wantBgZeroAt(tx, corY - 1))
+                local needFloor = (floorY <= bp.maxWorkY) and (bp.desiredAt(tx, floorY) == dirtId)
+                    and (Core.GetFG(tx, floorY) ~= dirtId) and not Core.IsProtectedTile(Core.GetFG(tx, floorY)) and Core.CanEditTile(tx, floorY)
+
+                if needCor or needAbove or needFloor then
                     local curPos = Core.ReadPos()
-                    local needActionKind = (needCorBreak or needAboveBreak) and "break" or "build"
-                    local reqInReach = true
-                    if needCorBreak and not Core.IsInActionReach(tx, corY, "break", curPos) then reqInReach = false end
-                    if needAboveBreak and not Core.IsInActionReach(tx, corY - 1, "break", curPos) then reqInReach = false end
-                    if needFloorFix and not dfCanActFromStand(tx, floorY, "build", dirtInfo, curPos) then reqInReach = false end
-
-                    if math.abs(curPos.y - floorY) > 0.48 or math.abs(curPos.x - (tx + 0.5)) > 2.4 or not reqInReach then
-                        if math.abs(curPos.y - floorY) <= 0.45 and math.abs(curPos.x - (standReqX + 0.5)) <= 2.3 and dfIsStandable(standReqX, floorY) then
-                            local okMove = dfStepWalkToX(standReqX + 0.5, floorY, 1.25, aliveFn)
-                            if not okMove then
-                                if not dfMoveManualNear(tx, corY, aliveFn, needActionKind, (needActionKind == "build") and dirtInfo or nil) then
-                                    Core.ClearManualInput()
-                                    return false, "approach_failed"
-                                end
-                            end
-                        else
-                            if not dfMoveManualNear(tx, corY, aliveFn, needActionKind, (needActionKind == "build") and dirtInfo or nil) then
-                                Core.ClearManualInput()
-                                return false, "approach_failed"
-                            end
+                    if math.abs(curPos.y - floorY) > 0.55 then
+                        Core.ClearManualInput()
+                        return false, "off_floor"
+                    end
+                    local needWalkCloser = not dfSafeReachDist(tx, corY, curPos, "break")
+                        or (needAbove and not dfSafeReachDist(tx, corY - 1, curPos, "break"))
+                        or (needFloor and not dfSafeReachDist(tx, floorY, curPos, "build"))
+                    if needWalkCloser then
+                        local standReqX = tx - pDir
+                        if not dfStepWalkToX(standReqX + 0.5, floorY, 1.35, aliveFn, nil, false, bp) then
+                            Core.ClearManualInput()
+                            return false, "approach_row_failed"
                         end
                     end
 
-                    -- Batch break koridor 1..3 tile ke depan sekaligus dalam jangkauan agar cepat & mulus
-                    local brkBatch = {}
-                    if needCorBreak then brkBatch[#brkBatch + 1] = { tx, corY } end
-                    if needAboveBreak then brkBatch[#brkBatch + 1] = { tx, corY - 1 } end
-                    for look = 1, 2 do
-                        local txAhead = tx + dir * look
-                        if txAhead >= 2 and txAhead <= bp.w - 3 and not (DirtFarm.State.centerGap and (txAhead == bp.midX - 1 or txAhead == bp.midX)) then
-                            if bp.desiredAt(txAhead, corY) == 0 and Core.GetFG(txAhead, corY) ~= 0 and not Core.IsProtectedTile(Core.GetFG(txAhead, corY)) then
-                                brkBatch[#brkBatch + 1] = { txAhead, corY }
-                            end
-                            if alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(txAhead, corY - 1) == 0 and Core.GetFG(txAhead, corY - 1) ~= 0 and not Core.IsProtectedTile(Core.GetFG(txAhead, corY - 1)) then
-                                brkBatch[#brkBatch + 1] = { txAhead, corY - 1 }
+                    -- 1) Bersihkan FG + Cave BG di (tx, corY) & opsional (tx, corY-1) dan verifikasi sampai bersih sebelum maju
+                    for cleanTry = 1, 3 do
+                        local clearList = {}
+                        if bp.desiredAt(tx, corY) == 0 then
+                            local cfg = Core.GetFG(tx, corY)
+                            if (cfg ~= 0 and not Core.IsProtectedTile(cfg) and Core.CanEditTile(tx, corY)) or bp.wantBgZeroAt(tx, corY) then
+                                clearList[#clearList + 1] = { tx, corY }
                             end
                         end
-                    end
-                    if #brkBatch > 0 then
-                        dfCleanTilesInReach(brkBatch, aliveFn)
+                        if alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(tx, corY - 1) == 0 then
+                            local afg = Core.GetFG(tx, corY - 1)
+                            if (afg ~= 0 and not Core.IsProtectedTile(afg) and Core.CanEditTile(tx, corY - 1)) or bp.wantBgZeroAt(tx, corY - 1) then
+                                clearList[#clearList + 1] = { tx, corY - 1 }
+                            end
+                        end
+                        local nextTx = tx + pDir
+                        if cleanTry == 1 and nextTx >= 2 and nextTx <= bp.w - 3 and dfSafeReachDist(nextTx, corY, Core.ReadPos(), "break") then
+                            if bp.desiredAt(nextTx, corY) == 0 then
+                                clearList[#clearList + 1] = { nextTx, corY }
+                            end
+                            if alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(nextTx, corY - 1) == 0 then
+                                clearList[#clearList + 1] = { nextTx, corY - 1 }
+                            end
+                        end
+                        if #clearList == 0 then break end
+                        local okC = dfCleanAirTilesInReach(bp, clearList, aliveFn)
+                        local stillBg = (bp.desiredAt(tx, corY) == 0 and bp.wantBgZeroAt(tx, corY))
+                            or (alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(tx, corY - 1) == 0 and bp.wantBgZeroAt(tx, corY - 1))
+                        if okC and not stillBg then break end
+                        task.wait(0.05)
                     end
 
-                    if needCorBreak and dfIsBlocking(tx, corY) then
-                        if Core.IsProtectedTile(Core.GetFG(tx, corY)) or not Core.CanEditTile(tx, corY) then
-                            if markFailFn then markFailFn(tx, corY) end
-                        else
-                            dfCleanTilesInReach({ { tx, corY } }, aliveFn)
-                            if dfIsBlocking(tx, corY) then
-                                if markFailFn then markFailFn(tx, corY) end
-                                Core.ClearManualInput()
-                                return false, "corridor_blocked"
-                            end
+                    -- Jika lorong tx masih terblokir solid yang tidak bisa di-break (mis. Lock), coba lompati ke tx + pDir bila atas terbuka
+                    if dfIsBlocking(tx, corY) then
+                        local jumpTo = tx + pDir
+                        if jumpTo >= 2 and jumpTo <= bp.w - 3 and not dfIsBlocking(tx, corY - 1) and not dfIsBlocking(jumpTo, corY - 1) and dfIsStandable(jumpTo, floorY) then
+                            dfManualJumpTo(jumpTo, floorY, aliveFn)
                         end
                     end
 
-                    if needFloorFix then
-                        local floorSolidNow = dfIsStandable(tx, floorY)
-                        if Core.CountItem(dirtId) <= 0 then
-                            dfQuickCollectNear(aliveFn, dirtId)
-                        end
-                        if Core.CountItem(dirtId) > 0 then
-                            local okP, errP = dfPlaceDirtSafe(tx, floorY, dirtId, aliveFn)
-                            if not okP and markFailFn then markFailFn(tx, floorY) end
-                        elseif not floorSolidNow then
+                    -- 2) Lantai bawah Lava/Batu/Kosong -> Hancurkan dulu & collect dropnya SEBELUM place Dirt
+                    if needFloor and Core.GetFG(tx, floorY) ~= dirtId then
+                        local okF, errF = dfFixFloorSafe(tx, floorY, dirtId, aliveFn)
+                        if not okF and errF == "no_dirt" and (Core.GetFG(tx, floorY) == 0 or not dfIsStandable(tx, floorY)) then
                             Core.ClearManualInput()
                             return false, "no_dirt"
                         end
                     end
                 end
 
-                -- Pastikan lantai tx benar-benar dapat dipijak sebelum berjalan masuk
                 local atLeftEdge = (tx == 2)
                 local atRightEdge = (tx == bp.w - 3)
-                if atLeftEdge or atRightEdge or tx == xTo then
-                    local okStep = dfStepWalkToX(tx + 0.5, floorY, 1.25, aliveFn)
-                    if not okStep then
+                if atLeftEdge or atRightEdge or tx == pTo then
+                    if not dfStepWalkToX(tx + 0.5, floorY, 1.35, aliveFn, nil, false, bp) then
                         Core.ClearManualInput()
                         return false, "edge_walk_failed"
                     end
                     local sCols = atLeftEdge and { 0, 1 } or (atRightEdge and { bp.w - 2, bp.w - 1 } or {})
                     if #sCols > 0 then
-                        local scList = {}
-                        for _, sc in ipairs(sCols) do
-                            if bp.desiredAt(sc, corY) == 0 and Core.GetFG(sc, corY) ~= 0 then scList[#scList + 1] = { sc, corY } end
-                            if alsoClearAbove and bp.desiredAt(sc, corY - 1) == 0 and Core.GetFG(sc, corY - 1) ~= 0 then scList[#scList + 1] = { sc, corY - 1 } end
-                            -- Jangan hancurkan lantai shaft ujung ini jika masih perlu turun di kolom ujung ini
-                            local isDropTurnHere = (tx == xTo and floorY <= bp.maxWorkY)
-                            if not isDropTurnHere and bp.desiredAt(sc, floorY) == 0 and Core.GetFG(sc, floorY) ~= 0 then
-                                scList[#scList + 1] = { sc, floorY }
-                            end
-                        end
-                        dfCleanTilesInReach(scList, aliveFn)
-                        dfQuickCollectNear(aliveFn)
+                        local allowFloorShaftClean = cleanEndFloorShaft or (tx ~= xTo) or (floorY > bp.maxWorkY)
+                        local edgeYs = { corY }
+                        if alsoClearAbove and corY - 1 >= bp.topY then edgeYs[#edgeYs + 1] = corY - 1 end
+                        if allowFloorShaftClean then edgeYs[#edgeYs + 1] = floorY end
+                        dfCleanEdgeShaftAround(bp, atLeftEdge and 1 or (bp.w - 2), atLeftEdge and 0 or (bp.w - 1), edgeYs, aliveFn)
                     end
                 else
-                    -- Terus berjalan mulus melewati tile bersih tanpa berhenti setiap 1 tile
-                    local okWalkTile = dfStepWalkToX(tx + 0.5, floorY, 1.0, aliveFn, function(p)
-                        return (dir > 0 and p.x >= tx + 0.35) or (dir < 0 and p.x <= tx + 0.65), "passed"
-                    end, true)
-                    if not okWalkTile then
+                    local nxClean = (tx + pDir >= 2 and tx + pDir <= bp.w - 3) and not tileNeedsWork(tx + pDir)
+                    local okWalk = dfStepWalkToX(tx + 0.5, floorY, 1.15, aliveFn, nxClean and function(p)
+                        return (pDir > 0 and p.x >= tx + 0.35) or (pDir < 0 and p.x <= tx + 0.65), "passed"
+                    end or nil, nxClean, bp)
+                    if not okWalk then
                         Core.ClearManualInput()
                         return false, "walk_stalled"
                     end
-                    if (math.abs(tx - xFrom) % 4 == 0) or Core.CountItem(dirtId) < 15 then
+                    if (math.abs(tx - pFrom) % 3 == 0) or Core.CountItem(dirtId) < 25 then
                         dfQuickCollectNear(aliveFn)
                     end
                 end
+            end
+
+            if pass == 2 then
+                -- Kembali mulus ke xTo agar posisi akhir selalu tepat di ujung tujuan
+                if math.abs(Core.ReadPos().x - (xTo + 0.5)) > 0.6 then
+                    local retDir = (xTo >= Core.ReadPos().tx) and 1 or -1
+                    for rx = Core.ReadPos().tx, xTo, retDir do
+                        if not aliveFn() then return false, "cancelled" end
+                        dfStepWalkToX(rx + 0.5, floorY, 1.0, aliveFn, (rx ~= xTo) and function(p)
+                            return (retDir > 0 and p.x >= rx + 0.35) or (retDir < 0 and p.x <= rx + 0.65), "passed"
+                        end or nil, rx ~= xTo, bp)
+                    end
+                end
+                Core.ClearManualInput()
             end
         end
 
@@ -8339,114 +8358,98 @@ do
         return true, "row_done"
     end
 
-    local function dfWalkUpperShelf(bp, standFloorY, placeFloorY, xFrom, xTo, aliveFn, markFailFn)
+    local function dfWalkUpperShelf(bp, standFloorY, placeFloorY, xFrom, xTo, aliveFn)
         local dir = (xTo >= xFrom) and 1 or -1
         local dirtId = bp.dirtId
         local standCorY = standFloorY - 1
         local ceilCorY = placeFloorY - 1
 
-        for tx = xFrom, xTo, dir do
-            if type(aliveFn) == "function" and not aliveFn() then
-                Core.ClearManualInput()
-                return false, "cancelled"
+        for pass = 1, 2 do
+            local pFrom = (pass == 1) and xFrom or xTo
+            local pTo = (pass == 1) and xTo or xFrom
+            if pass == 2 then
+                local missedX = nil
+                local scanStep = (xTo >= xFrom) and 1 or -1
+                for cx = xFrom, xTo, scanStep do
+                    if (bp.desiredAt(cx, placeFloorY) == dirtId and Core.GetFG(cx, placeFloorY) ~= dirtId and not Core.IsProtectedTile(Core.GetFG(cx, placeFloorY)) and Core.CanEditTile(cx, placeFloorY))
+                        or (bp.desiredAt(cx, standCorY) == 0 and ((Core.GetFG(cx, standCorY) ~= 0 and not Core.IsProtectedTile(Core.GetFG(cx, standCorY)) and Core.CanEditTile(cx, standCorY)) or bp.wantBgZeroAt(cx, standCorY)))
+                        or (ceilCorY >= bp.topY and bp.desiredAt(cx, ceilCorY) == 0 and ((Core.GetFG(cx, ceilCorY) ~= 0 and not Core.IsProtectedTile(Core.GetFG(cx, ceilCorY)) and Core.CanEditTile(cx, ceilCorY)) or bp.wantBgZeroAt(cx, ceilCorY)))
+                    then
+                        missedX = cx
+                        break
+                    end
+                end
+                if not missedX then break end
+                pFrom = xTo
+                pTo = missedX
             end
 
-            if DirtFarm.State.centerGap and (tx == bp.midX - 1 or tx == bp.midX) then
-                local g1 = (dir > 0) and (bp.midX - 1) or bp.midX
-                local g2 = (dir > 0) and bp.midX or (bp.midX - 1)
-                if tx == g1 then
-                    local afterGap = g2 + dir
-                    local prep = { { g1, standCorY }, { g2, standCorY } }
-                    if placeFloorY >= bp.topY and bp.desiredAt(g1, placeFloorY) == 0 then
-                        prep[#prep + 1] = { g1, placeFloorY }; prep[#prep + 1] = { g2, placeFloorY }
-                    end
-                    if ceilCorY >= bp.topY and bp.desiredAt(g1, ceilCorY) == 0 then
-                        prep[#prep + 1] = { g1, ceilCorY }; prep[#prep + 1] = { g2, ceilCorY }
-                    end
-                    dfCleanTilesInReach(prep, aliveFn)
+            local pDir = (pTo >= pFrom) and 1 or -1
+            for tx = pFrom, pTo, pDir do
+                if type(aliveFn) == "function" and not aliveFn() then
+                    Core.ClearManualInput()
+                    return false, "cancelled"
+                end
+                H.dfSpeedForceUntil = os.clock() + 1.0
 
-                    if not dfIsStandable(g1, standFloorY) and Core.CountItem(dirtId) > 0 then
-                        dfEnsureTemporaryStep(g1, standFloorY, dirtId, aliveFn)
+                local standPrevX = tx - pDir
+                if (bp.desiredAt(tx, standCorY) == 0 and ((Core.GetFG(tx, standCorY) ~= 0 and not Core.IsProtectedTile(Core.GetFG(tx, standCorY)) and Core.CanEditTile(tx, standCorY)) or bp.wantBgZeroAt(tx, standCorY))) then
+                    if dfIsStandable(standPrevX, standFloorY) and math.abs(Core.ReadPos().x - (standPrevX + 0.5)) > 1.25 then
+                        dfStepWalkToX(standPrevX + 0.5, standFloorY, 1.0, aliveFn, nil, false, bp)
                     end
-                    if not dfIsStandable(g2, standFloorY) and Core.CountItem(dirtId) > 0 then
-                        dfEnsureTemporaryStep(g2, standFloorY, dirtId, aliveFn)
-                    end
-                    if not (dfIsStandable(g1, standFloorY) and dfIsStandable(g2, standFloorY)) then
-                        Core.ClearManualInput()
-                        return false, "no_dirt"
-                    end
-                    dfStepWalkToX(g2 + 0.5, standFloorY, 1.2, aliveFn)
-                    dfCleanTilesInReach({ { afterGap, standCorY } }, aliveFn)
-                    if bp.desiredAt(afterGap, standFloorY) == dirtId and Core.GetFG(afterGap, standFloorY) ~= dirtId then
-                        dfEnsureTemporaryStep(afterGap, standFloorY, dirtId, aliveFn)
-                    end
-                    if not dfStepWalkToX(afterGap + 0.5, standFloorY, 0.9, aliveFn) then
-                        Core.ClearManualInput()
-                        return false, "upper_gap_exit_failed"
-                    end
-                    dfCleanTilesInReach({ { g1, standFloorY }, { g2, standFloorY } }, aliveFn)
-                    dfQuickCollectNear(aliveFn)
+                    dfCleanAirTilesInReach(bp, { { tx, standCorY } }, aliveFn)
                 end
-            else
-                -- Bersihkan koridor di depan & atap (ceilCorY), lalu Place Dirt tepat di atas kepala (placeFloorY)
-                local curCor = Core.GetFG(tx, standCorY)
-                local standPrevX = tx - dir
-                if bp.desiredAt(tx, standCorY) == 0 and curCor ~= 0 and not Core.IsProtectedTile(curCor) then
-                    if dfIsStandable(standPrevX, standFloorY) then
-                        dfStepWalkToX(standPrevX + 0.5, standFloorY, 0.9, aliveFn)
-                    end
-                    dfCleanTilesInReach({ { tx, standCorY } }, aliveFn)
-                end
+
                 if bp.desiredAt(tx, standFloorY) == dirtId and Core.GetFG(tx, standFloorY) ~= dirtId then
-                    if dfIsStandable(standPrevX, standFloorY) then
-                        dfStepWalkToX(standPrevX + 0.5, standFloorY, 0.9, aliveFn)
+                    if dfIsStandable(standPrevX, standFloorY) and math.abs(Core.ReadPos().x - (standPrevX + 0.5)) > 1.25 then
+                        dfStepWalkToX(standPrevX + 0.5, standFloorY, 1.0, aliveFn, nil, false, bp)
                     end
-                    local okFloor, errF = dfPlaceDirtSafe(tx, standFloorY, dirtId, aliveFn)
+                    local okFloor, errF = dfFixFloorSafe(tx, standFloorY, dirtId, aliveFn)
                     if not okFloor and not dfIsStandable(tx, standFloorY) then
                         Core.ClearManualInput()
                         return false, errF or "no_dirt"
                     end
                 end
 
-                local okStep = dfStepWalkToX(tx + 0.5, standFloorY, 0.9, aliveFn)
-                if not okStep then
+                if not dfStepWalkToX(tx + 0.5, standFloorY, 1.15, aliveFn, nil, false, bp) then
                     Core.ClearManualInput()
                     return false, "upper_walk_failed"
                 end
 
-                local upperClean = {}
-                if ceilCorY >= bp.topY and bp.desiredAt(tx, ceilCorY) == 0 and Core.GetFG(tx, ceilCorY) ~= 0 then
-                    upperClean[#upperClean + 1] = { tx, ceilCorY }
+                local upperAir = {}
+                if ceilCorY >= bp.topY and bp.desiredAt(tx, ceilCorY) == 0 then
+                    upperAir[#upperAir + 1] = { tx, ceilCorY }
                 end
-                local wantPlace = (placeFloorY >= bp.topY) and bp.desiredAt(tx, placeFloorY) or nil
-                if wantPlace == 0 and Core.GetFG(tx, placeFloorY) ~= 0 then
-                    upperClean[#upperClean + 1] = { tx, placeFloorY }
+                if placeFloorY >= bp.topY and bp.desiredAt(tx, placeFloorY) == 0 then
+                    upperAir[#upperAir + 1] = { tx, placeFloorY }
+                end
+                if #upperAir > 0 then
+                    dfCleanAirTilesInReach(bp, upperAir, aliveFn)
                 end
                 if tx == 2 or tx == bp.w - 3 then
-                    local sCols = (tx == 2) and { 0, 1 } or { bp.w - 2, bp.w - 1 }
-                    for _, sc in ipairs(sCols) do
-                        if bp.desiredAt(sc, standCorY) == 0 and Core.GetFG(sc, standCorY) ~= 0 then upperClean[#upperClean + 1] = { sc, standCorY } end
-                        if placeFloorY >= bp.topY and bp.desiredAt(sc, placeFloorY) == 0 and Core.GetFG(sc, placeFloorY) ~= 0 then upperClean[#upperClean + 1] = { sc, placeFloorY } end
-                        if ceilCorY >= bp.topY and bp.desiredAt(sc, ceilCorY) == 0 and Core.GetFG(sc, ceilCorY) ~= 0 then upperClean[#upperClean + 1] = { sc, ceilCorY } end
-                    end
-                end
-                if #upperClean > 0 then
-                    dfCleanTilesInReach(upperClean, aliveFn)
+                    local sInU = (tx == 2) and 1 or (bp.w - 2)
+                    local sOutU = (tx == 2) and 0 or (bp.w - 1)
+                    local ysU = { standCorY }
+                    if placeFloorY >= bp.topY then ysU[#ysU + 1] = placeFloorY end
+                    if ceilCorY >= bp.topY then ysU[#ysU + 1] = ceilCorY end
+                    dfCleanEdgeShaftAround(bp, sInU, sOutU, ysU, aliveFn)
                 end
 
-                if wantPlace == dirtId and Core.GetFG(tx, placeFloorY) ~= dirtId then
-                    if Core.CountItem(dirtId) <= 0 then dfQuickCollectNear(aliveFn, dirtId) end
-                    local okP, errP = dfPlaceDirtSafe(tx, placeFloorY, dirtId, aliveFn)
-                    if not okP then
-                        if errP == "no_dirt" then
-                            Core.ClearManualInput()
-                            return false, "no_dirt"
-                        elseif markFailFn then
-                            markFailFn(tx, placeFloorY)
-                        end
+                if placeFloorY >= bp.topY and bp.desiredAt(tx, placeFloorY) == dirtId and Core.GetFG(tx, placeFloorY) ~= dirtId then
+                    if Core.CountItem(dirtId) <= 0 then dfQuickCollectNear(aliveFn, dirtId, true) end
+                    local okP, errP = dfFixFloorSafe(tx, placeFloorY, dirtId, aliveFn)
+                    if not okP and errP == "no_dirt" then
+                        Core.ClearManualInput()
+                        return false, "no_dirt"
                     end
                 end
-                dfQuickCollectNear(aliveFn)
+                if (math.abs(tx - pFrom) % 3 == 0) then
+                    dfQuickCollectNear(aliveFn)
+                end
+            end
+
+            if pass == 2 and math.abs(Core.ReadPos().x - (xTo + 0.5)) > 0.6 then
+                dfStepWalkToX(xTo + 0.5, standFloorY, 3.0, aliveFn, nil, false, bp)
             end
         end
 
@@ -8454,111 +8457,16 @@ do
         return true, "upper_row_done"
     end
 
-    local function dfFindReadyDirtDrop(dirtId)
-        local gt = H.gt
-        if not gt or type(gt.dropList) ~= "function" then return nil end
-        local okD, drops = pcall(gt.dropList)
-        if not okD or type(drops) ~= "table" then return nil end
-        local pos = Core.ReadPos()
-        local now = os.clock()
-        local best, bestDist = nil, math.huge
-        for i = 1, #drops do
-            local d = drops[i]
-            if type(d) == "table" and d.uid and d.id == dirtId and (d.n or 0) > 0 and (d.readyAt or 0) <= now then
-                local dist = math.abs(d.x - pos.x) + math.abs(d.y - pos.y) * 1.4
-                if dist < bestDist then
-                    bestDist = dist
-                    best = d
-                end
-            end
-        end
-        return best
-    end
-
-    local function dfBreakBatch(tasksBatch, aliveFn)
-        if #tasksBatch == 0 then return 0 end
-        local first = tasksBatch[1]
-        local okM = dfMoveManualNear(first.x, first.y, aliveFn, "break")
-        if not okM then return -1 end
-
-        local pendingList = {}
-        for _, t in ipairs(tasksBatch) do
-            local cid = Core.GetFG(t.x, t.y)
-            if cid ~= 0 and not Core.IsProtectedTile(cid) and Core.CanEditTile(t.x, t.y) then
-                pendingList[#pendingList + 1] = { tx = t.x, ty = t.y, layer = 1 }
-            end
-        end
-        if #pendingList == 0 then return 0 end
-
-        local cur = Core.ReadPos()
-        local execList, outReachList = {}, {}
-        for _, bt in ipairs(pendingList) do
-            if Core.IsInActionReach(bt.tx, bt.ty, "break", cur) and #execList < 3 then
-                execList[#execList + 1] = bt
-            else
-                outReachList[#outReachList + 1] = bt
-            end
-        end
-        if #execList == 0 then execList[1] = pendingList[1] end
-
-        dfBreakList(execList, aliveFn)
-        if #outReachList > 0 and (type(aliveFn) ~= "function" or aliveFn()) then
-            local nxt = outReachList[1]
-            if dfMoveManualNear(nxt.tx, nxt.ty, aliveFn, "break") then
-                local pos2 = Core.ReadPos()
-                local followList = {}
-                for _, bt in ipairs(outReachList) do
-                    if Core.GetFG(bt.tx, bt.ty) ~= 0 and Core.IsInActionReach(bt.tx, bt.ty, "break", pos2) then
-                        followList[#followList + 1] = bt
-                    end
-                end
-                if #followList > 0 then dfBreakList(followList, aliveFn) end
-            end
-        end
-
-        local brokenCount = 0
-        for _, bt in ipairs(pendingList) do
-            if Core.GetFG(bt.tx, bt.ty) == 0 then brokenCount += 1 end
-        end
-        dfQuickCollectNear(aliveFn)
-        return brokenCount
-    end
-
-    local function dfPlaceDirt(tx, ty, dirtId, aliveFn)
-        if Core.CountItem(dirtId) <= 0 then
-            dfQuickCollectNear(aliveFn, dirtId)
-        end
-        if Core.CountItem(dirtId) <= 0 and DirtFarm.State.autoCollect then
-            local drop = dfFindReadyDirtDrop(dirtId)
-            if drop then
-                local dtx = clamp(math.floor(drop.x), 0, (H.gt and H.gt.w or 100) - 1)
-                local dty = clamp(math.floor(drop.y - 0.01), 0, (H.gt and H.gt.h or 60) - 1)
-                dfMoveManualNear(dtx, dty, aliveFn, "collect")
-                dfQuickCollectNear(aliveFn, dirtId)
-            end
-        end
-        if Core.CountItem(dirtId) <= 0 then
-            return false, "no_dirt"
-        end
-        local dirtInfo = Core.GetItemInfo(dirtId)
-        local okM = dfMoveManualNear(tx, ty, aliveFn, "build", dirtInfo)
-        if not okM then return false, "unreachable" end
-        return dfPlaceDirtSafe(tx, ty, dirtId, aliveFn)
-    end
-
     DirtFarm._impl = {
         dfQuickCollectNear = dfQuickCollectNear,
-        dfMoveManualNear = dfMoveManualNear,
+        dfSettleGrounded = dfSettleGrounded,
+        dfStepWalkToX = dfStepWalkToX,
+        dfCleanAirTilesInReach = dfCleanAirTilesInReach,
+        dfCleanEdgeShaftAround = dfCleanEdgeShaftAround,
         dfClimbShaftToFloorY = dfClimbShaftToFloorY,
         dfTransitionToLowerRow = dfTransitionToLowerRow,
         dfWalkCorridorLower = dfWalkCorridorLower,
         dfWalkUpperShelf = dfWalkUpperShelf,
-        dfFindReadyDirtDrop = dfFindReadyDirtDrop,
-        dfBreakBatch = dfBreakBatch,
-        dfPlaceDirt = dfPlaceDirt,
-        dfStepWalkToX = dfStepWalkToX,
-        dfCleanTilesInReach = dfCleanTilesInReach,
-        dfEnsureTemporaryStep = dfEnsureTemporaryStep,
     }
 end
 
@@ -8579,28 +8487,213 @@ function DirtFarm.Start()
     DirtFarm.State.running = true
     DirtFarm.State.switchingWorld = false
     DirtFarm.State.sessionToken += 1
+    H.dfSpeedForceUntil = os.clock() + 1.5
     local tok = DirtFarm.State.sessionToken
     local function alive() return DirtFarm.State.running and DirtFarm.State.sessionToken == tok end
     if UIHooks.updateButtons then UIHooks.updateButtons() end
 
     DirtFarm.State.thread = task.spawn(function()
         local impl = DirtFarm._impl
-        local skippedKeys, failCounts = {}, {}
         local lastWorldTracked = ""
         local noDirtRetries = 0
         local lowerSweptForWorld, upperSweptForWorld = false, false
 
-        local function tileKey(x, y) return y * 1000 + x end
-        local function markFail(x, y)
-            local k = tileKey(x, y)
-            failCounts[k] = (failCounts[k] or 0) + 1
-            if failCounts[k] >= 3 then skippedKeys[k] = true end
+        local function rowHasLowerWork(bp, corY, alsoAbove)
+            local flY = corY + 1
+            for x = 0, bp.w - 1 do
+                local wc = bp.desiredAt(x, corY)
+                if wc ~= nil and (Core.GetFG(x, corY) ~= wc or (wc == 0 and bp.wantBgZeroAt(x, corY))) then
+                    return true
+                end
+                if flY <= bp.maxWorkY then
+                    local wf = bp.desiredAt(x, flY)
+                    if wf ~= nil and (Core.GetFG(x, flY) ~= wf or (wf == 0 and bp.wantBgZeroAt(x, flY))) then
+                        return true
+                    end
+                end
+                if alsoAbove and corY - 1 >= bp.topY then
+                    local wa = bp.desiredAt(x, corY - 1)
+                    if wa ~= nil and (Core.GetFG(x, corY - 1) ~= wa or (wa == 0 and bp.wantBgZeroAt(x, corY - 1))) then
+                        return true
+                    end
+                end
+            end
+            return false
+        end
+
+        local function rowHasUpperWork(bp, pY)
+            local standY = pY + 2
+            local standCorY = standY - 1
+            local ceilCorY = pY - 1
+            for x = 0, bp.w - 1 do
+                local wp = bp.desiredAt(x, pY)
+                if wp ~= nil and (Core.GetFG(x, pY) ~= wp or (wp == 0 and bp.wantBgZeroAt(x, pY))) then
+                    return true
+                end
+                local ws = bp.desiredAt(x, standCorY)
+                if ws ~= nil and (Core.GetFG(x, standCorY) ~= ws or (ws == 0 and bp.wantBgZeroAt(x, standCorY))) then
+                    return true
+                end
+                if ceilCorY >= bp.topY then
+                    local wc = bp.desiredAt(x, ceilCorY)
+                    if wc ~= nil and (Core.GetFG(x, ceilCorY) ~= wc or (wc == 0 and bp.wantBgZeroAt(x, ceilCorY))) then
+                        return true
+                    end
+                end
+            end
+            return false
+        end
+
+        local function isWorldDfComplete(bp)
+            for y = bp.topY, bp.maxWorkY do
+                for x = 0, bp.w - 1 do
+                    local want = bp.desiredAt(x, y)
+                    if want ~= nil then
+                        if Core.GetFG(x, y) ~= want then return false end
+                        if want == 0 and bp.wantBgZeroAt(x, y) then return false end
+                    end
+                end
+            end
+            return true
+        end
+
+        local function moveVerticallyViaEdgeShaft(bp, targetFloorY, dirtId)
+            local pos = Core.ReadPos()
+            local curFloorY = math.floor(pos.y + 0.5)
+            local atLeft = (pos.tx < bp.midX)
+            local edgeX = atLeft and 2 or (bp.w - 3)
+            local sIn = atLeft and 1 or (bp.w - 2)
+            local sOut = atLeft and 0 or (bp.w - 1)
+
+            if math.abs(pos.x - (edgeX + 0.5)) > 1.2 then
+                local curCor = curFloorY - 1
+                impl.dfWalkCorridorLower(bp, curCor, pos.tx, edgeX, false, alive, false)
+            end
+
+            if not alive() then return false end
+            pos = Core.ReadPos()
+            curFloorY = math.floor(pos.y + 0.5)
+            if curFloorY < targetFloorY then
+                while curFloorY < targetFloorY and alive() do
+                    local curCor = curFloorY - 1
+                    local stepCor = math.min(targetFloorY - 1, curCor + 2)
+                    local okT = impl.dfTransitionToLowerRow(bp, sIn, sOut, edgeX, curCor, stepCor, dirtId, alive)
+                    if not okT then return false end
+                    curFloorY = math.floor(Core.ReadPos().y + 0.5)
+                end
+            elseif curFloorY > targetFloorY then
+                local okC = impl.dfClimbShaftToFloorY(bp, sIn, sOut, targetFloorY, dirtId, alive, edgeX)
+                if not okC then return false end
+            end
+            impl.dfCleanEdgeShaftAround(bp, sIn, sOut, { targetFloorY - 2, targetFloorY - 1, targetFloorY, targetFloorY + 1 }, alive)
+            return math.abs(Core.ReadPos().y - targetFloorY) <= 0.65
+        end
+
+        local function dfFarmDirtIfLow(bp, dirtId)
+            local seedId = resolveDirtSeedId(dirtId)
+            local groundCor = bp.groundY - 1
+            if groundCor < bp.topY or groundCor > bp.maxWorkY then return false end
+            if not moveVerticallyViaEdgeShaft(bp, bp.groundY, dirtId) then
+                return false
+            end
+
+            local curP = Core.ReadPos()
+            local startX = (curP.tx < bp.midX) and 2 or (bp.w - 3)
+            local endX = (startX == 2) and (bp.w - 3) or 2
+            local dir = (endX >= startX) and 1 or -1
+
+            -- 1. Collect drop Dirt & harvest tree matang di groundCor
+            setDfStatus("[DF] Kumpulkan Dirt / Harvest Tree...")
+            for tx = startX, endX, dir do
+                if not alive() then return false end
+                local fg = Core.GetFG(tx, groundCor)
+                if fg == seedId and Core.IsTreeRipe(tx, groundCor) then
+                    if math.abs(Core.ReadPos().x - (tx + 0.5)) > 1.8 then
+                        impl.dfStepWalkToX(tx + 0.5, bp.groundY, 1.4, alive, nil, false, bp)
+                    end
+                    impl.dfCleanAirTilesInReach(bp, { { tx, groundCor } }, alive)
+                elseif math.abs(tx - startX) % 4 == 0 then
+                    if dfIsStandable(tx, bp.groundY) then
+                        impl.dfStepWalkToX(tx + 0.5, bp.groundY, 1.2, alive, nil, false, bp)
+                    end
+                    impl.dfQuickCollectNear(alive, dirtId, true)
+                end
+                if Core.CountItem(dirtId) >= 60 then
+                    impl.dfQuickCollectNear(alive, dirtId, true)
+                    return true
+                end
+            end
+            impl.dfQuickCollectNear(alive, dirtId, true)
+            if Core.CountItem(dirtId) >= 20 then return true end
+
+            -- 2. Tanam Dirt Seed secukupnya di groundCor (di luar safety moat door) jika punya seed
+            local haveSeed = Core.CountItem(seedId)
+            if haveSeed <= 0 then return Core.CountItem(dirtId) > 0 end
+            local planted = {}
+            local maxPlant = math.min(28, haveSeed)
+            setDfStatus(string.format("[DF] Tanam %d Dirt Seed untuk bahan Dirt...", maxPlant))
+            for tx = endX, startX, -dir do
+                if not alive() or #planted >= maxPlant or Core.CountItem(seedId) <= 0 then break end
+                if math.abs(tx - bp.doorX) > 3 and Core.GetFG(tx, groundCor) == 0 and Core.IsPlantable(tx, groundCor) then
+                    if math.abs(Core.ReadPos().x - (tx + 0.5)) > 1.8 and dfIsStandable(tx, bp.groundY) then
+                        impl.dfStepWalkToX(tx + 0.5, bp.groundY, 1.2, alive, nil, false, bp)
+                    end
+                    if Core.IsInActionReach(tx, groundCor, "build") then
+                        local okPl = Packets.PlaceVerified(tx, groundCor, seedId, 1, {
+                            showHand = DirtFarm.State.showHand, delay = 0, noLocalMirror = false,
+                            retries = 2, placeGap = 0.175, shouldContinue = alive,
+                        })
+                        if okPl or Core.GetFG(tx, groundCor) == seedId then
+                            planted[#planted + 1] = { x = tx, y = groundCor }
+                        end
+                    end
+                end
+            end
+            if #planted == 0 then return Core.CountItem(dirtId) > 0 end
+
+            -- 3. Tunggu pohon matang lalu harvest + collect semua Dirt
+            local waitDl = os.clock() + 40
+            while alive() and os.clock() < waitDl do
+                local ripeAny, stillAny = false, false
+                for _, pt in ipairs(planted) do
+                    if Core.GetFG(pt.x, pt.y) == seedId then
+                        stillAny = true
+                        if Core.IsTreeRipe(pt.x, pt.y) then ripeAny = true end
+                    end
+                end
+                if not stillAny or ripeAny then break end
+                local rem = Core.GetTreeRemainingSec(planted[1].x, planted[1].y)
+                setDfStatus(string.format("[DF] Tunggu Dirt Tree (%ds)...", math.ceil(tonumber(rem) or 1)))
+                task.wait(0.8)
+            end
+            for _, pt in ipairs(planted) do
+                if not alive() then return false end
+                if Core.GetFG(pt.x, pt.y) == seedId then
+                    local waitEach = os.clock() + 25
+                    while alive() and os.clock() < waitEach and not Core.IsTreeRipe(pt.x, pt.y) and Core.GetFG(pt.x, pt.y) == seedId do
+                        task.wait(0.4)
+                    end
+                    if dfIsStandable(pt.x, bp.groundY) then
+                        impl.dfStepWalkToX(pt.x + 0.5, bp.groundY, 1.4, alive, nil, false, bp)
+                    end
+                    if Core.GetFG(pt.x, pt.y) == seedId then
+                        Packets.BreakVerified({ { tx = pt.x, ty = pt.y, layer = 1 } }, {
+                            threads = 1, layer = 1, oneHit = false, customHits = nil,
+                            hitDelay = 0.165, verifyTimeout = 0.24, showHand = DirtFarm.State.showHand,
+                            showVisual = true, noLocalMirror = true, autoRange = false, shouldContinue = alive,
+                        })
+                    end
+                    impl.dfQuickCollectNear(alive, dirtId, true)
+                end
+            end
+            return Core.CountItem(dirtId) > 0
         end
 
         while alive() do
             if evaluateSeems() then break end
             Core.EnsureInit()
             Core.EnsureManualInputHook()
+            H.dfSpeedForceUntil = os.clock() + 1.5
             gt = H.gt
             if not gt or gt.name == "" then
                 Core.ClearManualInput()
@@ -8610,7 +8703,6 @@ function DirtFarm.Start()
                 local curW = cleanWorldName(gt.name)
                 if curW ~= lastWorldTracked then
                     lastWorldTracked = curW
-                    skippedKeys, failCounts = {}, {}
                     noDirtRetries = 0
                     lowerSweptForWorld, upperSweptForWorld = false, false
                 end
@@ -8618,35 +8710,12 @@ function DirtFarm.Start()
                 local bp = buildDfBlueprint(gt)
                 local dirtId = bp.dirtId
 
-                local function rowHasLowerWork(corY, alsoAbove)
-                    local flY = corY + 1
-                    for x = 0, bp.w - 1 do
-                        local wc = bp.desiredAt(x, corY)
-                        if wc ~= nil and Core.GetFG(x, corY) ~= wc and not skippedKeys[tileKey(x, corY)] then
-                            if wc == 0 or wc == dirtId then return true end
-                        end
-                        if flY <= bp.maxWorkY then
-                            local wf = bp.desiredAt(x, flY)
-                            if wf ~= nil and Core.GetFG(x, flY) ~= wf and not skippedKeys[tileKey(x, flY)] then
-                                return true
-                            end
-                        end
-                        if alsoAbove and corY - 1 >= bp.topY then
-                            local wa = bp.desiredAt(x, corY - 1)
-                            if wa ~= nil and Core.GetFG(x, corY - 1) ~= wa and not skippedKeys[tileKey(x, corY - 1)] then
-                                return true
-                            end
-                        end
-                    end
-                    return false
-                end
-
-                -- Stage 1A: Sweep Bagian Bawah (doorY -> maxWorkY) secara manual murni dari atas ke bawah
+                -- Stage 1A: Zigzag Bagian Bawah (doorY -> maxWorkY), selalu mulai dari ujung terdekat lalu bolak-balik konsisten via 2 kolom ujung
                 if not lowerSweptForWorld then
                     local lowerCors = {}
                     local cy = bp.doorY
                     while cy <= bp.maxWorkY do
-                        if cy == bp.maxWorkY - 1 and bp.desiredAt(math.max(2, bp.doorX), bp.maxWorkY) == 0 then
+                        if cy == bp.maxWorkY - 1 and bp.desiredAt(2, bp.maxWorkY) == 0 then
                             lowerCors[#lowerCors + 1] = { corY = bp.maxWorkY, above = true }
                             break
                         else
@@ -8656,227 +8725,166 @@ function DirtFarm.Start()
                         end
                     end
 
-                    local sweepRev = false
+                    -- Pilih ujung terdekat saat mulai di baris White Door / posisi awal
+                    local pos0 = Core.ReadPos()
+                    local firstEdgeLeft = (pos0.tx < bp.midX)
+                    local firstEdgeX = firstEdgeLeft and 2 or (bp.w - 3)
+                    local firstCurFloor = math.floor(pos0.y + 0.5)
+                    if math.abs(pos0.x - (firstEdgeX + 0.5)) > 1.2 and firstCurFloor >= 2 and firstCurFloor <= bp.maxWorkY + 1 then
+                        setDfStatus(string.format("[DF] Menuju ujung terdekat x=%d...", firstEdgeX))
+                        impl.dfWalkCorridorLower(bp, firstCurFloor - 1, pos0.tx, firstEdgeX, false, alive, false, true)
+                    end
+
                     local sweptAllLower = true
                     for i = 1, #lowerCors do
                         if not alive() or evaluateSeems() then sweptAllLower = false; break end
                         local rowInfo = lowerCors[i]
                         local rCorY = rowInfo.corY
-                        if rowHasLowerWork(rCorY, rowInfo.above) then
+                        local targetFloorY = rCorY + 1
+                        if rowHasLowerWork(bp, rCorY, rowInfo.above) then
                             local curP = Core.ReadPos()
-                            local xStart = sweepRev and (bp.w - 3) or 2
-                            local xEnd = sweepRev and 2 or (bp.w - 3)
-                            if math.abs(curP.tx - xEnd) < math.abs(curP.tx - xStart) then
-                                xStart, xEnd = xEnd, xStart
-                                sweepRev = not sweepRev
-                            end
-                            local okReach = (math.floor(curP.y + 0.5) == (rCorY + 1) and math.abs(curP.tx - xStart) <= 1)
-                            if not okReach then
-                                setDfStatus(string.format("[Manual Walk] Menuju Baris Bawah y=%d (%d)...", rCorY, xStart))
-                                okReach = impl.dfMoveManualNear(xStart, rCorY, alive, "stand")
-                                if not okReach then
-                                    xStart, xEnd = xEnd, xStart
-                                    sweepRev = not sweepRev
-                                    okReach = impl.dfMoveManualNear(xStart, rCorY, alive, "stand")
+                            if math.abs(curP.y - targetFloorY) > 0.55 then
+                                setDfStatus(string.format("[DF] Turun ujung ke y=%d...", rCorY))
+                                if not moveVerticallyViaEdgeShaft(bp, targetFloorY, dirtId) then
+                                    sweptAllLower = false
+                                    break
                                 end
                             end
 
-                            local okRow = false
-                            if okReach then
-                                setDfStatus(string.format("[Manual Walk] Garap Lorong Bawah y=%d (%d->%d)", rCorY, xStart, xEnd))
-                                okRow = impl.dfWalkCorridorLower(bp, rCorY, xStart, xEnd, rowInfo.above, alive, markFail)
-                            else
-                                local pNow = Core.ReadPos()
-                                if math.floor(pNow.y + 0.5) == (rCorY + 1) and pNow.tx >= 2 and pNow.tx <= bp.w - 3 then
-                                    setDfStatus(string.format("[Manual Walk] Garap Tengah->Pinggir y=%d (%d->%d)", rCorY, pNow.tx, xEnd))
-                                    local okPart = impl.dfWalkCorridorLower(bp, rCorY, pNow.tx, xEnd, rowInfo.above, alive, markFail)
-                                    if okPart and alive() then
-                                        okRow = impl.dfWalkCorridorLower(bp, rCorY, xEnd, xStart, rowInfo.above, alive, markFail)
-                                        xStart, xEnd = xEnd, xStart
-                                        sweepRev = not sweepRev
+                            curP = Core.ReadPos()
+                            local atLeft = (curP.tx < bp.midX)
+                            local xStart = atLeft and 2 or (bp.w - 3)
+                            local xEnd = atLeft and (bp.w - 3) or 2
+                            if math.abs(curP.x - (xStart + 0.5)) > 1.2 then
+                                if not impl.dfWalkCorridorLower(bp, rCorY, curP.tx, xStart, rowInfo.above, alive, false) then
+                                    sweptAllLower = false
+                                    break
+                                end
+                            end
+
+                            local hasMoreRowsBelow = (i < #lowerCors)
+                            setDfStatus(string.format("[DF] Zigzag Bawah y=%d (%d->%d)", rCorY, xStart, xEnd))
+                            local okRow, errRow = impl.dfWalkCorridorLower(bp, rCorY, xStart, xEnd, rowInfo.above, alive, not hasMoreRowsBelow)
+                            if not okRow then
+                                if errRow == "no_dirt" then
+                                    noDirtRetries += 1
+                                    if dfFarmDirtIfLow(bp, dirtId) then
+                                        noDirtRetries = 0
                                     end
                                 end
-                            end
-
-                            if not okRow then
                                 sweptAllLower = false
-                            elseif alive() and i < #lowerCors and lowerCors[i + 1].corY == rCorY + 2 and rowHasLowerWork(lowerCors[i + 1].corY, lowerCors[i + 1].above) then
-                                local endPos = Core.ReadPos()
-                                local atLeft = (endPos.tx <= 3)
-                                local sIn = atLeft and 1 or (bp.w - 2)
-                                local sOut = atLeft and 0 or (bp.w - 1)
-                                local edgeX = atLeft and 2 or (bp.w - 3)
-                                impl.dfTransitionToLowerRow(bp, sIn, sOut, edgeX, rCorY, rCorY + 2, dirtId, alive)
+                                break
                             end
-                            sweepRev = not sweepRev
+                            noDirtRetries = 0
                         end
                     end
+
                     Core.ClearManualInput()
                     if sweptAllLower then
-                        lowerSweptForWorld = true
+                        -- Cek apakah masih ada sisa di baris bawah mana pun sebelum lanjut ke atas
+                        local anyLowerLeft = false
+                        for _, rowInfo in ipairs(lowerCors) do
+                            if rowHasLowerWork(bp, rowInfo.corY, rowInfo.above) then
+                                anyLowerLeft = true
+                                break
+                            end
+                        end
+                        if not anyLowerLeft then
+                            lowerSweptForWorld = true
+                        end
                     end
                 end
 
-                -- Stage 1B: Sweep Bagian Atas (doorY - 1 -> topY) bottom-to-top dengan pijakan Dirt & panjat shaft 1-tile
-                if alive() and not upperSweptForWorld then
+                -- Stage 1B: Zigzag Bagian Atas (groundY - 2 -> topY, bottom-to-top) lewat 2 kolom ujung (kiri/kanan)
+                if alive() and lowerSweptForWorld and not upperSweptForWorld then
                     local upperPlaceRows = {}
                     local uy = bp.groundY - 2
                     while uy >= bp.topY do
                         upperPlaceRows[#upperPlaceRows + 1] = uy
                         uy -= 2
                     end
+
                     local sweptAllUpper = true
-                    if #upperPlaceRows > 0 and Core.CountItem(dirtId) > 0 then
+                    if #upperPlaceRows > 0 then
                         for i = 1, #upperPlaceRows do
                             if not alive() or evaluateSeems() then sweptAllUpper = false; break end
                             local pY = upperPlaceRows[i]
                             local standY = pY + 2
-                            local hasUpperNeed = false
-                            for x = 0, bp.w - 1 do
-                                local wp = bp.desiredAt(x, pY)
-                                if wp ~= nil and Core.GetFG(x, pY) ~= wp and not skippedKeys[tileKey(x, pY)] then hasUpperNeed = true; break end
-                                local ws = bp.desiredAt(x, standY - 1)
-                                if ws ~= nil and Core.GetFG(x, standY - 1) ~= ws and not skippedKeys[tileKey(x, standY - 1)] then hasUpperNeed = true; break end
-                                if pY - 1 >= bp.topY then
-                                    local wc = bp.desiredAt(x, pY - 1)
-                                    if wc ~= nil and Core.GetFG(x, pY - 1) ~= wc and not skippedKeys[tileKey(x, pY - 1)] then hasUpperNeed = true; break end
+                            if rowHasUpperWork(bp, pY) then
+                                if Core.CountItem(dirtId) <= 0 then
+                                    impl.dfQuickCollectNear(alive, dirtId, true)
                                 end
-                            end
-                            if hasUpperNeed then
-                                local curP = Core.ReadPos()
-                                local startLeft = (math.abs(curP.tx - 2) <= math.abs(curP.tx - (bp.w - 3)))
-                                local xStart = startLeft and 2 or (bp.w - 3)
-                                local xEnd = startLeft and (bp.w - 3) or 2
-                                local okAt = (math.floor(curP.y + 0.5) == standY and math.abs(curP.tx - xStart) <= 1)
-                                if not okAt then
-                                    setDfStatus(string.format("[Manual Walk] Menuju Rak Atas y=%d (%d)...", standY, xStart))
-                                    okAt = impl.dfMoveManualNear(xStart, standY - 1, alive, "stand")
-                                    if not okAt then
-                                        xStart, xEnd = xEnd, xStart
-                                        okAt = impl.dfMoveManualNear(xStart, standY - 1, alive, "stand")
+                                if Core.CountItem(dirtId) <= 0 then
+                                    noDirtRetries += 1
+                                    setDfStatus(string.format("Dirt kurang! Farm Dirt Tree (%d/3)...", noDirtRetries))
+                                    if dfFarmDirtIfLow(bp, dirtId) then
+                                        noDirtRetries = 0
+                                    else
+                                        task.wait(0.45)
                                     end
-                                end
-                                if not okAt then
                                     sweptAllUpper = false
                                     break
                                 end
-                                setDfStatus(string.format("[Manual Walk] Build Baris Atas y=%d", pY))
-                                local okUp, errUp = impl.dfWalkUpperShelf(bp, standY, pY, xStart, xEnd, alive, markFail)
-                                if not okUp then
+
+                                setDfStatus(string.format("[DF] Naik Shaft ke Rak Atas y=%d...", standY))
+                                if not moveVerticallyViaEdgeShaft(bp, standY, dirtId) then
                                     sweptAllUpper = false
-                                    if errUp == "no_dirt" then break end
+                                    break
                                 end
-                                -- Jika masih ada baris di atasnya, panjat 2 tile ke pY lewat shaft di ujung xEnd
-                                if okUp and i < #upperPlaceRows and alive() then
-                                    local atLeft = (xEnd == 2)
-                                    local cIn = atLeft and 1 or (bp.w - 2)
-                                    local cOut = atLeft and 0 or (bp.w - 1)
-                                    impl.dfCleanTilesInReach({ { xEnd, pY - 1 }, { cIn, standY - 1 }, { cOut, standY - 1 } }, alive)
-                                    local okCl = impl.dfClimbShaftToFloorY(bp, cIn, cOut, pY, dirtId, alive, xEnd)
-                                    if okCl then
-                                        impl.dfStepWalkToX(xEnd + 0.5, pY, 0.9, alive)
-                                        impl.dfCleanTilesInReach({ { cIn, pY }, { cOut, pY }, { cIn, standY - 1 } }, alive)
-                                        impl.dfQuickCollectNear(alive, dirtId)
-                                    end
+
+                                local curP = Core.ReadPos()
+                                local atLeft = (curP.tx < bp.midX)
+                                local xStart = atLeft and 2 or (bp.w - 3)
+                                local xEnd = atLeft and (bp.w - 3) or 2
+                                setDfStatus(string.format("[DF] Build Atas y=%d (%d->%d)", pY, xStart, xEnd))
+                                local okUp, errUp = impl.dfWalkUpperShelf(bp, standY, pY, xStart, xEnd, alive)
+                                if not okUp then
+                                    if errUp == "no_dirt" then noDirtRetries += 1 end
+                                    sweptAllUpper = false
+                                    break
                                 end
+                                noDirtRetries = 0
                             end
                         end
                     end
                     Core.ClearManualInput()
                     if sweptAllUpper then
-                        upperSweptForWorld = true
+                        local anyUpperLeft = false
+                        for _, pY in ipairs(upperPlaceRows) do
+                            if rowHasUpperWork(bp, pY) then anyUpperLeft = true; break end
+                        end
+                        if not anyUpperLeft then
+                            upperSweptForWorld = true
+                        end
                     end
                 end
 
                 if not alive() then break end
 
-                -- Stage 2: Scan ulang sisa tile & selesaikan satu per satu dengan Pure Manual Walk + Jump + Shaft Climb
-                local digShaftTasks, digRowTasks, fillLowerTasks, upperTasks = {}, {}, {}, {}
-                local function isShaftX(x)
-                    return x <= 1 or x >= bp.w - 2 or (DirtFarm.State.centerGap and (x == bp.midX - 1 or x == bp.midX))
-                end
-
-                for y = bp.doorY, bp.maxWorkY do
-                    local rev = ((y - bp.doorY) % 2 == 1)
-                    local xStart, xEnd, xStep = rev and (bp.w - 1) or 0, rev and 0 or (bp.w - 1), rev and -1 or 1
-                    for x = xStart, xEnd, xStep do
-                        if not skippedKeys[tileKey(x, y)] then
-                            local want = bp.desiredAt(x, y)
-                            if want ~= nil then
-                                local curId = Core.GetFG(x, y)
-                                if want == 0 and curId ~= 0 then
-                                    if isShaftX(x) then
-                                        digShaftTasks[#digShaftTasks + 1] = { x = x, y = y, op = "break" }
-                                    else
-                                        digRowTasks[#digRowTasks + 1] = { x = x, y = y, op = "break" }
-                                    end
-                                elseif want == dirtId and curId ~= dirtId then
-                                    fillLowerTasks[#fillLowerTasks + 1] = { x = x, y = y, op = (curId ~= 0) and "replace" or "place" }
-                                end
-                            end
-                        end
-                    end
-                end
-
-                for y = bp.doorY - 1, bp.topY, -1 do
-                    local rev = ((bp.doorY - y) % 2 == 0)
-                    local xStart, xEnd, xStep = rev and (bp.w - 1) or 0, rev and 0 or (bp.w - 1), rev and -1 or 1
-                    for x = xStart, xEnd, xStep do
-                        if not skippedKeys[tileKey(x, y)] then
-                            local want = bp.desiredAt(x, y)
-                            if want ~= nil then
-                                local curId = Core.GetFG(x, y)
-                                if want == 0 and curId ~= 0 then
-                                    if isShaftX(x) then
-                                        digShaftTasks[#digShaftTasks + 1] = { x = x, y = y, op = "break" }
-                                    else
-                                        digRowTasks[#digRowTasks + 1] = { x = x, y = y, op = "break" }
-                                    end
-                                elseif want == dirtId and curId ~= dirtId then
-                                    upperTasks[#upperTasks + 1] = { x = x, y = y, op = (curId ~= 0) and "replace" or "place" }
-                                end
-                            end
-                        end
-                    end
-                end
-
-                local totalTodo = #digShaftTasks + #digRowTasks + #fillLowerTasks + #upperTasks
-                if totalTodo == 0 then
+                if isWorldDfComplete(bp) then
                     Core.ClearManualInput()
-                    local rot = DirtFarm.State.rotationWorlds
+                    if DirtFarm.State.autoCollect then
+                        impl.dfQuickCollectNear(alive, nil, true)
+                    end
+                    local rot = DirtFarm.State.rotationWorlds or {}
+                    for ri = #rot, 1, -1 do
+                        if rot[ri] == curW then table.remove(rot, ri) end
+                    end
+                    DirtFarm.State.rotationText = table.concat(rot, ", ")
+                    if UIHooks.refreshDfList then UIHooks.refreshDfList() end
+
                     local nextWorld = nil
-                    if #rot > 0 then
-                        for idx, wn in ipairs(rot) do
-                            if wn == curW and rot[idx + 1] then
-                                nextWorld = rot[idx + 1]
-                                break
-                            end
-                        end
-                        if not nextWorld then
-                            for _, wn in ipairs(rot) do
-                                if wn ~= curW then nextWorld = wn; break end
-                            end
-                        end
+                    for _, wn in ipairs(rot) do
+                        if wn ~= curW then nextWorld = wn; break end
                     end
 
-                    if nextWorld and nextWorld ~= curW and type(gt.enter) == "function" then
+                    if nextWorld and nextWorld ~= "" then
                         setDfStatus(string.format("[%s] SELESAI -> Rotation ke %s", curW, nextWorld))
                         emitNotify("SYT Dirt Farm", string.format("DF %s selesai! Pindah ke %s...", curW, nextWorld))
-                        if DirtFarm.State.autoCollect then
-                            impl.dfQuickCollectNear(alive)
-                        end
-                        Core.ClearManualInput()
                         DirtFarm.State.switchingWorld = true
-                        pcall(gt.enter, nextWorld)
-                        local deadline = os.clock() + 12
-                        while alive() and os.clock() < deadline do
-                            local nowW = H.gt and cleanWorldName(H.gt.name) or ""
-                            if nowW == nextWorld then break end
-                            task.wait(0.25)
-                        end
-                        task.wait(1.0)
-                        pcall(SYT_Logic.Init, true)
+                        Packets.EnterWorldDoor(nextWorld, alive)
                         DirtFarm.State.switchingWorld = false
+                        lowerSweptForWorld, upperSweptForWorld = false, false
                     else
                         setDfStatus(string.format("Selesai! World %s Dirt Farm Selesai", curW))
                         emitNotify("SYT Dirt Farm", "Dirt Farm selesai di world " .. curW)
@@ -8884,119 +8892,45 @@ function DirtFarm.Start()
                         break
                     end
                 else
-                    local activeQueue, phaseLabel
-                    if #digRowTasks > 0 then
-                        activeQueue, phaseLabel = digRowTasks, "Manual Stray: Gali Lorong"
-                    elseif #digShaftTasks > 0 then
-                        activeQueue, phaseLabel = digShaftTasks, "Manual Stray: Rapikan Shaft"
-                    elseif #fillLowerTasks > 0 then
-                        activeQueue, phaseLabel = fillLowerTasks, "Manual Stray: Isi Dirt Bawah"
-                    else
-                        activeQueue, phaseLabel = upperTasks, "Manual Stray: Place Dirt Atas"
+                    if noDirtRetries >= 3 then
+                        setDfStatus("Dirt habis! Siapkan Dirt di inventory.")
+                        DirtFarm.State.running = false
+                        break
                     end
-
-                    local didAnyAction = false
-                    local idx = 1
-                    while idx <= #activeQueue and alive() do
-                        if evaluateSeems() then break end
-                        local taskItem = activeQueue[idx]
-                        setDfStatus(string.format("%s (%d/%d | Sisa:%d) (%d,%d)", phaseLabel, idx, #activeQueue, totalTodo - idx + 1, taskItem.x, taskItem.y))
-                        local curId = Core.GetFG(taskItem.x, taskItem.y)
-
-                        if taskItem.op == "break" then
-                            if curId ~= 0 and not Core.IsProtectedTile(curId) then
-                                local batch = { taskItem }
-                                local look = 1
-                                while #batch < 3 and (idx + look) <= #activeQueue do
-                                    local nx = activeQueue[idx + look]
-                                    if nx.op == "break" and math.max(math.abs(nx.x - taskItem.x), math.abs(nx.y - taskItem.y)) <= 2 then
-                                        batch[#batch + 1] = nx
-                                        look += 1
-                                    else
-                                        break
-                                    end
-                                end
-                                local resB = impl.dfBreakBatch(batch, alive)
-                                if resB > 0 then
-                                    didAnyAction = true
-                                    noDirtRetries = 0
-                                    for _, bt in ipairs(batch) do
-                                        if Core.GetFG(bt.x, bt.y) ~= 0 then markFail(bt.x, bt.y) end
-                                    end
-                                else
-                                    markFail(taskItem.x, taskItem.y)
-                                end
-                                idx += #batch
-                            else
-                                idx += 1
-                            end
-                        elseif taskItem.op == "replace" then
-                            if curId ~= 0 and curId ~= dirtId and not Core.IsProtectedTile(curId) then
-                                local resB = impl.dfBreakBatch({ taskItem }, alive)
-                                if resB > 0 then didAnyAction = true else markFail(taskItem.x, taskItem.y) end
-                            end
-                            if Core.GetFG(taskItem.x, taskItem.y) == 0 then
-                                local okP, errP = impl.dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
-                                if okP then
-                                    didAnyAction = true
-                                    noDirtRetries = 0
-                                elseif errP == "no_dirt" then
-                                    noDirtRetries += 1
-                                    setDfStatus(string.format("Dirt habis! Collect drops (%d/3)...", noDirtRetries))
-                                    task.wait(0.5)
-                                    if noDirtRetries >= 3 then break end
-                                else
-                                    markFail(taskItem.x, taskItem.y)
-                                end
-                            end
-                            idx += 1
-                        else -- "place"
-                            if Core.GetFG(taskItem.x, taskItem.y) == 0 then
-                                local okP, errP = impl.dfPlaceDirt(taskItem.x, taskItem.y, dirtId, alive)
-                                if okP then
-                                    didAnyAction = true
-                                    noDirtRetries = 0
-                                elseif errP == "no_dirt" then
-                                    noDirtRetries += 1
-                                    setDfStatus(string.format("Dirt habis! Collect drops (%d/3)...", noDirtRetries))
-                                    task.wait(0.5)
-                                    if noDirtRetries >= 3 then break end
-                                else
-                                    markFail(taskItem.x, taskItem.y)
-                                end
-                            end
-                            idx += 1
-                        end
-                    end
-
-                    if not didAnyAction and alive() then
-                        task.wait(0.35)
-                    end
+                    -- Reset sweep flag supaya siklus berikutnya membereskan baris tersisa lewat koridor & shaft ujung (tanpa A* hancurkan lantai)
+                    lowerSweptForWorld = false
+                    upperSweptForWorld = false
+                    task.wait(0.25)
                 end
             end
             task.wait(0.05)
         end
 
+        H.dfSpeedForceUntil = 0
         Core.ClearManualInput()
         DirtFarm.State.switchingWorld = false
         if DirtFarm.State.sessionToken == tok then
             DirtFarm.State.running = false
             DirtFarm.State.thread = nil
-            if DirtFarm.State.status == "Idle" or string.find(DirtFarm.State.status, "Manual", 1, true) then
+            if DirtFarm.State.status == "Idle" or string.find(DirtFarm.State.status, "[", 1, true) then
                 setDfStatus("Stopped")
-            elseif UIHooks.updateButtons then
-                UIHooks.updateButtons()
             end
         end
+        if UIHooks.updateButtons then UIHooks.updateButtons() end
     end)
     return true
 end
 
 function DirtFarm.Stop()
-    Core.ClearManualInput()
     DirtFarm.State.running = false
     DirtFarm.State.switchingWorld = false
+    H.dfSpeedForceUntil = 0
     DirtFarm.State.sessionToken += 1
+    Core.ClearManualInput()
+    if DirtFarm.State.thread then
+        pcall(task.cancel, DirtFarm.State.thread)
+        DirtFarm.State.thread = nil
+    end
     setDfStatus("Stopped")
 end
 
@@ -9013,18 +8947,7 @@ local VISUAL_ROLES = { "none", "developer", "moderator", "admin", "owner", "vip"
 local VISUAL_EFFECTS = { "None", "Rainbow Wave", "Sponsor Sparkle", "Supporter Wave", "Legend Gold", "Royal Pulse", "Creator Tag", "Color Prefix" }
 local VISUAL_TITLES = { "none", "legend", "dr", "cc", "sponsor", "supporter", "royal" }
 
-local ROLE_BADGES = {
-    developer = "`4[DEV] `w",
-    moderator = "`#[MOD] `w",
-    admin     = "`6[ADMIN] `w",
-    owner     = "{rainbow}[OWNER]} `w",
-    vip       = "`^[VIP] `w",
-    royal     = "{royal}[ROYAL]} ",
-    legend    = "{legend}[LEGEND]} ",
-    sponsor   = "{sponsor}[SPONSOR]} ",
-    supporter = "{supporter}[SUPPORTER]} ",
-    dr        = "`2Dr.",
-}
+local ROLE_BADGES = {}
 
 local Visual = {
     Presets = {
@@ -10026,11 +9949,11 @@ local function resolveConsoleUi()
     return nil
 end
 
-local function proxyConsole(msg)
+local function proxyConsole(msg, kind, allowSpans)
     local txt = tostring(msg or "")
     local chatUi = resolveConsoleUi()
     if chatUi then
-        local ok = pcall(chatUi.add, txt, "system")
+        local ok = pcall(chatUi.add, txt, kind or "system", allowSpans == true)
         if ok then return true end
     end
     if H.gt and type(H.gt.floatText) == "function" then
@@ -10073,23 +9996,51 @@ end
 local function clearSingleTileWithLavaCheck(tx, ty, layers, hitGap, showHand, noCollect, aliveFn)
     local gt = H.gt
     if not gt or tx < 0 or tx >= gt.w or ty < 0 or ty >= gt.h then return false end
-    -- Cek 1 tile di bawah (ty + 1): jika mengandung lava/deadly dan bisa dihancurkan, hancurkan dulu dari samping aman (-1)
+    local safeHitGap = math.max(0.162, tonumber(hitGap) or 0.165)
+
+    local function coolAntiKick()
+        if H.fwLastBlockAt and (os.clock() - H.fwLastBlockAt) < 0.45 then
+            task.wait(0.35)
+        end
+    end
+
+    local function walkToBreakRange(bx, by)
+        if Core.IsInActionReach(bx, by, "break") then return true end
+        local okW = Packets.MoveWalkNear(bx, by, 2, aliveFn, 7.1, "break")
+        if okW and Core.IsInActionReach(bx, by, "break") then return true end
+        local cands = Packets.FindStandCandidates(bx, by, 2)
+        if cands and cands[1] then
+            Packets.WalkPathTo(cands[1].x, cands[1].y, 6.9, aliveFn, { fastWalk = false, noSnap = true, customPath = cands[1].path })
+        end
+        return Core.IsInActionReach(bx, by, "break")
+    end
+
+    -- Cek 1 tile di bawah (ty + 1): jika mengandung lava/deadly dan bisa dihancurkan, hancurkan dulu dari samping aman (walkSpeed <= 7.1, NO TP!)
     if ty + 1 < gt.h then
         local belowId = Core.GetFG(tx, ty + 1)
         if belowId ~= 0 and not Core.IsProtectedTile(belowId) and Core.CanEditTile(tx, ty + 1) then
             local bInfo = Core.GetItemInfo(belowId)
             if bInfo and (bInfo.hurts == true or bInfo.deadly == true) then
-                local pos = Core.ReadPos()
-                if not Core.IsInActionReach(tx, ty + 1, "break", pos) then
+                if not Core.IsInActionReach(tx, ty + 1, "break") then
+                    local pos = Core.ReadPos()
                     local safeSideX = (pos.tx <= tx) and math.max(0, tx - 1) or math.min(gt.w - 1, tx + 1)
-                    Packets.MoveHybrid(safeSideX, math.max(0, ty), 1, aliveFn, { preferWalk = true, walkSpeed = 12.2 })
+                    if not Core.IsSolid(safeSideX, ty) then
+                        Packets.WalkPathTo(safeSideX, ty, 7.0, aliveFn, { fastWalk = false, noSnap = true })
+                    else
+                        walkToBreakRange(tx, ty + 1)
+                    end
                 end
-                Packets.BreakVerified({ { tx = tx, ty = ty + 1, layer = 1 } }, {
-                    threads = 1, layer = 1, oneHit = false, customHits = 2, hitDelay = hitGap,
-                    showHand = showHand, showVisual = true, autoRange = true, preferWalk = true, shouldContinue = aliveFn
-                })
-                if not noCollect then
-                    Packets.Collect({ radius = 4, stepMoveIfFar = false, preferWalk = true, collectDelay = 0.02, shouldContinue = aliveFn })
+                if Core.IsInActionReach(tx, ty + 1, "break") then
+                    coolAntiKick()
+                    Packets.BreakVerified({ { tx = tx, ty = ty + 1, layer = 1 } }, {
+                        threads = 1, layer = 1, oneHit = false, customHits = nil,
+                        hitDelay = safeHitGap, verifyTimeout = 0.24, showHand = showHand,
+                        showVisual = true, noLocalMirror = true, autoRange = true,
+                        preferWalk = true, walkSpeed = 7.1, shouldContinue = aliveFn
+                    })
+                    if not noCollect then
+                        Packets.Collect({ radius = 4, stepMoveIfFar = false, preferWalk = true, collectDelay = 0.02, shouldContinue = aliveFn })
+                    end
                 end
             end
         end
@@ -10099,14 +10050,18 @@ local function clearSingleTileWithLavaCheck(tx, ty, layers, hitGap, showHand, no
         if type(aliveFn) == "function" and not aliveFn() then return false end
         local tid = Core.GetLayerTile(tx, ty, lyr)
         if tid ~= 0 and not Core.IsProtectedTile(tid) and Core.CanEditTile(tx, ty) then
-            local reached = Core.IsInActionReach(tx, ty, "break") or Packets.MoveWalkNear(tx, ty, 2, aliveFn, 12.2) or Packets.MoveHybrid(tx, ty, 2, aliveFn)
-            if reached and (type(aliveFn) ~= "function" or aliveFn()) then
-                -- Boosted hit damage (bukan 1-hit visual mentah agar anti rollback)
-                H.oneHitForceUntil = os.clock() + 0.35
-                Packets.BreakVerified({ { tx = tx, ty = ty, layer = lyr } }, {
-                    threads = 1, layer = lyr, oneHit = false, customHits = 2, hitDelay = hitGap,
-                    showHand = showHand, showVisual = true, autoRange = true, preferWalk = true, shouldContinue = aliveFn
-                })
+            if walkToBreakRange(tx, ty) and (type(aliveFn) ~= "function" or aliveFn()) then
+                for _ = 1, 2 do
+                    if Core.GetLayerTile(tx, ty, lyr) == 0 or (type(aliveFn) == "function" and not aliveFn()) then break end
+                    coolAntiKick()
+                    Packets.BreakVerified({ { tx = tx, ty = ty, layer = lyr } }, {
+                        threads = 1, layer = lyr, oneHit = false, customHits = nil,
+                        hitDelay = safeHitGap, verifyTimeout = 0.24, showHand = showHand,
+                        showVisual = true, noLocalMirror = true, autoRange = true,
+                        preferWalk = true, walkSpeed = 7.1, shouldContinue = aliveFn
+                    })
+                    task.wait(0.02)
+                end
                 if not noCollect then
                     Packets.Collect({ radius = 4.2, stepMoveIfFar = false, preferWalk = true, collectDelay = 0.02, shouldContinue = aliveFn })
                 end
@@ -10285,7 +10240,8 @@ function ClearWorld.Start(opts)
                         end
                         S.progress = math.floor((idx / totalT) * 100)
                         setCwStatus(string.format("[%s] Clear %d/%d (%d%%) @(%d,%d)", curW, idx, totalT, S.progress, t.x, t.y))
-                        clearSingleTileWithLavaCheck(t.x, t.y, { 1, 2 }, 0.11, true, S.noCollect, alive)
+                        clearSingleTileWithLavaCheck(t.x, t.y, { 1, 2 }, 0.165, true, S.noCollect, alive)
+                        task.wait(0.02)
                     end
                 end
             end
@@ -10915,8 +10871,112 @@ function Misc.SetFly(enabled)
     return true
 end
 
--- 3. Zoom 2.5x Out (with crash-safe boundary)
+-- 3. Zoom 2.5x Out (anti-overshoot render boundary + auto tile pool rebuild)
 Misc.State.zoom25x = false
+local function unbindModZoomStep()
+    pcall(RunService.UnbindFromRenderStep, RunService, "SYT_ModZoomStep")
+end
+
+local function resolveZoomParts(gt)
+    local worldScale = nil
+    if H.renderFn then
+        for idx = 1, 160 do
+            local val = uv(H.renderFn, idx)
+            if val == nil and idx > 110 then break end
+            if typeof(val) == "Instance" and val:IsA("UIScale") then
+                worldScale = val
+                break
+            end
+        end
+    end
+    if not worldScale and LP then
+        local pg = LP:FindFirstChildOfClass("PlayerGui")
+        local gg = pg and pg:FindFirstChild("GameGui")
+        if gg then
+            for _, d in ipairs(gg:GetDescendants()) do
+                if d:IsA("UIScale") and d.Parent and d.Parent.Name == "Camera" then
+                    worldScale = d
+                    break
+                end
+            end
+        end
+    end
+    local viewport = (worldScale and worldScale.Parent and worldScale.Parent.Parent and worldScale.Parent.Parent:IsA("GuiObject")) and worldScale.Parent.Parent or nil
+    local vw, vh = 1280, 720
+    if viewport and viewport.AbsoluteSize.X > 32 and viewport.AbsoluteSize.Y > 32 then
+        vw, vh = viewport.AbsoluteSize.X, viewport.AbsoluteSize.Y
+    else
+        local cam = workspace.CurrentCamera
+        if cam and cam.ViewportSize.X > 32 and cam.ViewportSize.Y > 32 then
+            vw, vh = cam.ViewportSize.X, cam.ViewportSize.Y
+        end
+    end
+    return worldScale, viewport, vw, vh
+end
+
+local function computeSafeModZoomMin(gt, baseMin)
+    local _, _, vw, vh = resolveZoomParts(gt)
+    local w = (gt and tonumber(rawget(gt, "w")) and gt.w > 1) and gt.w or 100
+    local h = (gt and tonumber(rawget(gt, "h")) and gt.h > 1) and gt.h or 60
+    -- Jaga agar layar saat zoom out tidak melebihi batas render world (w x h)
+    local minPx = math.max(1, math.ceil(math.max(vw / math.max(1, w - 1), vh / math.max(1, h - 1))))
+    local worldFitMin = minPx / 64
+    local raw25x = baseMin / 2.5
+    return clamp(math.max(raw25x, worldFitMin), 0.24, baseMin)
+end
+
+local function rebuildWorldTilePool(gt, viewport)
+    if type(getconnections) ~= "function" or not gt or not viewport then return end
+    local okC, conns = pcall(getconnections, viewport:GetPropertyChangedSignal("AbsoluteSize"))
+    if okC and type(conns) == "table" then
+        for _, c in ipairs(conns) do
+            local fn = type(c) == "table" and (c.Function or c["function"]) or nil
+            if type(fn) == "function" then
+                local hasGt = false
+                for idx = 1, 32 do
+                    if uv(fn, idx) == gt then hasGt = true; break end
+                end
+                if hasGt then pcall(fn) end
+            end
+        end
+    end
+end
+
+local function clampZoomInputUpvalues(gt, minAllowed, maxAllowed)
+    if type(getconnections) ~= "function" or not gt then return end
+    local minZ = clamp(tonumber(minAllowed) or 0.24, 0.24, 1.6)
+    local maxZ = clamp(tonumber(maxAllowed) or 1.6, minZ, 2.0)
+    for _, sig in ipairs({ UserInputService.InputChanged, UserInputService.TouchPinch }) do
+        local okC, conns = pcall(getconnections, sig)
+        if okC and type(conns) == "table" then
+            for _, c in ipairs(conns) do
+                local fn = type(c) == "table" and (c.Function or c["function"]) or nil
+                if type(fn) == "function" then
+                    local gtIdx = nil
+                    local numSlots = {}
+                    for idx = 1, 8 do
+                        local val = uv(fn, idx)
+                        if val == gt then
+                            gtIdx = idx
+                        elseif type(val) == "number" and val >= 0.05 and val <= 2.5 then
+                            numSlots[#numSlots + 1] = { idx = idx, val = val }
+                        end
+                    end
+                    if gtIdx then
+                        for _, ns in ipairs(numSlots) do
+                            if ns.val < minZ then
+                                suv(fn, ns.idx, minZ)
+                            elseif ns.val > maxZ then
+                                suv(fn, ns.idx, maxZ)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 function Misc.SetZoom25x(enabled)
     Core.EnsureInit()
     local on = enabled == true
@@ -10926,6 +10986,18 @@ function Misc.SetZoom25x(enabled)
         if Misc.State._origCamMaxZoom == nil and LP then
             pcall(function() Misc.State._origCamMaxZoom = LP.CameraMaxZoomDistance end)
         end
+        if gt and Misc.State._hadOrigGtZoomMin == nil then
+            local rawMin = rawget(gt, "zoomMin")
+            Misc.State._hadOrigGtZoomMin = (type(rawMin) == "number")
+            Misc.State._origGtZoomMin = (type(rawMin) == "number") and rawMin or 0.6
+        end
+        local baseMin = clamp(tonumber(Misc.State._origGtZoomMin) or 0.6, 0.35, 1.0)
+        local safeMin = computeSafeModZoomMin(gt, baseMin)
+        Misc.State._lastSafeZoomMin = safeMin
+
+        if gt then
+            gt.zoomMin = safeMin
+        end
         if LP then
             pcall(function() LP:SetAttribute("ModZoom", true) end)
             pcall(function()
@@ -10934,11 +11006,50 @@ function Misc.SetZoom25x(enabled)
                 end
             end)
         end
-        if gt and type(rawget(gt, "zoomMin")) == "number" then
-            Misc.State._origGtZoomMin = Misc.State._origGtZoomMin or gt.zoomMin
-            gt.zoomMin = Misc.State._origGtZoomMin / 2.5
+        if gt then
+            gt.zoomMin = safeMin
+            local _, viewport = resolveZoomParts(gt)
+            rebuildWorldTilePool(gt, viewport)
+            clampZoomInputUpvalues(gt, safeMin, 1.6)
         end
+
+        unbindModZoomStep()
+        local lastPoolZoomMin = safeMin
+        pcall(RunService.BindToRenderStep, RunService, "SYT_ModZoomStep", Enum.RenderPriority.First.Value + 5, function()
+            if not Misc.State.zoom25x or getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then
+                unbindModZoomStep()
+                return
+            end
+            local g = H.gt
+            if not g then return end
+            local bMin = clamp(tonumber(Misc.State._origGtZoomMin) or 0.6, 0.35, 1.0)
+            local curSafe = computeSafeModZoomMin(g, bMin)
+            Misc.State._lastSafeZoomMin = curSafe
+            if rawget(g, "zoomMin") ~= curSafe then
+                g.zoomMin = curSafe
+                if math.abs(curSafe - lastPoolZoomMin) > 0.008 then
+                    lastPoolZoomMin = curSafe
+                    local _, vp = resolveZoomParts(g)
+                    rebuildWorldTilePool(g, vp)
+                end
+            end
+            clampZoomInputUpvalues(g, curSafe, 1.6)
+        end)
+
+        task.defer(function()
+            if not Misc.State.zoom25x or getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+            local g = H.gt
+            if not g then return end
+            local bMin = clamp(tonumber(Misc.State._origGtZoomMin) or 0.6, 0.35, 1.0)
+            local sMin = computeSafeModZoomMin(g, bMin)
+            g.zoomMin = sMin
+            local _, vp = resolveZoomParts(g)
+            rebuildWorldTilePool(g, vp)
+            clampZoomInputUpvalues(g, sMin, 1.6)
+        end)
     else
+        unbindModZoomStep()
+        local baseMin = clamp(tonumber(Misc.State._origGtZoomMin) or 0.6, 0.35, 1.0)
         if LP then
             pcall(function() LP:SetAttribute("ModZoom", nil) end)
             pcall(function()
@@ -10947,11 +11058,14 @@ function Misc.SetZoom25x(enabled)
                 end
             end)
         end
-        if gt and type(Misc.State._origGtZoomMin) == "number" then
-            gt.zoomMin = Misc.State._origGtZoomMin
-            if type(rawget(gt, "zoom")) == "number" and gt.zoom < gt.zoomMin then
-                gt.zoom = gt.zoomMin
+        if gt then
+            gt.zoomMin = Misc.State._hadOrigGtZoomMin and Misc.State._origGtZoomMin or nil
+            if type(rawget(gt, "zoom")) == "number" and gt.zoom < baseMin then
+                gt.zoom = baseMin
             end
+            local _, viewport = resolveZoomParts(gt)
+            rebuildWorldTilePool(gt, viewport)
+            clampZoomInputUpvalues(gt, baseMin, 1.6)
         end
     end
     return on
@@ -11234,6 +11348,22 @@ function PNB.Start()
     end
 
     S.thread = task.spawn(function()
+        local function coolIfFwBlocked()
+            if H.fwLastBlockAt and (os.clock() - H.fwLastBlockAt) < 0.45 then
+                task.wait(0.35)
+            end
+        end
+
+        local function returnToPnbCenter()
+            local cp = S.centerPos
+            if not cp then return true end
+            local nowP = Core.ReadPos()
+            if math.abs(nowP.tx - cp.tx) > 0 or math.abs(nowP.ty - cp.ty) > 0 then
+                Packets.WalkPathTo(cp.tx, cp.ty, 7.1, alive, { fastWalk = false, noSnap = true })
+            end
+            return true
+        end
+
         while alive() do
             if not H.gt or H.gt.name == "" then setPNBStatus("Keluar world", "Idle", "-"); break end
             if SystemModule.State.enabled and SystemModule.State.frozenByJoin then break end
@@ -11255,59 +11385,104 @@ function PNB.Start()
                 end
             end
 
+            returnToPnbCenter()
+            if not alive() then break end
+
             local info = Core.GetItemInfo(bid)
             local layer = (info and info.background) and 2 or 1
             local cp = S.centerPos or Core.ReadPos()
+            local centerStand = { x = cp.tx + 0.5, y = cp.ty + 1 }
             local targets = {}
             for _, off in ipairs(PNB.GetActiveOffsets()) do
                 local tx, ty = cp.tx + off.dx, cp.ty + off.dy
                 if tx >= 0 and tx < H.gt.w and ty >= 0 and ty < H.gt.h and Core.CanEditTile(tx, ty) then
                     if not (info and info.solid and layer == 1 and tx == cp.tx and ty == cp.ty) then
-                        targets[#targets + 1] = { tx = tx, ty = ty, layer = layer }
+                        if Core.IsInActionReach(tx, ty, "break", centerStand) then
+                            targets[#targets + 1] = { tx = tx, ty = ty, layer = layer }
+                        end
                     end
                 end
             end
-            if #targets == 0 then setPNBStatus("Tidak ada tile valid", "Idle", "-"); break end
+            if #targets == 0 then setPNBStatus("Pilih tile dalam jangkauan", "Idle", "-"); break end
 
-            local spd, actGap, verifyWait, cycleWait = pnbTimingsForSpeed(S.speed)
-            -- Boosted custom hit damage via handPower window
-            H.oneHitForceUntil = os.clock() + 0.5
-            local placeGap = math.max(H.adaptivePlaceGap or 0.155, clamp(0.28 / spd, 0.145, 0.28))
+            local placeGap = math.max(H.adaptivePlaceGap or 0.174, clamp(0.34 - (pct / 100) * 0.165, 0.174, 0.34))
+            local hitDelay = math.max(0.160, clamp(0.28 - (pct / 100) * 0.12, 0.160, 0.28))
+            local nThreads = (pct >= 70 and #targets >= 2) and 2 or 1
+            local cycleWait = clamp(0.08 - (pct / 100) * 0.05, 0.025, 0.08)
+
             local breakOpts = {
-                layer = layer, threads = clamp(toInt(S.breakThreads, 5), 1, 9),
-                oneHit = false, customHits = 2, noLocalMirror = false,
-                hitDelay = math.max(0.06, actGap), verifyTimeout = verifyWait,
-                stable = clamp(0.05 / math.max(1, spd * 0.4), 0.015, 0.05),
+                layer = layer, threads = nThreads,
+                oneHit = (S.oneHit == true), customHits = nil,
+                hitDelay = hitDelay, verifyTimeout = 0.24,
+                stable = 0.04, noLocalMirror = true,
+                autoRange = true, preferWalk = true, walkSpeed = 7.1,
                 showHand = S.showHand, showVisual = true, shouldContinue = alive,
             }
 
             local snap = inspectPnbTargets(targets, bid, layer)
+            if #snap.foreign > 0 then
+                setPNBStatus(string.format("Pre-Clean %d tile asing...", #snap.foreign), "Clean", "-")
+                for _ = 1, 3 do
+                    if not alive() then break end
+                    coolIfFwBlocked()
+                    local _, failedF = Packets.BreakVerified(snap.foreign, {
+                        layer = layer, threads = 1, oneHit = false, customHits = nil,
+                        hitDelay = hitDelay, verifyTimeout = 0.24, noLocalMirror = true,
+                        autoRange = true, preferWalk = true, walkSpeed = 7.1,
+                        showHand = S.showHand, showVisual = true, shouldContinue = alive,
+                    })
+                    if failedF == 0 then break end
+                end
+                snap = inspectPnbTargets(targets, bid, layer)
+            end
+
             if #snap.empty > 0 and Core.CountItem(bid) > 0 then
                 setPNBStatus(string.format("Fase 1: Place (%d%%)", pct), "Place", "-")
-                Packets.EnsureActionReach(snap.empty[1].tx, snap.empty[1].ty, "build", alive)
-                Packets.RunPool(snap.empty, math.min(5, #snap.empty), function(t)
-                    Packets.PlaceVerified(t.tx, t.ty, bid, layer, {
-                        showHand = S.showHand, delay = 0, noLocalMirror = false, autoRange = false,
-                        placeGap = placeGap, verifyTimeout = 0.18, shouldContinue = alive
-                    })
-                end, alive)
+                returnToPnbCenter()
+                for round = 1, 2 do
+                    if not alive() then break end
+                    local curSnap = inspectPnbTargets(targets, bid, layer)
+                    if #curSnap.empty == 0 or Core.CountItem(bid) <= 0 then break end
+                    for _, t in ipairs(curSnap.empty) do
+                        if not alive() or Core.CountItem(bid) <= 0 then break end
+                        coolIfFwBlocked()
+                        Packets.PlaceVerified(t.tx, t.ty, bid, layer, {
+                            showHand = S.showHand, delay = 0, noLocalMirror = false,
+                            autoRange = true, preferWalk = true, walkSpeed = 7.1,
+                            placeGap = placeGap, verifyTimeout = 0.24, shouldContinue = alive,
+                        })
+                    end
+                end
                 snap = inspectPnbTargets(targets, bid, layer)
             end
 
             if #snap.placed > 0 then
                 setPNBStatus(string.format("Fase 2: Break (%d%%)", pct), "Break", "-")
-                for _ = 1, 4 do
+                returnToPnbCenter()
+                for _ = 1, 5 do
                     if not alive() then break end
                     local curS = inspectPnbTargets(targets, bid, layer)
                     if #curS.placed == 0 then break end
-                    H.oneHitForceUntil = os.clock() + 0.5
+                    coolIfFwBlocked()
                     Packets.BreakVerified(curS.placed, breakOpts)
                 end
-                setPNBStatus(string.format("Fase 3: Collect (%d%%)", pct), "Collect", "-")
-                Packets.CollectVerified(targets, { expectDrops = true, waitDrop = 0.12, collectDelay = 0, shouldContinue = alive })
+                if S.autoCollect ~= false then
+                    setPNBStatus(string.format("Fase 3: Collect (%d%%)", pct), "Collect", "-")
+                    Packets.CollectVerified(targets, {
+                        expectDrops = true, waitDrop = 0.14,
+                        preferWalk = true, collectDelay = 0.02, shouldContinue = alive,
+                    })
+                    returnToPnbCenter()
+                end
                 S.cycles += 1
                 S.progress = clamp(100 - math.floor((Core.CountItem(bid) / math.max(1, startCnt)) * 100), 1, 100)
                 setPNBStatus(string.format("Cycle #%d | Sisa BP: %d", S.cycles, Core.CountItem(bid)), "OK", "Done")
+            elseif snap.totalDrops > 0 and S.autoCollect ~= false then
+                Packets.CollectVerified(targets, {
+                    expectDrops = false, waitDrop = 0.10,
+                    preferWalk = true, collectDelay = 0.02, shouldContinue = alive,
+                })
+                returnToPnbCenter()
             end
             task.wait(cycleWait)
         end
@@ -11350,7 +11525,7 @@ function DirtFarm.Start()
     return H._origDfStart()
 end
 
--- Discord Hook: Exact README.MD JSON Embed + OS Storage MessageID + First-Execute Chinese Auth Token
+-- Discord Hook: Clean Running Status Embed + OS Storage MessageID (Only User Configured Webhook)
 DiscordHook = {
     State = {
         url = "",
@@ -11359,7 +11534,6 @@ DiscordHook = {
         messageId = nil,
         startTime = nil,
         thread = nil,
-        authToken = "",
         lastActionNote = "",
     }
 }
@@ -11367,26 +11541,6 @@ SYT_Logic.DiscordHook = DiscordHook
 
 function DiscordHook._jsonEscape(s)
     return tostring(s or ""):gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "")
-end
-
-function DiscordHook.generateChineseAuthToken(userName)
-    -- Enkripsi ringkas karakter CJK (< 1 KB) unik per username + PlaceId + Device/UserId
-    local lp = LP or Players.LocalPlayer
-    local uid = lp and lp.UserId or 0
-    local seedStr = tostring(userName or "USER") .. "|" .. tostring(uid) .. "|" .. tostring(game.PlaceId)
-    local out = {}
-    local key = 137
-    for i = 1, #seedStr do
-        local b = string.byte(seedStr, i)
-        key = (key * 33 + b + i) % 65535
-        -- Petakan ke rentang CJK Unified Ideographs U+4E00..U+9FAF
-        local cp = 0x4E00 + ((b * 79 + key) % (0x9FA0 - 0x4E00))
-        out[#out + 1] = utf8.char(cp)
-    end
-    local tok = table.concat(out)
-    safeWriteStorage("syt_auth_token.dat", tok)
-    DiscordHook.State.authToken = tok
-    return tok
 end
 
 function DiscordHook.GetSafeRequest()
@@ -11404,40 +11558,6 @@ function DiscordHook._activeFarmProgress()
     if MoveBlock.State.running then return "MOVE BLOCK", tostring(MoveBlock.State.status or "Running") end
     if AutoLeveling.State.running then return "AUTO LEVELING", "Lv" .. tostring(AutoLeveling.GetLevel()) .. "/10" end
     return "IDLE", "0%"
-end
-
-function DiscordHook.SendFirstExecuteIfNeeded(reqFn, webhookUrl)
-    local lp = LP or Players.LocalPlayer
-    local gName = Core.GetInGameName(LP, true)
-    local uKey = gName:gsub("[^%w_]", "_")
-    local regFile = "syt_reg_" .. uKey .. ".dat"
-    DiscordHook.generateChineseAuthToken(gName)
-    if safeReadStorage(regFile) then return end
-    local rName = lp and lp.Name or "-"
-    local ipAddr = H._cachedIp or "-"
-    if ipAddr == "-" then
-        pcall(function()
-            local res = game:HttpGet("https://api.ipify.org", true)
-            if type(res) == "string" and #res < 64 then
-                H._cachedIp = (res):match("^%s*(.-)%s*$")
-                ipAddr = H._cachedIp
-            end
-        end)
-    end
-    local bodyStr = string.format(
-        '{"content":null,"embeds":[{"color":5765375,"fields":[{"name":"<a:angry:1515044838008160258> Growblox Name","value":"<a:damn:947061120944963594> %s","inline":true},{"name":"<a:angry:1515044838008160258> Discord ","value":"<a:damn:947061120944963594> %s","inline":true},{"name":"<a:angry:1515044838008160258> Addres","value":"<a:damn:947061120944963594> %s | Token:%s"}]}],"attachments":[]}',
-        DiscordHook._jsonEscape(gName),
-        DiscordHook._jsonEscape(rName),
-        DiscordHook._jsonEscape(ipAddr),
-        DiscordHook._jsonEscape(DiscordHook.State.authToken)
-    )
-    local ok = pcall(reqFn, {
-        Url = webhookUrl,
-        Method = "POST",
-        Headers = { ["Content-Type"] = "application/json" },
-        Body = bodyStr
-    })
-    if ok then safeWriteStorage(regFile, "1") end
 end
 
 function DiscordHook.Send(noteLine)
@@ -11467,13 +11587,14 @@ function DiscordHook.Send(noteLine)
         '{"name":"[  <a:time:1345668076854841374>  ] -  UP TIME","value":"<a:angry:1515044838008160258> [ %s ]"},' ..
         '{"name":"[  <a:PROG:1430165994885746821>  ] -  PROGRESS","value":"<a:angry:1515044838008160258> [ %s ]"},' ..
         '{"name":"[  <a:SAFE:1280719300495282246>  ] -  SAFE TOTAL","value":"<a:angry:1515044838008160258> [ %s ]"}' ..
-        '],"author":{"name":"sadadaw","url":"%s"},"footer":{"text":"Script created By DryCursed Community"},"image":{"url":"%s"}}],"attachments":[]}',
+        '],"author":{"name":"%s","icon_url":"%s"},"footer":{"text":"Script created By DryCursed Community"},"image":{"url":"%s"}}],"attachments":[]}',
         DiscordHook._jsonEscape(playerName),
         DiscordHook._jsonEscape(worldName),
         DiscordHook._jsonEscape(stName),
         DiscordHook._jsonEscape(uptimeStr),
         DiscordHook._jsonEscape(progStr),
         DiscordHook._jsonEscape(safeTotal),
+        DiscordHook._jsonEscape(playerName),
         authorIcon,
         bannerImg
     )
@@ -11536,11 +11657,6 @@ function DiscordHook.Start()
         pcall(UI.SetValue, UI, "DhMessageIdDisplay", DiscordHook.State.messageId)
     end
 
-    local reqFn = DiscordHook.GetSafeRequest()
-    if reqFn then
-        task.spawn(function() pcall(DiscordHook.SendFirstExecuteIfNeeded, reqFn, DiscordHook.State.url) end)
-    end
-
     DiscordHook.State.thread = task.spawn(function()
         while DiscordHook.State.enabled do
             pcall(DiscordHook.Send)
@@ -11557,7 +11673,312 @@ function DiscordHook.Toggle()
     return DiscordHook.Start()
 end
 
--- Proxy System (/p2p, /reme, /clothes, Host BJ /set b /lock t /set tax /cal /info, /get, /cn, /news)
+-- Enhance Visual (Roles Lengkap + Animasi BitmapText Asli + Env State + Shared Local/Peer Visual Applicator)
+;(function()
+    local ROLE_CAT = {
+        { key = "none",         label = "No Role (Asli)",          kind = "Default",       prefix = "",        suffix = "",           span = nil,            color = Color3.fromRGB(255, 255, 255), code = "`w" },
+        { key = "supporter",    label = "Supporter",               kind = "Donor Wave",    prefix = "",        suffix = "",           span = "supporter",    color = Color3.fromRGB(110, 252, 130), code = "`2" },
+        { key = "patron",       label = "Patron",                  kind = "Donor Aura",    prefix = "",        suffix = "",           span = "patron",       color = Color3.fromRGB(255, 238, 125), code = "`9" },
+        { key = "benefactor",   label = "Benefactor",              kind = "Donor Neon",    prefix = "",        suffix = "",           span = "benefactor",   color = Color3.fromRGB(80, 225, 255),  code = "`c" },
+        { key = "sponsor",      label = "Sponsor",                 kind = "Sparkle",       prefix = "",        suffix = "",           span = "sponsor",      color = Color3.fromRGB(175, 205, 255), code = "`3" },
+        { key = "supersponsor", label = "Super Sponsor (Mighty.)", kind = "Wrench + Gold", prefix = "Mighty. ",suffix = "",           span = "supersponsor", color = Color3.fromRGB(255, 214, 110), code = "`9" },
+        { key = "legend",       label = "Legendary (of Legend)",   kind = "Wings + Gold",  prefix = "",        suffix = " of Legend", span = "legend",       color = Color3.fromRGB(255, 200, 60),  code = "`d" },
+        { key = "royal",        label = "Royal",                   kind = "Royal Pulse",   prefix = "",        suffix = "",           span = "royal",        color = Color3.fromRGB(255, 165, 110), code = "`8" },
+        { key = "dr",           label = "Doctor (Dr.)",            kind = "Red Title",     prefix = "Dr. ",    suffix = "",           span = nil,            color = Color3.fromRGB(255, 55, 45),   code = "`4" },
+        { key = "cc",           label = "Content Creator (CC)",    kind = "Creator Badge", prefix = "",        suffix = "",           span = "cc",           color = Color3.fromRGB(220, 155, 255), code = "`5" },
+        { key = "vip",          label = "VIP",                     kind = "VIP Lime",      prefix = "",        suffix = "",           span = nil,            color = Color3.fromRGB(181, 255, 151), code = "`^" },
+        { key = "owner",        label = "Owner (Rainbow)",         kind = "Rainbow Wave",  prefix = "",        suffix = "",           span = "rainbow",      color = Color3.fromRGB(255, 145, 235), code = "`{" },
+        { key = "admin",        label = "World Admin",             kind = "Admin Green",   prefix = "",        suffix = "",           span = nil,            color = Color3.fromRGB(125, 196, 124), code = "`v" },
+        { key = "moderator",    label = "Moderator (@MOD)",        kind = "Staff @ Purple",prefix = "@",       suffix = "",           span = nil,            color = Color3.fromRGB(255, 143, 243), code = "`#" },
+        { key = "developer",    label = "Developer (@DEV)",        kind = "Staff @ Gold",  prefix = "@",       suffix = "",           span = nil,            color = Color3.fromRGB(255, 193, 94),  code = "`d" },
+    }
+    Visual.RoleCatalog = ROLE_CAT
+    Visual.Presets.roles = {}
+    for _, rc in ipairs(ROLE_CAT) do
+        Visual.Presets.roles[#Visual.Presets.roles + 1] = rc.key
+    end
+    Visual.Presets.effects = {
+        "None", "Rainbow Wave", "Sponsor Sparkle", "Supporter Wave", "Patron Aura",
+        "Benefactor Neon", "Super Sponsor", "Legend Gold", "Royal Pulse", "Creator Tag", "Color Prefix"
+    }
+
+    local EFFECT_TO_SPAN = {
+        ["Rainbow Wave"]    = "rainbow",
+        ["Sponsor Sparkle"] = "sponsor",
+        ["Supporter Wave"]  = "supporter",
+        ["Patron Aura"]     = "patron",
+        ["Benefactor Neon"] = "benefactor",
+        ["Super Sponsor"]   = "supersponsor",
+        ["Legend Gold"]     = "legend",
+        ["Royal Pulse"]     = "royal",
+        ["Creator Tag"]     = "cc",
+    }
+
+    local TITLE_ROLE_KEYS = {
+        supporter = true, patron = true, benefactor = true,
+        sponsor = true, supersponsor = true, legend = true,
+        royal = true, dr = true, cc = true,
+    }
+
+    function Visual.FindRoleEntry(roleKey)
+        local rk = string.lower(tostring(roleKey or "none"))
+        for idx, rc in ipairs(ROLE_CAT) do
+            if rc.key == rk then return rc, idx end
+        end
+        return ROLE_CAT[1], 1
+    end
+
+    function Visual.GetEffectIndex(effectName)
+        local ef = tostring(effectName or "None")
+        for idx, nm in ipairs(Visual.Presets.effects) do
+            if nm == ef then return idx end
+        end
+        return 1
+    end
+
+    function Visual.FormatPreviewText(baseName, roleKey)
+        local clean = stripColorTags(tostring(baseName or ""))
+        if clean == "" then clean = Core.GetInGameName(LP, true) end
+        local rc = Visual.FindRoleEntry(roleKey)
+        return (rc.prefix or "") .. clean .. (rc.suffix or "")
+    end
+
+    function Visual.FormatSbMarkup(baseName, roleKey, effectName, colorCode)
+        local clean = stripColorTags(tostring(baseName or ""))
+        if clean == "" then clean = "Player" end
+        local rc = Visual.FindRoleEntry(roleKey)
+        local full = (rc.prefix or "") .. clean .. (rc.suffix or "")
+        local sp = EFFECT_TO_SPAN[tostring(effectName or "")]
+        if not sp then sp = rc.span end
+        if sp and sp ~= "" then
+            return "`{" .. sp .. "}" .. full .. "`}"
+        end
+        if type(colorCode) == "string" and colorCode ~= "" then
+            return colorCode .. full .. "``"
+        end
+        return (rc.code or "`w") .. full .. "``"
+    end
+
+    function Visual.SaveToEnv()
+        local S = Visual.State
+        local env = getEnv()
+        env.__SYT_ENV_DATA = env.__SYT_ENV_DATA or {}
+        local copyWorn = {}
+        local serWorn = {}
+        for sl, id in pairs(S.fakeWorn or {}) do
+            if type(id) == "number" then
+                copyWorn[sl] = id
+                serWorn[#serWorn + 1] = tostring(sl) .. "=" .. tostring(id)
+            end
+        end
+        env.__SYT_ENV_DATA.visual = {
+            customName = tostring(S.customName or ""),
+            role = tostring(S.role or "none"),
+            effect = tostring(S.effect or "None"),
+            colorCode = tostring(S.colorCode or ""),
+            customTitle = tostring(S.customTitle or "none"),
+            skinPreset = tostring(S.skinPreset or "Real (Server Skin)"),
+            ghostSkin = S.ghostSkin == true,
+            spoofDr = S.spoofDr == true,
+            spoofLegend = S.spoofLegend == true,
+            spoofStillTag = S.spoofStillTag == true,
+            tilesName = S.tilesName == true,
+            hideName = S.hideName == true,
+            lockNames = S.lockNames == true,
+            fakeWorn = copyWorn,
+        }
+        local raw = table.concat({
+            tostring(S.customName or ""):gsub("[|\n\r]", ""),
+            tostring(S.role or "none"),
+            tostring(S.effect or "None"),
+            tostring(S.customTitle or "none"),
+            table.concat(serWorn, ";"),
+        }, "|")
+        safeWriteStorage("syt_visual_state.dat", raw)
+    end
+
+    function Visual.LoadFromEnv()
+        local env = getEnv()
+        local S = Visual.State
+        local ev = env and env.__SYT_ENV_DATA and env.__SYT_ENV_DATA.visual
+        if type(ev) == "table" then
+            S.customName = ev.customName or S.customName
+            S.role = ev.role or S.role
+            S.effect = ev.effect or S.effect
+            S.colorCode = ev.colorCode or S.colorCode
+            S.customTitle = ev.customTitle or S.customTitle
+            S.skinPreset = ev.skinPreset or S.skinPreset
+            S.ghostSkin = ev.ghostSkin == true
+            S.spoofDr = ev.spoofDr == true
+            S.spoofLegend = ev.spoofLegend == true
+            S.spoofStillTag = ev.spoofStillTag == true
+            S.tilesName = ev.tilesName == true
+            S.hideName = ev.hideName == true
+            S.lockNames = ev.lockNames == true
+            S.fakeWorn = {}
+            for sl, id in pairs(ev.fakeWorn or {}) do S.fakeWorn[sl] = id end
+            return true
+        end
+        local raw = safeReadStorage("syt_visual_state.dat")
+        if type(raw) == "string" and raw ~= "" then
+            local f = {}
+            for seg in (raw .. "|"):gmatch("([^|]*)|") do f[#f + 1] = seg end
+            if f[1] and f[1] ~= "" then S.customName = f[1]; S.lockNames = true end
+            if f[2] and f[2] ~= "" then S.role = f[2] end
+            if f[3] and f[3] ~= "" then S.effect = f[3] end
+            if f[4] and f[4] ~= "" then S.customTitle = f[4] end
+            if f[5] and f[5] ~= "" then
+                S.fakeWorn = {}
+                for pair in f[5]:gmatch("[^;]+") do
+                    local sl, id = pair:match("([^=]+)=(%d+)")
+                    if sl and id then S.fakeWorn[sl] = tonumber(id) end
+                end
+            end
+            return true
+        end
+        return false
+    end
+
+    function Visual.SnapshotPlayerAttrs(plr)
+        if not plr then return {} end
+        local uid = plr.UserId
+        local k = "u" .. tostring(uid)
+        local sr = ReplicatedStorage:FindFirstChild("StaffRoles")
+        local tl = ReplicatedStorage:FindFirstChild("TitleList")
+        return {
+            Nick = plr:GetAttribute("Nick"),
+            GameName = plr:GetAttribute("GameName"),
+            Tag = plr:GetAttribute("Tag"),
+            OwnTitle = plr:GetAttribute("OwnTitle"),
+            WornTitle = plr:GetAttribute("WornTitle"),
+            DrTitle = plr:GetAttribute("DrTitle"),
+            HasLegend = plr:GetAttribute("HasLegend"),
+            HideLegendUntil = plr:GetAttribute("HideLegendUntil"),
+            HideDrUntil = plr:GetAttribute("HideDrUntil"),
+            StillTag = plr:GetAttribute("StillTag"),
+            StaffRole = sr and sr:GetAttribute(k) or nil,
+            TitleList = tl and tl:GetAttribute(k) or nil,
+        }
+    end
+
+    -- Terapkan identitas Visual & Role secara seragam untuk LocalPlayer maupun peer P2P di Others
+    function Visual.ApplyIdentityToPlayer(plr, st, origAttrs)
+        if not plr then return end
+        origAttrs = origAttrs or {}
+        local uid = plr.UserId
+        local k = "u" .. tostring(uid)
+        local sr = ReplicatedStorage:FindFirstChild("StaffRoles")
+        local tl = ReplicatedStorage:FindFirstChild("TitleList")
+        local rLow = string.lower(tostring(st.role or "none"))
+        local base = stripColorTags(tostring(st.customName or ""))
+        if base == "" then
+            base = (origAttrs.GameName and origAttrs.GameName ~= "" and tostring(origAttrs.GameName)) or plr.Name
+        end
+
+        local nickVal = base
+        local sp = EFFECT_TO_SPAN[tostring(st.effect or "")]
+        if sp and not TITLE_ROLE_KEYS[rLow] then
+            nickVal = "`{" .. sp .. "}" .. base .. "`}"
+        elseif rLow == "owner" then
+            nickVal = "`{rainbow}" .. base .. "`}"
+        elseif rLow == "vip" then
+            nickVal = "`^" .. base .. "``"
+        elseif rLow == "admin" then
+            nickVal = "`v" .. base .. "``"
+        elseif type(st.colorCode) == "string" and st.colorCode ~= "" and not TITLE_ROLE_KEYS[rLow] then
+            nickVal = st.colorCode .. base .. "``"
+        end
+        plr:SetAttribute("Nick", nickVal)
+        plr:SetAttribute("GameName", base)
+
+        local tagVal = (rLow == "developer" or rLow == "moderator") and rLow or origAttrs.Tag
+        plr:SetAttribute("Tag", tagVal)
+        if sr then
+            local srVal = (rLow == "developer" or rLow == "moderator" or rLow == "vip") and rLow or origAttrs.StaffRole
+            sr:SetAttribute(k, srVal)
+        end
+
+        local chosenTitle = st.customTitle
+        if (not chosenTitle or chosenTitle == "" or chosenTitle == "none") and TITLE_ROLE_KEYS[rLow] then
+            chosenTitle = rLow
+        end
+        if chosenTitle and chosenTitle ~= "" and chosenTitle ~= "none" then
+            plr:SetAttribute("OwnTitle", chosenTitle)
+            plr:SetAttribute("WornTitle", chosenTitle)
+            if tl then tl:SetAttribute(k, chosenTitle) end
+        else
+            plr:SetAttribute("OwnTitle", origAttrs.OwnTitle)
+            plr:SetAttribute("WornTitle", origAttrs.WornTitle)
+            if tl then tl:SetAttribute(k, origAttrs.TitleList) end
+        end
+
+        if st.spoofDr or chosenTitle == "dr" or rLow == "dr" then
+            plr:SetAttribute("DrTitle", true)
+            plr:SetAttribute("HideDrUntil", 0)
+        else
+            plr:SetAttribute("DrTitle", origAttrs.DrTitle)
+            plr:SetAttribute("HideDrUntil", origAttrs.HideDrUntil)
+        end
+        if st.spoofLegend or chosenTitle == "legend" or rLow == "legend" then
+            plr:SetAttribute("HasLegend", true)
+            plr:SetAttribute("HideLegendUntil", 0)
+        else
+            plr:SetAttribute("HasLegend", origAttrs.HasLegend)
+            plr:SetAttribute("HideLegendUntil", origAttrs.HideLegendUntil)
+        end
+        plr:SetAttribute("StillTag", (st.spoofStillTag == true) and true or false)
+    end
+
+    local _origVisualApply = Visual.Apply
+    local _origVisualOutfit = Visual.ApplyOutfit
+    local _origVisualRestore = Visual.Restore
+
+    function Visual.ApplyOutfit()
+        local okR = _origVisualOutfit()
+        pcall(Visual.SaveToEnv)
+        if not Visual.State._batchP2P and ProxyCommands and ProxyCommands.P2P and ProxyCommands.P2P.BroadcastState then
+            task.spawn(ProxyCommands.P2P.BroadcastState, false)
+        end
+        return okR
+    end
+
+    function Visual.Apply()
+        local S = Visual.State
+        S._batchP2P = true
+        if _origVisualApply then _origVisualApply() end
+        S._batchP2P = false
+        if LP then
+            Visual.ApplyIdentityToPlayer(LP, S, {
+                Nick = S.origNick, GameName = S.origGameName, Tag = S.origTag,
+                OwnTitle = S.origOwnTitle, WornTitle = S.origWornTitle,
+                DrTitle = S.origDrTitle, HasLegend = S.origHasLegend,
+                HideLegendUntil = S.origHideLegend, HideDrUntil = S.origHideDr,
+                StillTag = S.origStillTag, StaffRole = S.origRoleAttr, TitleList = S.origTitleAttr,
+            })
+        end
+        if type(H.nameTagObj) == "table" then
+            H.nameTagObj.shownKey = nil
+            if type(H.nameTagObj.redraw) == "function" then pcall(H.nameTagObj.redraw) end
+        end
+        pcall(Visual.SaveToEnv)
+        if ProxyCommands and ProxyCommands.P2P and ProxyCommands.P2P.BroadcastState then
+            task.spawn(ProxyCommands.P2P.BroadcastState, false)
+        end
+        return true
+    end
+
+    function Visual.Restore()
+        local r = _origVisualRestore and _origVisualRestore() or true
+        H._stripWingDoubleJump = false
+        pcall(Visual.SaveToEnv)
+        if ProxyCommands and ProxyCommands.P2P and ProxyCommands.P2P.BroadcastState then
+            task.spawn(ProxyCommands.P2P.BroadcastState, true)
+        end
+        return r
+    end
+end)()
+
+-- Proxy System (/p2p, /reme, /clothes, Host BJ /set b /lock t /set tax /cal /info, /get, /cn, /list, /sbv)
 ProxyCommands = {
     State = {
         p2pEnabled = true,
@@ -11721,17 +12142,699 @@ local function showOverheadTagPopup(userId, tagText, borderColor)
     end)
 end
 
--- Dialog 1: /CLOTHES (3-Column Character Edit: Left Filter Categories, Center Player Preview + Preset, Right Searchable Clothes List + Sprite + Effects, Remove Wings Double Jump)
+-- Zero-Server P2P Client Visual Sync + /sbv Virtual Super Broadcast (via silent RBXGeneral nibble channel)
+;(function()
+    local P2P_PREFIX = "xwkp "
+    local P2P_CONS = "bcdfghjkmnpqrtvw"
+    local REV_CONS = {}
+    for i = 1, #P2P_CONS do REV_CONS[P2P_CONS:sub(i, i)] = i - 1 end
+
+    local SLOTS_ORDER = {
+        "hat", "hair", "face", "shirt", "pants", "feet",
+        "back", "hand", "neck", "chest", "ances", "mask", "ring", "pet"
+    }
+    local SLOT_TO_IDX = {}
+    for idx, sl in ipairs(SLOTS_ORDER) do SLOT_TO_IDX[sl] = idx end
+
+    local P2P = {
+        Peers = {},
+        seenWire = {},
+        queue = {},
+        sending = false,
+        nextSendAt = 0,
+        lastSbvAt = 0,
+        lastHelloAt = 0,
+        pendingBroadcast = false,
+        replyTimers = {},
+        sfxSound = nil,
+    }
+    ProxyCommands.P2P = P2P
+
+    local function shallowCopyTbl(t)
+        if type(t) ~= "table" then return nil end
+        local o = {}
+        for k, v in pairs(t) do o[k] = v end
+        return o
+    end
+
+    local function computeChecksum(bytes)
+        local c = 0x5A
+        for i = 1, #bytes do
+            c = (c * 33 + bytes[i] + i) % 256
+        end
+        return c
+    end
+
+    local function pushVarint(bytes, n)
+        n = math.max(0, math.floor(tonumber(n) or 0))
+        repeat
+            local b = n % 128
+            n = math.floor(n / 128)
+            if n > 0 then b = b + 128 end
+            bytes[#bytes + 1] = b
+        until n == 0
+    end
+
+    local function readVarint(bytes, pos)
+        local val, mul, shift = 0, 1, 0
+        while pos <= #bytes and shift < 4 do
+            local b = bytes[pos]
+            pos = pos + 1
+            if b >= 128 then
+                val = val + (b - 128) * mul
+                mul = mul * 128
+                shift = shift + 1
+            else
+                val = val + b * mul
+                return val, pos
+            end
+        end
+        return val, pos
+    end
+
+    local function pushStr(bytes, s, maxBytes)
+        s = tostring(s or "")
+        if #s > maxBytes then s = s:sub(1, maxBytes) end
+        bytes[#bytes + 1] = #s
+        for i = 1, #s do
+            bytes[#bytes + 1] = string.byte(s, i)
+        end
+    end
+
+    local function readStr(bytes, pos)
+        if pos > #bytes then return "", pos end
+        local len = bytes[pos]
+        pos = pos + 1
+        local ch = {}
+        for _ = 1, len do
+            if pos > #bytes then break end
+            ch[#ch + 1] = string.char(bytes[pos])
+            pos = pos + 1
+        end
+        return table.concat(ch), pos
+    end
+
+    local function encodeBytesToWire(bytes)
+        bytes[#bytes + 1] = computeChecksum(bytes)
+        local nibs = {}
+        for i = 1, #bytes do
+            local b = bytes[i]
+            local hi = math.floor(b / 16) + 1
+            local lo = (b % 16) + 1
+            nibs[#nibs + 1] = P2P_CONS:sub(hi, hi) .. P2P_CONS:sub(lo, lo)
+        end
+        local flat = table.concat(nibs)
+        local groups = {}
+        for i = 1, #flat, 8 do
+            groups[#groups + 1] = flat:sub(i, math.min(i + 7, #flat))
+        end
+        return P2P_PREFIX .. table.concat(groups, " ")
+    end
+
+    local function decodeWireToBytes(txt)
+        if type(txt) ~= "string" or txt:sub(1, #P2P_PREFIX) ~= P2P_PREFIX then return nil end
+        local body = txt:sub(#P2P_PREFIX + 1):gsub("%s+", "")
+        if #body < 8 or (#body % 2) ~= 0 or #body > 192 then return nil end
+        local bytes = {}
+        for i = 1, #body, 2 do
+            local a = REV_CONS[body:sub(i, i)]
+            local b = REV_CONS[body:sub(i + 1, i + 1)]
+            if a == nil or b == nil then return nil end
+            bytes[#bytes + 1] = a * 16 + b
+        end
+        local expected = bytes[#bytes]
+        bytes[#bytes] = nil
+        if computeChecksum(bytes) ~= expected then return nil end
+        return bytes
+    end
+
+    local function buildPeerSig(st)
+        local wKeys = {}
+        for sl, id in pairs(st.worn or {}) do
+            wKeys[#wKeys + 1] = tostring(sl) .. "=" .. tostring(id)
+        end
+        table.sort(wKeys)
+        return table.concat({
+            st.reset and "R1" or "R0",
+            tostring(st.role or "none"),
+            tostring(st.effect or "None"),
+            tostring(st.customName or ""),
+            table.concat(wKeys, ",")
+        }, "|")
+    end
+
+    function ProxyCommands.SaveEnv()
+        local env = getEnv()
+        env.__SYT_ENV_DATA = env.__SYT_ENV_DATA or {}
+        local bj = ProxyCommands.State.bj or {}
+        env.__SYT_ENV_DATA.proxy = {
+            p2pEnabled = ProxyCommands.State.p2pEnabled ~= false,
+            remeEnabled = ProxyCommands.State.remeEnabled == true,
+            bj = {
+                b1 = bj.b1 and { x = bj.b1.x, y = bj.b1.y } or nil,
+                b2 = bj.b2 and { x = bj.b2.x, y = bj.b2.y } or nil,
+                t1 = bj.t1 and { x = bj.t1.x, y = bj.t1.y } or nil,
+                t2 = bj.t2 and { x = bj.t2.x, y = bj.t2.y } or nil,
+                tax = tonumber(bj.tax) or 0,
+            }
+        }
+    end
+
+    function ProxyCommands.LoadEnv()
+        local env = getEnv()
+        local pr = env and env.__SYT_ENV_DATA and env.__SYT_ENV_DATA.proxy
+        if type(pr) == "table" then
+            ProxyCommands.State.p2pEnabled = (pr.p2pEnabled ~= false)
+            ProxyCommands.State.remeEnabled = (pr.remeEnabled == true)
+            if type(pr.bj) == "table" then
+                local bj = ProxyCommands.State.bj
+                bj.b1 = pr.bj.b1 and { x = pr.bj.b1.x, y = pr.bj.b1.y } or bj.b1
+                bj.b2 = pr.bj.b2 and { x = pr.bj.b2.x, y = pr.bj.b2.y } or bj.b2
+                bj.t1 = pr.bj.t1 and { x = pr.bj.t1.x, y = pr.bj.t1.y } or bj.t1
+                bj.t2 = pr.bj.t2 and { x = pr.bj.t2.x, y = pr.bj.t2.y } or bj.t2
+                if type(pr.bj.tax) == "number" then bj.tax = pr.bj.tax end
+            end
+        end
+    end
+
+    function P2P.SaveToEnv()
+        local env = getEnv()
+        env.__SYT_P2P_PEERS = env.__SYT_P2P_PEERS or {}
+        for uid, peer in pairs(P2P.Peers) do
+            env.__SYT_P2P_PEERS[uid] = {
+                uid = peer.uid,
+                reset = peer.reset == true,
+                role = peer.role,
+                effect = peer.effect,
+                customName = peer.customName,
+                worn = shallowCopyTbl(peer.worn) or {},
+                sig = peer.sig,
+                updatedAt = peer.updatedAt,
+                origAttrs = shallowCopyTbl(peer.origAttrs),
+            }
+        end
+    end
+
+    function P2P.LoadFromEnv()
+        local env = getEnv()
+        local saved = env and env.__SYT_P2P_PEERS
+        if type(saved) ~= "table" then return end
+        for uid, peer in pairs(saved) do
+            if type(peer) == "table" and tonumber(uid) then
+                P2P.Peers[tonumber(uid)] = {
+                    uid = tonumber(uid),
+                    reset = peer.reset == true,
+                    role = peer.role or "none",
+                    effect = peer.effect or "None",
+                    customName = peer.customName or "",
+                    worn = shallowCopyTbl(peer.worn) or {},
+                    sig = peer.sig or buildPeerSig(peer),
+                    updatedAt = peer.updatedAt or os.clock(),
+                    origAttrs = shallowCopyTbl(peer.origAttrs),
+                }
+            end
+        end
+    end
+
+    local function getP2PChannel()
+        local ok, TCS = pcall(game.GetService, game, "TextChatService")
+        if not ok or not TCS then return nil end
+        local tcsFolder = TCS:FindFirstChild("TextChannels")
+        if tcsFolder then
+            local gen = tcsFolder:FindFirstChild("RBXGeneral")
+            if gen and gen:IsA("TextChannel") then return gen end
+            for _, ch in ipairs(tcsFolder:GetChildren()) do
+                if ch:IsA("TextChannel") then return ch end
+            end
+        end
+        return nil
+    end
+
+    local function getOthersEntryMap()
+        if not H.others then return nil end
+        if H._othersCacheFor == H.others and type(H._othersEntryMap) == "table" then
+            return H._othersEntryMap
+        end
+        local candidateFns = { H.others.tagOf, H.others.where, H.others.list }
+        for _, fn in ipairs(candidateFns) do
+            if type(fn) == "function" then
+                for upIdx = 1, 5 do
+                    local okU, t = pcall(uv, fn, upIdx)
+                    if okU and type(t) == "table" then
+                        for _, val in pairs(t) do
+                            if type(val) == "table" and (val.userId ~= nil or val.slots ~= nil or val.lookVer ~= nil) then
+                                H._othersCacheFor = H.others
+                                H._othersEntryMap = t
+                                return t
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local function applyPeerToWorld(uid, peer)
+        if not peer or not LP or uid == LP.UserId then return end
+        local active = (ProxyCommands.State.p2pEnabled ~= false) and not peer.reset
+        local wantSig = active and peer.sig or "ORIG"
+
+        local plr = Players:GetPlayerByUserId(uid)
+        if plr then
+            if not peer.origAttrs then
+                peer.origAttrs = Visual.SnapshotPlayerAttrs(plr)
+            end
+            if active then
+                if plr:GetAttribute("SYT_PeerSig") ~= wantSig then
+                    Visual.ApplyIdentityToPlayer(plr, peer, peer.origAttrs)
+                    plr:SetAttribute("SYT_PeerSig", wantSig)
+                end
+            else
+                if plr:GetAttribute("SYT_PeerSig") ~= nil then
+                    Visual.ApplyIdentityToPlayer(plr, { role = "none", customName = "", effect = "None" }, peer.origAttrs)
+                    plr:SetAttribute("SYT_PeerSig", nil)
+                end
+            end
+        end
+
+        local entryMap = getOthersEntryMap()
+        if type(entryMap) == "table" then
+            local matched = {}
+            for _, entry in pairs(entryMap) do
+                if type(entry) == "table" and tonumber(entry.userId) == uid then
+                    matched[#matched + 1] = entry
+                end
+            end
+            if #matched == 0 and type(entryMap[uid]) == "table" then
+                matched[1] = entryMap[uid]
+            end
+            for _, entry in ipairs(matched) do
+                if entry.slots ~= nil or entry.worn ~= nil then
+                    if entry._sytLastSlots ~= entry.slots then
+                        entry._sytOrigSlots = shallowCopyTbl(entry.slots) or {}
+                        entry._sytOrigWorn = shallowCopyTbl(entry.worn) or {}
+                        entry._sytOrigPet = entry.pet
+                        entry._sytOrigWings = entry.wings
+                        entry._sytOrigWingIt = entry.wingIt
+                        if entry._sytOrigName == nil then entry._sytOrigName = entry.name end
+                        entry._sytAppliedSig = nil
+                    end
+                    if entry._sytAppliedSig ~= wantSig then
+                        if active then
+                            local newSlots = shallowCopyTbl(entry._sytOrigSlots) or {}
+                            for sl, id in pairs(peer.worn or {}) do
+                                if type(id) == "number" and id > 0 then
+                                    newSlots[sl] = id
+                                elseif id == 0 then
+                                    newSlots[sl] = nil
+                                end
+                            end
+                            local newWorn = {}
+                            local newPet, newWings = nil, false
+                            for _, id in pairs(newSlots) do
+                                if type(id) == "number" and id > 0 then
+                                    newWorn[id] = true
+                                    local info = H.ItemDB and H.ItemDB[id]
+                                    if type(info) == "table" then
+                                        if info.pet then newPet = info.pet end
+                                        if info.wingSheet then newWings = info.wingSheet end
+                                    end
+                                end
+                            end
+                            entry.slots = newSlots
+                            entry.worn = newWorn
+                            entry.pet = newPet
+                            entry.wings = newWings
+                            if not newWings then entry.wingIt = nil end
+                            if (peer.customName or "") ~= "" or (peer.role or "none") ~= "none" then
+                                local baseShow = (peer.customName ~= "" and peer.customName) or entry._sytOrigName or (plr and (plr:GetAttribute("GameName") or plr.Name)) or "Player"
+                                if type(entry.name) == "string" or entry._sytOrigName ~= nil then
+                                    entry.name = Visual.FormatPreviewText(baseShow, peer.role)
+                                end
+                            end
+                        else
+                            entry.slots = shallowCopyTbl(entry._sytOrigSlots) or {}
+                            entry.worn = shallowCopyTbl(entry._sytOrigWorn) or {}
+                            entry.pet = entry._sytOrigPet
+                            entry.wings = entry._sytOrigWings
+                            entry.wingIt = entry._sytOrigWingIt
+                            if entry._sytOrigName ~= nil then entry.name = entry._sytOrigName end
+                        end
+                        entry._sytLastSlots = entry.slots
+                        entry._sytAppliedSig = wantSig
+                        entry.lookVer = (tonumber(entry.lookVer) or 0) + 1
+                        if type(entry.redraw) == "function" then pcall(entry.redraw) end
+                    end
+                elseif type(entry.redraw) == "function" and entry._sytAppliedSig ~= wantSig then
+                    entry._sytAppliedSig = wantSig
+                    pcall(entry.redraw)
+                end
+            end
+        end
+    end
+
+    function P2P.SyncVisiblePeers()
+        for uid, peer in pairs(P2P.Peers) do
+            if tonumber(uid) and uid ~= (LP and LP.UserId) then
+                pcall(applyPeerToWorld, uid, peer)
+            end
+        end
+    end
+
+    function P2P.GetPeerCount()
+        local n = 0
+        for uid, _ in pairs(P2P.Peers) do
+            if uid ~= (LP and LP.UserId) then n = n + 1 end
+        end
+        return n
+    end
+
+    function P2P.OverlayProfile(targetUid, ret)
+        if type(ret) ~= "table" then return end
+        local prof = (type(ret[1]) == "table" and ret[1]) or (type(ret[2]) == "table" and ret[2])
+        if type(prof) ~= "table" then return end
+
+        local src, isLocal = nil, false
+        local numUid = tonumber(targetUid)
+        if LP and (targetUid == nil or numUid == LP.UserId or targetUid == LP.Name) then
+            src = Visual.State
+            isLocal = true
+        elseif numUid and P2P.Peers[numUid] then
+            src = P2P.Peers[numUid]
+        elseif type(targetUid) == "string" and targetUid ~= "" then
+            for uid, peer in pairs(P2P.Peers) do
+                local plr = Players:GetPlayerByUserId(uid)
+                if plr and (plr.Name == targetUid or peer.customName == targetUid) then
+                    src = peer
+                    break
+                end
+            end
+        end
+        if not src then return end
+        if not isLocal and (src.reset or ProxyCommands.State.p2pEnabled == false) then return end
+
+        local wornSrc = isLocal and src.fakeWorn or src.worn
+        if type(wornSrc) == "table" and next(wornSrc) ~= nil then
+            if type(prof.slots) == "table" then
+                for sl, id in pairs(wornSrc) do
+                    if type(id) == "number" and id > 0 then
+                        prof.slots[sl] = id
+                    elseif id == 0 then
+                        prof.slots[sl] = nil
+                    end
+                end
+            end
+            if type(prof.worn) == "table" then
+                if prof.worn[1] ~= nil or #prof.worn > 0 then
+                    local slotMap = {}
+                    for _, wid in ipairs(prof.worn) do
+                        local info = H.ItemDB and H.ItemDB[wid]
+                        local sl = (info and info.slot) or ("u" .. tostring(wid))
+                        slotMap[sl] = wid
+                    end
+                    for sl, id in pairs(wornSrc) do
+                        slotMap[sl] = (type(id) == "number" and id > 0) and id or nil
+                    end
+                    local arr = {}
+                    for _, wid in pairs(slotMap) do
+                        if type(wid) == "number" and wid > 0 then arr[#arr + 1] = wid end
+                    end
+                    prof.worn = arr
+                else
+                    for _, id in pairs(wornSrc) do
+                        if type(id) == "number" and id > 0 then prof.worn[id] = true end
+                    end
+                end
+            end
+        end
+        if (src.customName or "") ~= "" and type(prof.name) == "string" then
+            prof.name = Visual.FormatPreviewText(src.customName, src.role)
+        elseif (src.role or "none") ~= "none" and type(prof.name) == "string" then
+            prof.name = Visual.FormatPreviewText(prof.name, src.role)
+        end
+        if (src.role or "none") ~= "none" then
+            if prof.title ~= nil then prof.title = src.role end
+            if prof.wornTitle ~= nil then prof.wornTitle = src.role end
+        end
+    end
+
+    local function playSbvSound()
+        pcall(function()
+            local ss = game:GetService("SoundService")
+            if not P2P.sfxSound or not P2P.sfxSound.Parent then
+                local s = Instance.new("Sound")
+                s.Name = "SYT_SBV_SFX"
+                s.SoundId = "rbxassetid://85047722302784"
+                s.Volume = 0.65
+                s.Parent = ss
+                P2P.sfxSound = s
+            end
+            P2P.sfxSound:Play()
+        end)
+    end
+
+    local function displaySbvLine(rawName, customName, roleKey, effName, colorCode, worldName, msgText)
+        local cleanBase = stripColorTags(tostring(customName or ""))
+        if cleanBase == "" then cleanBase = stripColorTags(tostring(rawName or "Player")) end
+        local senderMarkup = Visual.FormatSbMarkup(cleanBase, roleKey, effName, colorCode)
+        local wClean = string.upper(stripColorTags(tostring(worldName or "WORLD")))
+        if wClean == "" then wClean = "WORLD" end
+        local safeMsg = tostring(msgText or ""):gsub("[\r\n]", " ")
+        local sbLine = string.format("`6>> from (``%s`6) in [`4%s`6] > `$%s``", senderMarkup, wClean, safeMsg)
+        playSbvSound()
+        proxyConsole(sbLine, "global", true)
+    end
+
+    local function enqueueWire(kindTag, wireStr)
+        if not wireStr or #wireStr > 200 then return end
+        if kindTag == "SET" or kindTag == "HELLO" then
+            for i = #P2P.queue, 1, -1 do
+                if P2P.queue[i].kind == kindTag then table.remove(P2P.queue, i) end
+            end
+        else
+            if #P2P.queue >= 6 then table.remove(P2P.queue, 1) end
+        end
+        P2P.queue[#P2P.queue + 1] = { kind = kindTag, wire = wireStr }
+        if P2P.sending then return end
+        P2P.sending = true
+        task.spawn(function()
+            while #P2P.queue > 0 do
+                if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then break end
+                local now = os.clock()
+                if now < P2P.nextSendAt then
+                    task.wait(math.min(0.35, P2P.nextSendAt - now))
+                else
+                    local ch = getP2PChannel()
+                    local ts = ch and LP and ch:FindFirstChild(tostring(LP.UserId))
+                    if ch and (not ts or ts:GetAttribute("CanSend") ~= false) then
+                        local pkt = table.remove(P2P.queue, 1)
+                        P2P.nextSendAt = os.clock() + 1.15
+                        pcall(function() ch:SendAsync(pkt.wire) end)
+                    else
+                        task.wait(0.45)
+                    end
+                end
+            end
+            P2P.sending = false
+        end)
+    end
+
+    local function buildStatePacket(isHello, isReset)
+        local S = Visual.State
+        local _, roleIdx = Visual.FindRoleEntry(isReset and "none" or S.role)
+        local effIdx = Visual.GetEffectIndex(isReset and "None" or S.effect)
+        local flags = (isReset and 1 or 0) + (isHello and 2 or 0)
+        local bytes = { isHello and 0x12 or 0x11, flags, roleIdx, effIdx }
+        pushStr(bytes, isReset and "" or (S.customName or ""), 22)
+
+        local wornList = {}
+        if not isReset then
+            for sl, id in pairs(S.fakeWorn or {}) do
+                local sIdx = SLOT_TO_IDX[tostring(sl)]
+                if sIdx and type(id) == "number" and id >= 0 then
+                    wornList[#wornList + 1] = { sIdx = sIdx, id = math.floor(id) }
+                end
+            end
+            table.sort(wornList, function(a, b) return a.sIdx < b.sIdx end)
+        end
+
+        local countPos = #bytes + 1
+        bytes[countPos] = 0
+        local added = 0
+        for _, item in ipairs(wornList) do
+            local temp = {}
+            pushVarint(temp, item.id)
+            if (#bytes + 1 + #temp + 1) > 81 then break end
+            bytes[#bytes + 1] = item.sIdx
+            for _, tb in ipairs(temp) do bytes[#bytes + 1] = tb end
+            added = added + 1
+        end
+        bytes[countPos] = added
+        return encodeBytesToWire(bytes)
+    end
+
+    function P2P.BroadcastState(isReset)
+        if ProxyCommands.State.p2pEnabled == false then return end
+        if P2P.pendingBroadcast and not isReset then return end
+        P2P.pendingBroadcast = true
+        task.delay(isReset and 0.05 or 0.18, function()
+            P2P.pendingBroadcast = false
+            if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+            if ProxyCommands.State.p2pEnabled == false then return end
+            enqueueWire("SET", buildStatePacket(false, isReset == true))
+        end)
+    end
+
+    function P2P.SendHello()
+        if ProxyCommands.State.p2pEnabled == false then return end
+        local now = os.clock()
+        if (now - (P2P.lastHelloAt or 0)) < 2.5 then return end
+        P2P.lastHelloAt = now
+        enqueueWire("HELLO", buildStatePacket(true, false))
+    end
+
+    function P2P.SendSbv(msgText)
+        local cleanMsg = tostring(msgText or ""):match("^%s*(.-)%s*$")
+        if cleanMsg == "" then
+            proxyConsole("`o[SBV] Format: /sbv <pesan>``")
+            return false
+        end
+        local now = os.clock()
+        if (now - (P2P.lastSbvAt or 0)) < 2.0 then
+            proxyConsole("`o[SBV] Tunggu sebentar sebelum kirim /sbv lagi.``")
+            return false
+        end
+        P2P.lastSbvAt = now
+
+        local S = Visual.State
+        local _, roleIdx = Visual.FindRoleEntry(S.role)
+        local effIdx = Visual.GetEffectIndex(S.effect)
+        local curWorld = (H.gt and cleanWorldName(H.gt.name)) or "START"
+
+        displaySbvLine(Core.GetInGameName(LP, true), S.customName, S.role, S.effect, S.colorCode, curWorld, cleanMsg)
+
+        local bytes = { 0x13, roleIdx, effIdx }
+        pushStr(bytes, S.customName or "", 20)
+        pushStr(bytes, curWorld, 16)
+        local rem = math.max(12, 80 - #bytes - 1)
+        pushStr(bytes, cleanMsg, rem)
+        enqueueWire("SBV", encodeBytesToWire(bytes))
+        return true
+    end
+
+    function P2P.HandleIncomingWire(wireTxt, senderUid)
+        if type(wireTxt) ~= "string" or wireTxt:sub(1, #P2P_PREFIX) ~= P2P_PREFIX then return false end
+        senderUid = tonumber(senderUid)
+        if not senderUid or (LP and senderUid == LP.UserId) then return true end
+
+        local now = os.clock()
+        local dedupeKey = tostring(senderUid) .. "|" .. wireTxt
+        if P2P.seenWire[dedupeKey] and (now - P2P.seenWire[dedupeKey]) < 2.0 then
+            return true
+        end
+        P2P.seenWire[dedupeKey] = now
+        for k, t0 in pairs(P2P.seenWire) do
+            if (now - t0) > 8.0 then P2P.seenWire[k] = nil end
+        end
+
+        local bytes = decodeWireToBytes(wireTxt)
+        if not bytes then return true end
+        local ptype = bytes[1]
+
+        if ptype == 0x11 or ptype == 0x12 then
+            local flags = bytes[2] or 0
+            local roleIdx = bytes[3] or 1
+            local effIdx = bytes[4] or 1
+            local isReset = (flags % 2) == 1
+            local wantReply = (math.floor(flags / 2) % 2) == 1
+            local cName, pos = readStr(bytes, 5)
+            local slotCnt = bytes[pos] or 0
+            pos = pos + 1
+            local wornMap = {}
+            for _ = 1, slotCnt do
+                if pos > #bytes then break end
+                local sIdx = bytes[pos]
+                pos = pos + 1
+                local itemId
+                itemId, pos = readVarint(bytes, pos)
+                local sl = SLOTS_ORDER[sIdx]
+                if sl then wornMap[sl] = itemId end
+            end
+
+            local rc = Visual.RoleCatalog[roleIdx] or Visual.RoleCatalog[1]
+            local eff = Visual.Presets.effects[effIdx] or "None"
+            local peerObj = {
+                uid = senderUid,
+                reset = isReset,
+                role = rc.key,
+                effect = eff,
+                customName = cName,
+                worn = wornMap,
+                updatedAt = now,
+                origAttrs = P2P.Peers[senderUid] and P2P.Peers[senderUid].origAttrs or nil,
+            }
+            peerObj.sig = buildPeerSig(peerObj)
+            P2P.Peers[senderUid] = peerObj
+            pcall(P2P.SaveToEnv)
+            pcall(applyPeerToWorld, senderUid, peerObj)
+
+            if (ptype == 0x12 or wantReply) and ProxyCommands.State.p2pEnabled ~= false and not P2P.replyTimers[senderUid] then
+                P2P.replyTimers[senderUid] = true
+                local stagger = 0.15 + ((LP and (LP.UserId % 7) or 0) * 0.18)
+                task.delay(stagger, function()
+                    P2P.replyTimers[senderUid] = nil
+                    if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+                    if ProxyCommands.State.p2pEnabled ~= false then
+                        enqueueWire("SET", buildStatePacket(false, false))
+                    end
+                end)
+            end
+            return true
+        elseif ptype == 0x13 then
+            local roleIdx = bytes[2] or 1
+            local effIdx = bytes[3] or 1
+            local cName, pos = readStr(bytes, 4)
+            local wName, sbMsg
+            wName, pos = readStr(bytes, pos)
+            sbMsg, pos = readStr(bytes, pos)
+            local rc = Visual.RoleCatalog[roleIdx] or Visual.RoleCatalog[1]
+            local eff = Visual.Presets.effects[effIdx] or "None"
+            local plr = Players:GetPlayerByUserId(senderUid)
+            local rawNm = (plr and (plr:GetAttribute("GameName") or plr.Name)) or "Player"
+            if P2P.Peers[senderUid] and P2P.Peers[senderUid].origAttrs and P2P.Peers[senderUid].origAttrs.GameName then
+                rawNm = P2P.Peers[senderUid].origAttrs.GameName
+            end
+            displaySbvLine(rawNm, cName, rc.key, eff, nil, wName, sbMsg)
+            return true
+        end
+        return false
+    end
+
+    getEnv().__SYT_OVERLAY_PROFILE_FN = P2P.OverlayProfile
+    getEnv().__SYT_P2P_ON_INCOMING_FN = function(msg)
+        if not msg or type(msg.Text) ~= "string" then return nil end
+        if msg.Text:sub(1, #P2P_PREFIX) == P2P_PREFIX then
+            local uid = msg.TextSource and msg.TextSource.UserId
+            pcall(P2P.HandleIncomingWire, msg.Text, uid)
+            local props = Instance.new("TextChatMessageProperties")
+            props.Text = ""
+            return props
+        end
+        return nil
+    end
+end)()
+
+-- Dialog 1: /CLOTHES (3-Column Character Edit + Explicit SET buttons + P2P Auto-Sync)
 function ProxyCommands.OpenClothesDialog()
     Core.EnsureInit()
-    local _, inner = makeNativeGameDialog("Clothes", "Character Edit - Wardrobe (/clothes)", 700, 420)
+    local _, inner = makeNativeGameDialog("Clothes", "Character Edit - Wardrobe (/clothes)", 710, 430)
     local selectedCat = "all"
     local searchQ = ""
 
-    -- Left Column: Slot Category Shortcuts
     local leftCol = Instance.new("ScrollingFrame", inner)
     leftCol.Position = UDim2.fromOffset(10, 44)
-    leftCol.Size = UDim2.fromOffset(115, 354)
+    leftCol.Size = UDim2.fromOffset(115, 364)
     leftCol.BackgroundColor3 = Color3.fromRGB(20, 66, 84)
     leftCol.BorderSizePixel = 0
     leftCol.ScrollBarThickness = 4
@@ -11741,17 +12844,16 @@ function ProxyCommands.OpenClothesDialog()
     local lLayout = Instance.new("UIListLayout", leftCol)
     lLayout.Padding = UDim.new(0, 4)
 
-    -- Center Column: Player Icon Preview + Preset Save/Load
     local midCol = Instance.new("Frame", inner)
     midCol.Position = UDim2.fromOffset(132, 44)
-    midCol.Size = UDim2.fromOffset(200, 354)
+    midCol.Size = UDim2.fromOffset(204, 364)
     midCol.BackgroundColor3 = Color3.fromRGB(20, 66, 84)
     midCol.BorderSizePixel = 0
     Instance.new("UICorner", midCol).CornerRadius = UDim.new(0, 6)
 
     local avatarBox = Instance.new("Frame", midCol)
-    avatarBox.Size = UDim2.fromOffset(140, 160)
-    avatarBox.Position = UDim2.new(0.5, -70, 0, 12)
+    avatarBox.Size = UDim2.fromOffset(152, 160)
+    avatarBox.Position = UDim2.new(0.5, -76, 0, 10)
     avatarBox.BackgroundColor3 = Color3.fromRGB(12, 34, 46)
     Instance.new("UICorner", avatarBox).CornerRadius = UDim.new(0, 6)
 
@@ -11760,7 +12862,7 @@ function ProxyCommands.OpenClothesDialog()
     previewGrid.Position = UDim2.fromOffset(6, 6)
     previewGrid.BackgroundTransparency = 1
     local pgLayout = Instance.new("UIGridLayout", previewGrid)
-    pgLayout.CellSize = UDim2.fromOffset(38, 38)
+    pgLayout.CellSize = UDim2.fromOffset(32, 36)
     pgLayout.CellPadding = UDim2.fromOffset(4, 4)
 
     local pNameLbl = Instance.new("TextLabel", avatarBox)
@@ -11770,12 +12872,15 @@ function ProxyCommands.OpenClothesDialog()
     pNameLbl.Font = Enum.Font.GothamBold
     pNameLbl.TextSize = 11
     pNameLbl.TextColor3 = Color3.fromRGB(255, 230, 180)
-    pNameLbl.Text = Core.GetInGameName(LP, true)
+    pNameLbl.Text = Visual.FormatPreviewText(Visual.State.customName or "", Visual.State.role or "none")
 
     local function rebuildMidPreview()
         for _, ch in ipairs(previewGrid:GetChildren()) do
             if not ch:IsA("UIGridLayout") then ch:Destroy() end
         end
+        pNameLbl.Text = Visual.FormatPreviewText(Visual.State.customName or "", Visual.State.role or "none")
+        local rc = Visual.FindRoleEntry(Visual.State.role or "none")
+        pNameLbl.TextColor3 = rc.color or Color3.fromRGB(255, 230, 180)
         local wt = H.wornTbl or {}
         for _, sl in ipairs({ "hat", "hair", "face", "shirt", "back", "hand", "pants", "feet" }) do
             local id = Visual.State.fakeWorn[sl]
@@ -11784,7 +12889,7 @@ function ProxyCommands.OpenClothesDialog()
             slotF.BackgroundColor3 = Color3.fromRGB(28, 52, 58)
             Instance.new("UICorner", slotF).CornerRadius = UDim.new(0, 4)
             if type(id) == "number" and id > 0 then
-                Core.AttachItemSprite(slotF, id, 30)
+                Core.AttachItemSprite(slotF, id, 28)
             else
                 local slbl = Instance.new("TextLabel", slotF)
                 slbl.Size = UDim2.fromScale(1, 1)
@@ -11797,20 +12902,20 @@ function ProxyCommands.OpenClothesDialog()
         end
     end
 
-    local presetDropBtn = Instance.new("TextButton", midCol)
-    presetDropBtn.Size = UDim2.new(1, -16, 0, 28)
-    presetDropBtn.Position = UDim2.fromOffset(8, 184)
-    presetDropBtn.BackgroundColor3 = Color3.fromRGB(39, 125, 159)
-    presetDropBtn.Font = Enum.Font.GothamBold
-    presetDropBtn.TextSize = 11
-    presetDropBtn.TextColor3 = Color3.new(1, 1, 1)
-    presetDropBtn.Text = "Preset: Default / Save"
-    Instance.new("UICorner", presetDropBtn).CornerRadius = UDim.new(0, 5)
+    local setNowBtn = Instance.new("TextButton", midCol)
+    setNowBtn.Size = UDim2.new(1, -16, 0, 28)
+    setNowBtn.Position = UDim2.fromOffset(8, 180)
+    setNowBtn.BackgroundColor3 = Color3.fromRGB(64, 186, 84)
+    setNowBtn.Font = Enum.Font.GothamBold
+    setNowBtn.TextSize = 11
+    setNowBtn.TextColor3 = Color3.new(1, 1, 1)
+    setNowBtn.Text = "SET OUTFIT + SYNC P2P"
+    Instance.new("UICorner", setNowBtn).CornerRadius = UDim.new(0, 5)
 
     local saveBtn = Instance.new("TextButton", midCol)
     saveBtn.Size = UDim2.new(0.5, -10, 0, 28)
-    saveBtn.Position = UDim2.fromOffset(8, 220)
-    saveBtn.BackgroundColor3 = Color3.fromRGB(64, 186, 84)
+    saveBtn.Position = UDim2.fromOffset(8, 214)
+    saveBtn.BackgroundColor3 = Color3.fromRGB(39, 125, 159)
     saveBtn.Font = Enum.Font.GothamBold
     saveBtn.TextSize = 11
     saveBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -11819,7 +12924,7 @@ function ProxyCommands.OpenClothesDialog()
 
     local loadBtn = Instance.new("TextButton", midCol)
     loadBtn.Size = UDim2.new(0.5, -10, 0, 28)
-    loadBtn.Position = UDim2.new(0.5, 2, 0, 220)
+    loadBtn.Position = UDim2.new(0.5, 2, 0, 214)
     loadBtn.BackgroundColor3 = Color3.fromRGB(140, 180, 192)
     loadBtn.Font = Enum.Font.GothamBold
     loadBtn.TextSize = 11
@@ -11829,7 +12934,7 @@ function ProxyCommands.OpenClothesDialog()
 
     local clearBtn = Instance.new("TextButton", midCol)
     clearBtn.Size = UDim2.new(1, -16, 0, 28)
-    clearBtn.Position = UDim2.fromOffset(8, 256)
+    clearBtn.Position = UDim2.fromOffset(8, 248)
     clearBtn.BackgroundColor3 = Color3.fromRGB(180, 70, 70)
     clearBtn.Font = Enum.Font.GothamBold
     clearBtn.TextSize = 11
@@ -11838,53 +12943,18 @@ function ProxyCommands.OpenClothesDialog()
     Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0, 5)
 
     local wingsNote = Instance.new("TextLabel", midCol)
-    wingsNote.Size = UDim2.new(1, -16, 0, 52)
-    wingsNote.Position = UDim2.fromOffset(8, 292)
+    wingsNote.Size = UDim2.new(1, -16, 0, 68)
+    wingsNote.Position = UDim2.fromOffset(8, 284)
     wingsNote.BackgroundTransparency = 1
     wingsNote.Font = Enum.Font.Gotham
     wingsNote.TextSize = 10
     wingsNote.TextWrapped = true
     wingsNote.TextColor3 = Color3.fromRGB(200, 225, 235)
-    wingsNote.Text = "Efek visual aktif. Double-jump wings otomatis dinonaktifkan untuk keamanan."
+    wingsNote.Text = "Klik SET pada baju untuk pakai & kirim ke sesama pengguna SYT (P2P). Double-jump wings otomatis dinonaktifkan."
 
-    saveBtn.MouseButton1Click:Connect(function()
-        local pairsList = {}
-        for sl, id in pairs(Visual.State.fakeWorn) do
-            pairsList[#pairsList + 1] = tostring(sl) .. "=" .. tostring(id)
-        end
-        safeWriteStorage("syt_clothes_preset.txt", table.concat(pairsList, ";"))
-        proxyConsole("`2[Clothes] Preset outfit disimpan!``")
-    end)
-
-    loadBtn.MouseButton1Click:Connect(function()
-        local raw = safeReadStorage("syt_clothes_preset.txt")
-        if raw and raw ~= "" then
-            Visual.State.fakeWorn = {}
-            for pair in raw:gmatch("[^;]+") do
-                local sl, id = pair:match("([^=]+)=(%d+)")
-                if sl and id then Visual.State.fakeWorn[sl] = tonumber(id) end
-            end
-            H._stripWingDoubleJump = true
-            Visual.ApplyOutfit()
-            rebuildMidPreview()
-            proxyConsole("`2[Clothes] Preset outfit dimuat!``")
-        else
-            proxyConsole("`o[Clothes] Belum ada preset tersimpan.``")
-        end
-    end)
-
-    clearBtn.MouseButton1Click:Connect(function()
-        Visual.State.fakeWorn = {}
-        H._stripWingDoubleJump = false
-        Visual.ApplyOutfit()
-        rebuildMidPreview()
-        proxyConsole("`2[Clothes] Outfit dikembalikan ke asli.``")
-    end)
-
-    -- Right Column: Search Box + Scrollable Clothes List
     local rightCol = Instance.new("Frame", inner)
-    rightCol.Position = UDim2.fromOffset(340, 44)
-    rightCol.Size = UDim2.fromOffset(338, 354)
+    rightCol.Position = UDim2.fromOffset(344, 44)
+    rightCol.Size = UDim2.fromOffset(344, 364)
     rightCol.BackgroundColor3 = Color3.fromRGB(20, 66, 84)
     rightCol.BorderSizePixel = 0
     Instance.new("UICorner", rightCol).CornerRadius = UDim.new(0, 6)
@@ -11912,7 +12982,8 @@ function ProxyCommands.OpenClothesDialog()
     local rLayout = Instance.new("UIListLayout", itemScroll)
     rLayout.Padding = UDim.new(0, 4)
 
-    local function rebuildItems()
+    local rebuildItems
+    rebuildItems = function()
         for _, ch in ipairs(itemScroll:GetChildren()) do
             if not ch:IsA("UIListLayout") then ch:Destroy() end
         end
@@ -11942,12 +13013,15 @@ function ProxyCommands.OpenClothesDialog()
         table.sort(list, function(a, b) return a.id < b.id end)
         for i = 1, math.min(#list, 120) do
             local entry = list[i]
-            local row = Instance.new("TextButton", itemScroll)
+            local sl = entry.info.slot or "back"
+            local isWornNow = (Visual.State.fakeWorn[sl] == entry.id)
+
+            local row = Instance.new("Frame", itemScroll)
             row.Size = UDim2.new(1, -8, 0, 38)
-            row.BackgroundColor3 = Color3.fromRGB(28, 52, 58)
+            row.BackgroundColor3 = isWornNow and Color3.fromRGB(24, 72, 54) or Color3.fromRGB(28, 52, 58)
             row.BorderSizePixel = 0
-            row.Text = ""
             Instance.new("UICorner", row).CornerRadius = UDim.new(0, 5)
+
             local iconF = Instance.new("Frame", row)
             iconF.Size = UDim2.fromOffset(30, 30)
             iconF.Position = UDim2.fromOffset(4, 4)
@@ -11955,28 +13029,86 @@ function ProxyCommands.OpenClothesDialog()
             Core.AttachItemSprite(iconF, entry.id, 28)
 
             local fxHint = ""
-            if entry.info.speed then fxHint = " [Speed]" end
-            if entry.info.punchRange then fxHint = fxHint .. " [Reach]" end
+            if entry.info.speed then fxHint = " [Spd]" end
+            if entry.info.punchRange then fxHint = fxHint .. " [Rng]" end
             local txtLbl = Instance.new("TextLabel", row)
-            txtLbl.Size = UDim2.new(1, -44, 1, 0)
-            txtLbl.Position = UDim2.fromOffset(40, 0)
+            txtLbl.Size = UDim2.new(1, -98, 1, 0)
+            txtLbl.Position = UDim2.fromOffset(38, 0)
             txtLbl.BackgroundTransparency = 1
             txtLbl.Font = Enum.Font.GothamBold
             txtLbl.TextSize = 11
+            txtLbl.TextTruncate = Enum.TextTruncate.AtEnd
             txtLbl.TextXAlignment = Enum.TextXAlignment.Left
             txtLbl.TextColor3 = Color3.new(1, 1, 1)
-            txtLbl.Text = string.format("[%s] %s (#%d)%s", tostring(entry.info.slot or "?"):upper(), entry.info.name, entry.id, fxHint)
+            txtLbl.Text = string.format("[%s] %s (#%d)%s", tostring(sl):upper(), entry.info.name, entry.id, fxHint)
 
-            row.MouseButton1Click:Connect(function()
-                local sl = entry.info.slot or "back"
-                Visual.State.fakeWorn[sl] = entry.id
-                -- Ilangkan double jump semua wings
-                H._stripWingDoubleJump = true
+            local setBtn = Instance.new("TextButton", row)
+            setBtn.Size = UDim2.fromOffset(50, 26)
+            setBtn.Position = UDim2.new(1, -56, 0.5, -13)
+            setBtn.BackgroundColor3 = isWornNow and Color3.fromRGB(64, 186, 84) or Color3.fromRGB(39, 125, 159)
+            setBtn.BorderSizePixel = 0
+            setBtn.Font = Enum.Font.GothamBold
+            setBtn.TextSize = 11
+            setBtn.TextColor3 = Color3.new(1, 1, 1)
+            setBtn.Text = isWornNow and "UNSET" or "SET"
+            Instance.new("UICorner", setBtn).CornerRadius = UDim.new(0, 4)
+
+            setBtn.MouseButton1Click:Connect(function()
+                if Visual.State.fakeWorn[sl] == entry.id then
+                    Visual.State.fakeWorn[sl] = nil
+                else
+                    Visual.State.fakeWorn[sl] = entry.id
+                    H._stripWingDoubleJump = true
+                end
                 Visual.ApplyOutfit()
                 rebuildMidPreview()
+                rebuildItems()
             end)
         end
     end
+
+    setNowBtn.MouseButton1Click:Connect(function()
+        H._stripWingDoubleJump = (next(Visual.State.fakeWorn) ~= nil)
+        Visual.ApplyOutfit()
+        rebuildMidPreview()
+        proxyConsole("`2[Clothes] Outfit aktif diterapkan & disinkronkan via P2P!``")
+    end)
+
+    saveBtn.MouseButton1Click:Connect(function()
+        local pairsList = {}
+        for sl, id in pairs(Visual.State.fakeWorn) do
+            pairsList[#pairsList + 1] = tostring(sl) .. "=" .. tostring(id)
+        end
+        safeWriteStorage("syt_clothes_preset.txt", table.concat(pairsList, ";"))
+        proxyConsole("`2[Clothes] Preset outfit disimpan!``")
+    end)
+
+    loadBtn.MouseButton1Click:Connect(function()
+        local raw = safeReadStorage("syt_clothes_preset.txt")
+        if raw and raw ~= "" then
+            Visual.State.fakeWorn = {}
+            for pair in raw:gmatch("[^;]+") do
+                local sl, id = pair:match("([^=]+)=(%d+)")
+                if sl and id then Visual.State.fakeWorn[sl] = tonumber(id) end
+            end
+            H._stripWingDoubleJump = (next(Visual.State.fakeWorn) ~= nil)
+            Visual.ApplyOutfit()
+            rebuildMidPreview()
+            rebuildItems()
+            proxyConsole("`2[Clothes] Preset outfit dimuat & disinkronkan P2P!``")
+        else
+            proxyConsole("`o[Clothes] Belum ada preset tersimpan.``")
+        end
+    end)
+
+    clearBtn.MouseButton1Click:Connect(function()
+        Visual.State.fakeWorn = {}
+        H._stripWingDoubleJump = false
+        Visual.ApplyOutfit()
+        rebuildMidPreview()
+        rebuildItems()
+        proxyConsole("`2[Clothes] Outfit dikembalikan ke asli.``")
+    end)
 
     local cats = {
         { key = "all", label = "ALL" }, { key = "hat", label = "HAT / KEPALA" },
@@ -12009,99 +13141,198 @@ function ProxyCommands.OpenClothesDialog()
     rebuildItems()
 end
 
--- Dialog 2: /CN (Set Role & Name with Close + Apply across Profile & Game UI)
+-- Dialog 2: /CN (Roles List lengkap dengan Nama Role, Jenis Role, Preview Nama pakai Role, dan tombol SET per item)
 function ProxyCommands.OpenCnDialog()
     Core.EnsureInit()
-    local _, inner = makeNativeGameDialog("SetRoleName", "Custom Name & Role (/cn)", 420, 360)
+    local _, inner = makeNativeGameDialog("SetRoleName", "Custom Name & Role (/cn)", 580, 430)
 
     local nameLbl = Instance.new("TextLabel", inner)
-    nameLbl.Position = UDim2.fromOffset(12, 46)
-    nameLbl.Size = UDim2.new(1, -24, 0, 20)
+    nameLbl.Position = UDim2.fromOffset(12, 44)
+    nameLbl.Size = UDim2.new(0.55, -14, 0, 18)
     nameLbl.BackgroundTransparency = 1
     nameLbl.Font = Enum.Font.GothamBold
-    nameLbl.TextSize = 12
+    nameLbl.TextSize = 11
     nameLbl.TextXAlignment = Enum.TextXAlignment.Left
     nameLbl.TextColor3 = Color3.new(1, 1, 1)
     nameLbl.Text = "Custom Name (kosong = nama asli):"
 
+    local effLbl = Instance.new("TextLabel", inner)
+    effLbl.Position = UDim2.new(0.55, 6, 0, 44)
+    effLbl.Size = UDim2.new(0.45, -18, 0, 18)
+    effLbl.BackgroundTransparency = 1
+    effLbl.Font = Enum.Font.GothamBold
+    effLbl.TextSize = 11
+    effLbl.TextXAlignment = Enum.TextXAlignment.Left
+    effLbl.TextColor3 = Color3.new(1, 1, 1)
+    effLbl.Text = "Animasi / Effect Nama:"
+
     local nameInput = Instance.new("TextBox", inner)
-    nameInput.Position = UDim2.fromOffset(12, 68)
-    nameInput.Size = UDim2.new(1, -24, 0, 30)
+    nameInput.Position = UDim2.fromOffset(12, 64)
+    nameInput.Size = UDim2.new(0.55, -14, 0, 30)
     nameInput.BackgroundColor3 = Color3.fromRGB(12, 34, 46)
     nameInput.Font = Enum.Font.GothamBold
     nameInput.TextSize = 13
     nameInput.TextColor3 = Color3.new(1, 1, 1)
-    nameInput.PlaceholderText = "Contoh: REDY"
+    nameInput.PlaceholderText = "Ketik nama (contoh: REDY)"
     nameInput.Text = Visual.State.customName or ""
+    nameInput.ClearTextOnFocus = false
     Instance.new("UICorner", nameInput).CornerRadius = UDim.new(0, 5)
 
-    local rLbl = Instance.new("TextLabel", inner)
-    rLbl.Position = UDim2.fromOffset(12, 106)
-    rLbl.Size = UDim2.new(1, -24, 0, 20)
-    rLbl.BackgroundTransparency = 1
-    rLbl.Font = Enum.Font.GothamBold
-    rLbl.TextSize = 12
-    rLbl.TextXAlignment = Enum.TextXAlignment.Left
-    rLbl.TextColor3 = Color3.new(1, 1, 1)
-    rLbl.Text = "Pilih Role (semua role):"
+    local chosenRole = Visual.State.role or "none"
+    local effIdx = Visual.GetEffectIndex(Visual.State.effect)
+
+    local effBtn = Instance.new("TextButton", inner)
+    effBtn.Position = UDim2.new(0.55, 6, 0, 64)
+    effBtn.Size = UDim2.new(0.45, -18, 0, 30)
+    effBtn.BackgroundColor3 = Color3.fromRGB(39, 125, 159)
+    effBtn.Font = Enum.Font.GothamBold
+    effBtn.TextSize = 11
+    effBtn.TextColor3 = Color3.new(1, 1, 1)
+    effBtn.Text = "FX: " .. tostring(Visual.Presets.effects[effIdx] or "None")
+    Instance.new("UICorner", effBtn).CornerRadius = UDim.new(0, 5)
+
+    local previewBox = Instance.new("Frame", inner)
+    previewBox.Position = UDim2.fromOffset(12, 100)
+    previewBox.Size = UDim2.new(1, -24, 0, 34)
+    previewBox.BackgroundColor3 = Color3.fromRGB(12, 34, 46)
+    Instance.new("UICorner", previewBox).CornerRadius = UDim.new(0, 5)
+
+    local previewLbl = Instance.new("TextLabel", previewBox)
+    previewLbl.Size = UDim2.new(1, -16, 1, 0)
+    previewLbl.Position = UDim2.fromOffset(8, 0)
+    previewLbl.BackgroundTransparency = 1
+    previewLbl.Font = Enum.Font.GothamBold
+    previewLbl.TextSize = 12
+    previewLbl.TextXAlignment = Enum.TextXAlignment.Left
+    previewLbl.TextColor3 = Color3.fromRGB(255, 230, 140)
 
     local roleScroll = Instance.new("ScrollingFrame", inner)
-    roleScroll.Position = UDim2.fromOffset(12, 130)
-    roleScroll.Size = UDim2.new(1, -24, 0, 155)
+    roleScroll.Position = UDim2.fromOffset(12, 140)
+    roleScroll.Size = UDim2.new(1, -24, 1, -190)
     roleScroll.BackgroundColor3 = Color3.fromRGB(14, 38, 48)
+    roleScroll.BorderSizePixel = 0
     roleScroll.ScrollBarThickness = 5
     roleScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     roleScroll.CanvasSize = UDim2.new()
-    local gLay = Instance.new("UIGridLayout", roleScroll)
-    gLay.CellSize = UDim2.fromOffset(118, 30)
-    gLay.CellPadding = UDim.new(0, 6)
+    local rLay = Instance.new("UIListLayout", roleScroll)
+    rLay.Padding = UDim.new(0, 4)
 
-    local chosenRole = Visual.State.role or "none"
-    local roleBtns = {}
-    for _, roleName in ipairs(VISUAL_ROLES) do
-        local rb = Instance.new("TextButton", roleScroll)
-        rb.BackgroundColor3 = (chosenRole == roleName) and Color3.fromRGB(64, 186, 84) or Color3.fromRGB(39, 125, 159)
-        rb.Font = Enum.Font.GothamBold
-        rb.TextSize = 11
-        rb.TextColor3 = Color3.new(1, 1, 1)
-        rb.Text = roleName:upper()
-        Instance.new("UICorner", rb).CornerRadius = UDim.new(0, 4)
-        roleBtns[roleName] = rb
-        rb.MouseButton1Click:Connect(function()
-            chosenRole = roleName
-            for rn, btn in pairs(roleBtns) do
-                btn.BackgroundColor3 = (rn == chosenRole) and Color3.fromRGB(64, 186, 84) or Color3.fromRGB(39, 125, 159)
-            end
+    local rowRefs = {}
+
+    local function syncRoleVisuals()
+        local curRaw = (nameInput.Text or ""):match("^%s*(.-)%s*$")
+        local selRc = Visual.FindRoleEntry(chosenRole)
+        local curFx = Visual.Presets.effects[effIdx] or "None"
+        local curPreview = Visual.FormatPreviewText(curRaw, chosenRole)
+        previewLbl.TextColor3 = selRc.color or Color3.new(1, 1, 1)
+        previewLbl.Text = string.format("Preview Aktif: %s   |   Role: %s (%s)   |   FX: %s",
+            curPreview, selRc.label, selRc.kind, curFx)
+
+        for _, ref in ipairs(rowRefs) do
+            local rc = ref.rc
+            local isSel = (rc.key == chosenRole)
+            ref.row.BackgroundColor3 = isSel and Color3.fromRGB(24, 72, 54) or Color3.fromRGB(20, 52, 66)
+            ref.preview.Text = Visual.FormatPreviewText(curRaw, rc.key)
+            ref.btn.BackgroundColor3 = isSel and Color3.fromRGB(64, 186, 84) or Color3.fromRGB(39, 125, 159)
+            ref.btn.Text = isSel and "SET ✓" or "SET"
+        end
+    end
+
+    local function applyCnState(roleKey)
+        chosenRole = roleKey or chosenRole
+        local rc = Visual.FindRoleEntry(chosenRole)
+        Visual.State.customName = (nameInput.Text or ""):match("^%s*(.-)%s*$")
+        Visual.State.role = rc.key
+        Visual.State.customTitle = rc.key
+        Visual.State.spoofDr = (rc.key == "dr")
+        Visual.State.spoofLegend = (rc.key == "legend")
+        Visual.State.lockNames = (Visual.State.customName ~= "" or rc.key ~= "none")
+        Visual.State.effect = Visual.Presets.effects[effIdx] or "None"
+        Visual.Apply()
+        if LP then
+            pcall(function()
+                LP:SetAttribute("GameName", Visual.State.customName ~= "" and Visual.State.customName or (Visual.State.origGameName or LP.Name))
+            end)
+        end
+        syncRoleVisuals()
+        local shown = Visual.FormatPreviewText(Visual.State.customName, rc.key)
+        proxyConsole(string.format("`2[CN] SET '%s' | Role: %s (%s) | Synced P2P!``", shown, rc.label, rc.kind))
+    end
+
+    for _, rc in ipairs(Visual.RoleCatalog) do
+        local row = Instance.new("Frame", roleScroll)
+        row.Size = UDim2.new(1, -10, 0, 42)
+        row.BorderSizePixel = 0
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 5)
+
+        local roleLbl = Instance.new("TextLabel", row)
+        roleLbl.Position = UDim2.fromOffset(8, 3)
+        roleLbl.Size = UDim2.new(0.45, -8, 0, 18)
+        roleLbl.BackgroundTransparency = 1
+        roleLbl.Font = Enum.Font.GothamBold
+        roleLbl.TextSize = 12
+        roleLbl.TextXAlignment = Enum.TextXAlignment.Left
+        roleLbl.TextColor3 = rc.color or Color3.new(1, 1, 1)
+        roleLbl.Text = rc.label
+
+        local kindLbl = Instance.new("TextLabel", row)
+        kindLbl.Position = UDim2.fromOffset(8, 21)
+        kindLbl.Size = UDim2.new(0.45, -8, 0, 16)
+        kindLbl.BackgroundTransparency = 1
+        kindLbl.Font = Enum.Font.Gotham
+        kindLbl.TextSize = 10
+        kindLbl.TextXAlignment = Enum.TextXAlignment.Left
+        kindLbl.TextColor3 = Color3.fromRGB(180, 210, 224)
+        kindLbl.Text = "Jenis: " .. rc.kind .. (rc.span and (" | Anim: " .. rc.span) or "")
+
+        local pvLbl = Instance.new("TextLabel", row)
+        pvLbl.Position = UDim2.new(0.46, 0, 0, 4)
+        pvLbl.Size = UDim2.new(0.36, -6, 1, -8)
+        pvLbl.BackgroundTransparency = 1
+        pvLbl.Font = Enum.Font.GothamBold
+        pvLbl.TextSize = 12
+        pvLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        pvLbl.TextXAlignment = Enum.TextXAlignment.Right
+        pvLbl.TextColor3 = rc.color or Color3.new(1, 1, 1)
+
+        local setBtn = Instance.new("TextButton", row)
+        setBtn.Position = UDim2.new(1, -68, 0.5, -14)
+        setBtn.Size = UDim2.fromOffset(60, 28)
+        setBtn.BorderSizePixel = 0
+        setBtn.Font = Enum.Font.GothamBold
+        setBtn.TextSize = 11
+        setBtn.TextColor3 = Color3.new(1, 1, 1)
+        Instance.new("UICorner", setBtn).CornerRadius = UDim.new(0, 4)
+
+        rowRefs[#rowRefs + 1] = { rc = rc, row = row, preview = pvLbl, btn = setBtn }
+        setBtn.MouseButton1Click:Connect(function()
+            applyCnState(rc.key)
         end)
     end
 
+    effBtn.MouseButton1Click:Connect(function()
+        effIdx = (effIdx % #Visual.Presets.effects) + 1
+        effBtn.Text = "FX: " .. tostring(Visual.Presets.effects[effIdx] or "None")
+        syncRoleVisuals()
+    end)
+
+    nameInput:GetPropertyChangedSignal("Text"):Connect(syncRoleVisuals)
+
     local applyBtn = Instance.new("TextButton", inner)
-    applyBtn.Position = UDim2.new(0, 12, 1, -44)
+    applyBtn.Position = UDim2.new(0, 12, 1, -42)
     applyBtn.Size = UDim2.new(0.5, -16, 0, 32)
     applyBtn.BackgroundColor3 = Color3.fromRGB(64, 186, 84)
     applyBtn.Font = Enum.Font.GothamBold
     applyBtn.TextSize = 13
     applyBtn.TextColor3 = Color3.new(1, 1, 1)
-    applyBtn.Text = "APPLY NAME & ROLE"
+    applyBtn.Text = "SET NAME & ROLE"
     Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0, 6)
     applyBtn.MouseButton1Click:Connect(function()
-        Visual.State.customName = (nameInput.Text or ""):match("^%s*(.-)%s*$")
-        Visual.State.role = chosenRole
-        Visual.State.lockNames = true
-        -- Tambahkan efek animasi nama otomatis sesuai role bila user tidak memilih effect lain
-        if chosenRole == "supporter" then Visual.State.effect = "Supporter Wave"
-        elseif chosenRole == "sponsor" then Visual.State.effect = "Sponsor Sparkle"
-        elseif chosenRole == "legend" then Visual.State.effect = "Legend Gold"
-        elseif chosenRole == "royal" then Visual.State.effect = "Royal Pulse"
-        end
-        Visual.Apply()
-        -- Update atribut nama & GameGui player labels juga
-        if LP then pcall(function() LP:SetAttribute("GameName", Visual.State.customName ~= "" and Visual.State.customName or Visual.State.origGameName) end) end
-        proxyConsole(string.format("`2[CN] Nama='%s' | Role='%s' diterapkan ke tag & profil!``", Visual.State.customName ~= "" and Visual.State.customName or Core.GetInGameName(LP, true), chosenRole))
+        applyCnState(chosenRole)
     end)
 
     local resetBtn = Instance.new("TextButton", inner)
-    resetBtn.Position = UDim2.new(0.5, 4, 1, -44)
+    resetBtn.Position = UDim2.new(0.5, 4, 1, -42)
     resetBtn.Size = UDim2.new(0.5, -16, 0, 32)
     resetBtn.BackgroundColor3 = Color3.fromRGB(140, 180, 192)
     resetBtn.Font = Enum.Font.GothamBold
@@ -12113,8 +13344,13 @@ function ProxyCommands.OpenCnDialog()
         Visual.Restore()
         nameInput.Text = ""
         chosenRole = "none"
-        proxyConsole("`2[CN] Nama & Role dipulihkan ke asli.``")
+        effIdx = 1
+        effBtn.Text = "FX: None"
+        syncRoleVisuals()
+        proxyConsole("`2[CN] Nama & Role dipulihkan ke asli (+ Sync P2P).``")
     end)
+
+    syncRoleVisuals()
 end
 
 -- Dialog 3: /LIST (Changelog & Full Command List)
@@ -12146,19 +13382,21 @@ function ProxyCommands.OpenListDialog()
         "[ + ] PABRIK: Rendered Plantable Dirt Selector + Harvest & Break Loop",
         "[ + ] DIRT FARM & CLEAR WORLD: FIFO Queue + Lava Safe Zigzag",
         "[ + ] MOVE BLOCK: Set Take/Drop + Walk & Drop loop",
+        "[ + ] PROXY P2P: Zero-Server Sync Outfit + Name/Role + Virtual SB (/sbv)",
         "[ + ] DISCORD HOOK: POST -> PATCH Embed + Saved Message ID",
         "",
         "-- COMMAND ---",
         "/p2p off | /p2p on : Toggle P2P client visual sync",
+        "/sbv <pesan>       : Kirim Super Broadcast Visual ke sesama SYT user (format + animasi nama)",
         "/reme              : Toggle Fast Roulette ([REAL]/[FAKE] di atas kepala)",
-        "/clothes           : Buka Dialog Character Edit Outfit (+ efek visual)",
+        "/clothes           : Buka Dialog Character Edit Outfit (+ tombol SET + Sync P2P)",
+        "/cn                : Buka Dialog Roles List lengkap (Nama, Jenis, Preview & SET)",
         "/set b 1 /set b 2  : Set posisi Break Player 1 & Player 2 (Host BJ)",
         "/lock t 1 /lock t 2: Set posisi Drop Lock Player 1 & Player 2 (Host BJ)",
         "/set tax <0-100>   : Atur pajak Host BJ (%)",
         "/info              : Cek koordinat B1, B2, T1, T2 & TAX",
         "/cal               : Hitung gems B1 & B2 (+2s), ambil lock & drop pemenang",
         "/get               : Tampilkan IP asli di Console",
-        "/cn                : Buka Dialog Set Role & Custom Name",
         "/list              : Buka dialog Commands & Changelog ini",
     }, "\n")
 end
@@ -12256,16 +13494,30 @@ local function handleProxyCommand(rawText, senderName)
         if a1 == "off" then
             ProxyCommands.State.p2pEnabled = false
             ProxyCommands.State.p2pLive = false
+            pcall(ProxyCommands.SaveEnv)
+            if ProxyCommands.P2P and ProxyCommands.P2P.SyncVisiblePeers then pcall(ProxyCommands.P2P.SyncVisiblePeers) end
             proxyConsole("`4[Proxy P2P] OFF``")
         else
             ProxyCommands.State.p2pEnabled = true
-            ProxyCommands.State.p2pLive = (#Core.GetInWorldPlayers(false) > 0)
-            proxyConsole("`2[Proxy P2P] ON``")
+            ProxyCommands.State.p2pLive = (#Core.GetInWorldPlayers(false) > 0) or (ProxyCommands.P2P and ProxyCommands.P2P.GetPeerCount() > 0)
+            pcall(ProxyCommands.SaveEnv)
+            if ProxyCommands.P2P then
+                pcall(ProxyCommands.P2P.SyncVisiblePeers)
+                pcall(ProxyCommands.P2P.SendHello)
+            end
+            proxyConsole("`2[Proxy P2P] ON (Sync Visual Aktif)``")
+        end
+        return true
+    elseif cmd == "sbv" then
+        local msgText = (rawText:sub(5) or ""):match("^%s*(.-)%s*$")
+        if ProxyCommands.P2P and ProxyCommands.P2P.SendSbv then
+            ProxyCommands.P2P.SendSbv(msgText)
         end
         return true
     elseif cmd == "reme" then
         ProxyCommands.State.remeEnabled = not ProxyCommands.State.remeEnabled
         Misc.SetFastRoulette(ProxyCommands.State.remeEnabled)
+        pcall(ProxyCommands.SaveEnv)
         proxyConsole(ProxyCommands.State.remeEnabled and "`2[Proxy /reme] ON (Fast Roulette)``" or "`4[Proxy /reme] OFF``")
         return true
     elseif cmd == "clothes" then
@@ -12277,16 +13529,19 @@ local function handleProxyCommand(rawText, senderName)
     elseif cmd == "set" and a1 == "b" and (a2 == "1" or a2 == "2") then
         local pos = Core.ReadPos()
         ProxyCommands.State.bj["b" .. a2] = { x = pos.tx, y = pos.ty }
+        pcall(ProxyCommands.SaveEnv)
         proxyConsole(string.format("`2[Host BJ] B%s set -> (%d, %d)``", a2, pos.tx, pos.ty))
         return true
     elseif cmd == "lock" and a1 == "t" and (a2 == "1" or a2 == "2") then
         local pos = Core.ReadPos()
         ProxyCommands.State.bj["t" .. a2] = { x = pos.tx, y = pos.ty }
+        pcall(ProxyCommands.SaveEnv)
         proxyConsole(string.format("`2[Host BJ] T%s set -> (%d, %d)``", a2, pos.tx, pos.ty))
         return true
     elseif cmd == "set" and a1 == "tax" then
         local txPct = clamp(tonumber(a2) or 0, 0, 100)
         ProxyCommands.State.bj.tax = math.floor(txPct)
+        pcall(ProxyCommands.SaveEnv)
         proxyConsole(string.format("`2[Host BJ] TAX set -> %d%%``", ProxyCommands.State.bj.tax))
         return true
     elseif cmd == "info" then
@@ -12323,7 +13578,11 @@ local function handleProxyCommand(rawText, senderName)
 end
 
 function ProxyCommands.Install()
-    getEnv().__SYT_PROXY_CMD_HANDLER = handleProxyCommand
+    local env = getEnv()
+    env.__SYT_PROXY_CMD_HANDLER = handleProxyCommand
+    env.__SYT_P2P_CONNS = env.__SYT_P2P_CONNS or {}
+    local p2pConns = env.__SYT_P2P_CONNS
+
     if H._proxyWheelConn then pcall(function() H._proxyWheelConn:Disconnect() end) end
     -- Hook ByteNet wheelSpun untuk menampilkan [ REAL ] popup di atas kepala roller saat /reme ON
     if H.Net and H.Net.wheelSpun and type(H.Net.wheelSpun.listen) == "function" and not H._proxyWheelHooked then
@@ -12340,6 +13599,25 @@ function ProxyCommands.Install()
                 end
             end)
         end)
+    end
+
+    -- Hook Net.entered & Net.look agar visual P2P peer tetap terpasang setelah server refresh look
+    if H.Net and not H._p2pNetHooked then
+        H._p2pNetHooked = true
+        local function schedulePeerResync()
+            task.delay(0.25, function()
+                if env.__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+                if ProxyCommands.P2P and ProxyCommands.P2P.SyncVisiblePeers then
+                    pcall(ProxyCommands.P2P.SyncVisiblePeers)
+                end
+            end)
+        end
+        if H.Net.entered and type(H.Net.entered.listen) == "function" then
+            pcall(H.Net.entered.listen, schedulePeerResync)
+        end
+        if H.Net.look and type(H.Net.look.listen) == "function" then
+            pcall(H.Net.look.listen, schedulePeerResync)
+        end
     end
 
     -- Utama: Hook ChatUI.onCommand langsung (Growblox memanggil ChatUI.onCommand sebelum SendAsync!)
@@ -12370,41 +13648,85 @@ function ProxyCommands.Install()
         end
     end
 
-    -- Cadangan: Intercept TextChatService SendAsync + MessageReceived
-    if not H._proxySendHooked then
-        H._proxySendHooked = true
+    -- P2P Transport + Slash Command Backup via TextChatService
+    if H._proxyTcsToken ~= MY_SCRIPT_TOKEN then
+        H._proxyTcsToken = MY_SCRIPT_TOKEN
         local ok, TCS = pcall(game.GetService, game, "TextChatService")
         if ok and TCS then
-            local function hookChannel(ch)
-                if not ch or not ch:IsA("TextChannel") or ch:GetAttribute("SYT_Hooked") then return end
-                ch:SetAttribute("SYT_Hooked", true)
+            if not env.__SYT_TCS_INCOMING_WRAPPED then
+                env.__SYT_TCS_INCOMING_WRAPPED = true
                 pcall(function()
-                    local origSend = ch.SendAsync
-                    if type(hookfunction) == "function" then
-                        local oldFn
-                        oldFn = hookfunction(origSend, function(selfCh, msg, ...)
-                            if selfCh == ch and type(msg) == "string" and msg:sub(1, 1) == "/" then
-                                if handleProxyCommand(msg, LP and LP.Name or "") then
-                                    return nil
-                                end
-                            end
-                            return oldFn(selfCh, msg, ...)
-                        end)
+                    local prevCb = TCS.OnIncomingMessage
+                    TCS.OnIncomingMessage = function(msg)
+                        local fn = env.__SYT_P2P_ON_INCOMING_FN
+                        if type(fn) == "function" then
+                            local okP, res = pcall(fn, msg)
+                            if okP and res ~= nil then return res end
+                        end
+                        if type(prevCb) == "function" then return prevCb(msg) end
+                        return nil
                     end
                 end)
+            end
+
+            local function hookChannel(ch)
+                if not ch or not ch:IsA("TextChannel") then return end
+                if not ch:GetAttribute("SYT_Hooked") then
+                    ch:SetAttribute("SYT_Hooked", true)
+                    pcall(function()
+                        local origSend = ch.SendAsync
+                        if type(hookfunction) == "function" then
+                            local oldFn
+                            oldFn = hookfunction(origSend, function(selfCh, msg, ...)
+                                if selfCh == ch and type(msg) == "string" and msg:sub(1, 1) == "/" then
+                                    local hFn = env.__SYT_PROXY_CMD_HANDLER
+                                    if type(hFn) == "function" and hFn(msg, LP and LP.Name or "") then
+                                        return nil
+                                    end
+                                end
+                                return oldFn(selfCh, msg, ...)
+                            end)
+                        end
+                    end)
+                end
+                if ch:GetAttribute("SYT_P2P_Tok") ~= MY_SCRIPT_TOKEN then
+                    ch:SetAttribute("SYT_P2P_Tok", MY_SCRIPT_TOKEN)
+                    local okC, conn = pcall(function()
+                        return ch.MessageReceived:Connect(function(msg)
+                            local txt = msg and msg.Text or ""
+                            local uid = msg and msg.TextSource and msg.TextSource.UserId
+                            if txt:sub(1, 5) == "xwkp " and ProxyCommands.P2P and ProxyCommands.P2P.HandleIncomingWire then
+                                pcall(ProxyCommands.P2P.HandleIncomingWire, txt, uid)
+                                return
+                            end
+                            local src = msg and msg.TextSource and msg.TextSource.Name or ""
+                            handleProxyCommand(txt, src)
+                        end)
+                    end)
+                    if okC and conn then p2pConns[#p2pConns + 1] = conn end
+                end
             end
             for _, d in ipairs(TCS:GetDescendants()) do
                 if d:IsA("TextChannel") then hookChannel(d) end
             end
-            TCS.DescendantAdded:Connect(function(d)
-                if d:IsA("TextChannel") then hookChannel(d) end
+            local okD, dConn = pcall(function()
+                return TCS.DescendantAdded:Connect(function(d)
+                    if d:IsA("TextChannel") then hookChannel(d) end
+                end)
             end)
+            if okD and dConn then p2pConns[#p2pConns + 1] = dConn end
             pcall(function()
-                TCS.MessageReceived:Connect(function(msg)
+                local mConn = TCS.MessageReceived:Connect(function(msg)
                     local txt = msg and msg.Text or ""
+                    local uid = msg and msg.TextSource and msg.TextSource.UserId
+                    if txt:sub(1, 5) == "xwkp " and ProxyCommands.P2P and ProxyCommands.P2P.HandleIncomingWire then
+                        pcall(ProxyCommands.P2P.HandleIncomingWire, txt, uid)
+                        return
+                    end
                     local src = msg and msg.TextSource and msg.TextSource.Name or ""
                     handleProxyCommand(txt, src)
                 end)
+                p2pConns[#p2pConns + 1] = mConn
             end)
         end
     end
@@ -12531,9 +13853,15 @@ buildSYTMenuFn = function()
                 Subtitle = "Scrollable player & mod join list"
             })
             LogCard:Input("Player & Mod Join Log", "__SYS_LOG_ANCHOR__", "__SYS_LOG_ANCHOR_KEY__", "__SYS_LOG_ANCHOR_KEY__")
-            LogCard:Button("Tutup Menu", "CLOSE", "Shield", function()
+            LogCard:Button("Minimize ke Shortcut", "MINIMIZE", "Minimize", function()
+                if UI and type(UI.MinimizeToIcon) == "function" then
+                    pcall(UI.MinimizeToIcon, UI)
+                end
+            end)
+            LogCard:Button("Tutup Menu", "CLOSE", "Close", function()
                 UIHooks.userDestroy = true
                 if Misc and Misc.State and Misc.State.noClip then pcall(Misc.SetNoClip, false) end
+                if Misc and Misc.State and Misc.State.zoom25x then pcall(Misc.SetZoom25x, false) end
                 stopAllAutomationImpl("Menu ditutup permanen")
                 cleanupSYTGuiContainers(nil)
             end)
@@ -12767,16 +14095,15 @@ buildSYTMenuFn = function()
         right = right(function(r)
             local DhInfo = r:Card("Hook Status", "ID", "Shield", {})
             DhInfo:Input("Saved Message ID", "DhMessageIdDisplay", "-", DiscordHook.State.messageId or "-")
-            DhInfo:Input("CJK Token (<1KB)", "DhTokenDisplay", "-", DiscordHook.State.authToken or "-")
         end)
     })
 
     -- 10. + PROXY
     feature("Proxy", "Proxy")({
         center = center(function(c)
-            c:Header("Proxy System", "P2P Default ON (auto off saat sendiri di world)", "PRX")
-            local ProxyCard = c:Card("Visual Dialogs", nil, "Player", {
-                Subtitle = "Gunakan /command di chat atau tombol berikut"
+            c:Header("Proxy System", "P2P Client Visual Sync + Virtual SB (/sbv)", "PRX")
+            local ProxyCard = c:Card("Visual Dialogs & /sbv", nil, "Player", {
+                Subtitle = "Gunakan /command di chat atau tombol SET / Kirim /sbv"
             })
             ProxyCard:Button("Wardrobe (/clothes)", "CLOTHES", "Visuals", function()
                 task.spawn(function() xpcall(ProxyCommands.OpenClothesDialog, debug.traceback) end)
@@ -12787,13 +14114,24 @@ buildSYTMenuFn = function()
             ProxyCard:Button("Proxy List (/list)", "LIST", "Shield", function()
                 task.spawn(function() xpcall(ProxyCommands.OpenListDialog, debug.traceback) end)
             end)
+            ProxyCard:Input("Virtual SB (/sbv)", "ProxySbvInput", "Ketik pesan /sbv ...", "", function(txt)
+                ProxyCommands.State.sbvDraft = tostring(txt or "")
+            end)
+            ProxyCard:Button("Kirim Virtual SB (/sbv)", "SEND SBV", "Bolt", function()
+                local msg = UI and UI:GetValue("ProxySbvInput") or ProxyCommands.State.sbvDraft or ""
+                if ProxyCommands.P2P and ProxyCommands.P2P.SendSbv then
+                    if ProxyCommands.P2P.SendSbv(msg) and UI then
+                        pcall(UI.SetValue, UI, "ProxySbvInput", "")
+                    end
+                end
+            end)
             ProxyCard:Button("Hitung BJ (/cal)", "CAL BJ", "Bolt", function()
                 ProxyCommands.RunHostBjCalculate()
             end)
         end),
         right = right(function(r)
             local ProxyInfo = r:Card("Proxy Status", "Cmd", "Player", {
-                Subtitle = "/p2p off|on, /reme, /list, /set b 1|2, /lock t 1|2, /set tax, /info, /get"
+                Subtitle = "/sbv <msg>, /cn, /clothes, /p2p off|on, /reme, /list, /set b, /lock t, /cal, /get"
             })
             ProxyInfo:Input("Status P2P", "ProxyP2pStatus", "ON", "STANDBY")
             ProxyInfo:Input("Host BJ Setup", "ProxyBjStatus", "UNSET", "B1/B2/T1/T2")
@@ -13401,14 +14739,17 @@ UIHooks.buildMountedCanvasesFn = function()
 end
 
 -- Boot UI & Runtime Watcher wrapped in do-block to free root-chunk locals
-do
+;(function()
+getEnv().__SYT_STOP_ALL = stopAllAutomationImpl
 cleanupSYTGuiContainers(nil)
 ensureSharedModulesReady(2.0)
 LP = LP or Players.LocalPlayer
 pcall(SYT_Logic.Init, false)
+pcall(Visual.LoadFromEnv)
+pcall(ProxyCommands.LoadEnv)
+if ProxyCommands.P2P and ProxyCommands.P2P.LoadFromEnv then pcall(ProxyCommands.P2P.LoadFromEnv) end
 pcall(Core.InstallUltimaxNamecallGuard)
 pcall(ProxyCommands.Install)
-pcall(function() DiscordHook.generateChineseAuthToken(Core.GetInGameName(LP, true)) end)
 
 do
     local okInit, initErr = safeInitSYTWindow(UIHooks.theme or "Minimalist Monochrome", UIHooks.scale or 1.0, false)
@@ -13421,10 +14762,69 @@ do
             emitNotify("SYT Menu Error", tostring(buildErr))
         end
         UIHooks.enforceSingleActiveFeatureTab()
+        local envData = getEnv().__SYT_ENV_DATA or {}
+        getEnv().__SYT_ENV_DATA = envData
+        if envData.uiMinimized == nil then envData.uiMinimized = true end
+
+        if UI and not UI._sytMinHooked then
+            UI._sytMinHooked = true
+            local origMin = rawget(UI, "MinimizeToIcon")
+            local origRest = rawget(UI, "RestoreFromIcon")
+            if type(origMin) == "function" then
+                UI.MinimizeToIcon = function(self, ...)
+                    local ed = getEnv().__SYT_ENV_DATA
+                    if type(ed) == "table" then ed.uiMinimized = true end
+                    return origMin(self, ...)
+                end
+            end
+            if type(origRest) == "function" then
+                UI.RestoreFromIcon = function(self, ...)
+                    local ed = getEnv().__SYT_ENV_DATA
+                    if type(ed) == "table" then ed.uiMinimized = false end
+                    local r = origRest(self, ...)
+                    task.defer(function()
+                        if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+                        pcall(UIHooks.scanResponsiveButtons)
+                        pcall(UIHooks.updateButtons)
+                        if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
+                        if UIHooks.refreshPabBP then pcall(UIHooks.refreshPabBP) end
+                        if UIHooks.refreshPad5x5 then pcall(UIHooks.refreshPad5x5) end
+                        if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end
+                    end)
+                    return r
+                end
+            end
+        end
+
         local sg = UIHooks.getActiveMenuGui()
         if sg and sg.Parent then
             sg.Enabled = true
-            task.defer(function() if UI and type(UI.SyncNavCanvas) == "function" then pcall(UI.SyncNavCanvas) end end)
+            local sq = sg:FindFirstChild("R8DV_FloatingSquircle", true)
+            if sq and sq:IsA("GuiObject") then
+                sq.Size = UDim2.fromOffset(48, 48)
+                local hasTxt = false
+                for _, ch in ipairs(sq:GetDescendants()) do
+                    if ch:IsA("TextLabel") then ch.Text = "SYT"; hasTxt = true end
+                end
+                if not hasTxt then
+                    local tl = Instance.new("TextLabel", sq)
+                    tl.Size = UDim2.fromScale(1, 1)
+                    tl.BackgroundTransparency = 1
+                    tl.Font = Enum.Font.GothamBold
+                    tl.TextSize = 12
+                    tl.TextColor3 = Color3.new(1, 1, 1)
+                    tl.Text = "SYT"
+                end
+            end
+            task.defer(function()
+                if UI and type(UI.SyncNavCanvas) == "function" then pcall(UI.SyncNavCanvas) end
+                if envData.uiMinimized and UI and type(UI.MinimizeToIcon) == "function" then
+                    task.delay(0.15, function()
+                        if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+                        pcall(UI.MinimizeToIcon, UI)
+                    end)
+                end
+            end)
             pcall(UIHooks.scanResponsiveButtons)
             pcall(UIHooks.updateButtons)
             if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
@@ -13436,6 +14836,26 @@ do
         end
     end
 end
+
+-- Sync Visual Env Spoof + Broadcast Hello ke sesama user SYT saat execute
+task.spawn(function()
+    local dl = os.clock() + 8
+    while os.clock() < dl do
+        if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+        pcall(SYT_Logic.Init, false)
+        if H.gt and (H.gt.name or "") ~= "" then break end
+        task.wait(0.35)
+    end
+    if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+    if Visual.HasActiveSpoof() or (Visual.State.customName or "") ~= "" or (Visual.State.role or "none") ~= "none" or next(Visual.State.fakeWorn or {}) ~= nil then
+        H._stripWingDoubleJump = (next(Visual.State.fakeWorn or {}) ~= nil)
+        pcall(Visual.Apply)
+    end
+    if ProxyCommands.P2P then
+        if ProxyCommands.P2P.SyncVisiblePeers then pcall(ProxyCommands.P2P.SyncVisiblePeers) end
+        if ProxyCommands.P2P.SendHello then pcall(ProxyCommands.P2P.SendHello) end
+    end
+end)
 
 -- Auto-Rerun AutoLeveling jika tersimpan status aktif di syt_autolvl.dat (level < 10)
 task.spawn(function()
@@ -13459,7 +14879,7 @@ task.spawn(function()
     end
 end)
 
--- Runtime Watcher: Live Sync, World Change, Player/Mod Detection, P2P & Fast Roulette
+-- Runtime Watcher: Live Sync, World Change, Player/Mod Detection, P2P & Low-Heat Minimized Mode
 local function computeInvHash()
     local slots = Core.GetBackpackSlots()
     if #slots == 0 then return "" end
@@ -13483,6 +14903,7 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
     lastFastTick = now
     if Misc.State.fastRoulette then Core.SkipWheelAnimations() end
 
+    local uiVisible = (UI and not UI.IsMinimized and UI.MainWindow and UI.MainWindow.Parent and UI.MainWindow.Visible) == true
     local gt = H.gt
     local curWorld = gt and cleanWorldName(gt.name) or ""
     local intentionalWorldSwitch = DirtFarm.State.switchingWorld
@@ -13504,31 +14925,42 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
             stopAllAutomationImpl("Pindah world -> Otomasi OFF")
         end
         if curWorld ~= "" then
-            task.delay(0.1, function()
+            task.delay(0.15, function()
                 if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
                 pcall(SYT_Logic.Init, true)
                 pcall(Core.InstallAntiBackGuard)
                 pcall(hookIncomingNetGuard)
                 pcall(ProxyCommands.Install)
-                if Visual.State.lockNames or Visual.HasActiveSpoof() then pcall(Visual.OnWorldChanged) end
+                if Visual.State.lockNames or Visual.HasActiveSpoof() or (Visual.State.customName or "") ~= "" or (Visual.State.role or "none") ~= "none" then
+                    pcall(Visual.OnWorldChanged)
+                end
+                if ProxyCommands.P2P then
+                    if ProxyCommands.P2P.SyncVisiblePeers then pcall(ProxyCommands.P2P.SyncVisiblePeers) end
+                    if ProxyCommands.P2P.SendHello then pcall(ProxyCommands.P2P.SendHello) end
+                end
                 if Misc.State.zoom25x then pcall(Misc.SetZoom25x, true) end
-                if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
-                if UIHooks.refreshPabBP then pcall(UIHooks.refreshPabBP) end
-                if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end
-                if UIHooks.refreshPad5x5 then pcall(UIHooks.refreshPad5x5) end
+                if UI and not UI.IsMinimized and UI.MainWindow and UI.MainWindow.Visible then
+                    if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
+                    if UIHooks.refreshPabBP then pcall(UIHooks.refreshPabBP) end
+                    if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end
+                    if UIHooks.refreshPad5x5 then pcall(UIHooks.refreshPad5x5) end
+                end
             end)
         end
     end
 
     if gt and (gt.name or "") ~= "" then
-        ProxyCommands.State.p2pLive = (ProxyCommands.State.p2pEnabled and #Core.GetInWorldPlayers(false) > 0) == true
+        local peerCnt = (ProxyCommands.P2P and ProxyCommands.P2P.GetPeerCount) and ProxyCommands.P2P.GetPeerCount() or 0
+        ProxyCommands.State.p2pLive = (ProxyCommands.State.p2pEnabled and (#Core.GetInWorldPlayers(false) > 0 or peerCnt > 0)) == true
         pcall(SystemModule.CheckWorldEntrants)
-        local pos = Core.ReadPos()
-        if UIHooks.sidebarNameLbl and UIHooks.sidebarNameLbl.Parent then
-            UIHooks.sidebarNameLbl.Text = Core.GetInGameName(LP, true)
-        end
-        if UIHooks.sidebarSubLbl and UIHooks.sidebarSubLbl.Parent then
-            UIHooks.sidebarSubLbl.Text = string.format("%s (%d,%d)", tostring(gt.name), pos.sx, pos.sy)
+        if uiVisible then
+            local pos = Core.ReadPos()
+            if UIHooks.sidebarNameLbl and UIHooks.sidebarNameLbl.Parent then
+                UIHooks.sidebarNameLbl.Text = Core.GetInGameName(LP, true)
+            end
+            if UIHooks.sidebarSubLbl and UIHooks.sidebarSubLbl.Parent then
+                UIHooks.sidebarSubLbl.Text = string.format("%s (%d,%d)", tostring(gt.name), pos.sx, pos.sy)
+            end
         end
     else
         ProxyCommands.State.p2pLive = false
@@ -13538,37 +14970,41 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
         lastSlowTick = now
         if not H.gt or not H.ItemDB or not H.Net or not H.inv then pcall(SYT_Logic.Init) end
         pcall(ProxyCommands.Install)
-        local bMap = UIHooks.buttonMap
-        if not bMap["[PNB]"] or not bMap["[PABRIK]"] or not bMap["[DF]"] or not bMap["[CW]"] or not bMap["[MOVE]"] or not bMap["[SPAM]"] then
-            pcall(UIHooks.scanResponsiveButtons)
-            pcall(UIHooks.updateButtons)
+        if ProxyCommands.State.p2pEnabled and ProxyCommands.P2P and ProxyCommands.P2P.SyncVisiblePeers then
+            pcall(ProxyCommands.P2P.SyncVisiblePeers)
         end
-        local invHash = computeInvHash()
-        if invHash ~= lastInvHash then
-            lastInvHash = invHash
-            if UIHooks.refreshBP then UIHooks.refreshBP() end
-            if UIHooks.refreshPabBP then UIHooks.refreshPabBP() end
-        end
-        if UIHooks.refreshMap then UIHooks.refreshMap(false) end
-        if UI then
-            local p2pTxt = not ProxyCommands.State.p2pEnabled and "OFF (/p2p off)"
-                or (ProxyCommands.State.p2pLive and "ON (Multi-Player)" or "STANDBY (Alone)")
-            pcall(UI.SetValue, UI, "ProxyP2pStatus", p2pTxt)
-            local bj = ProxyCommands.State.bj
-            local bjTxt = string.format("B1:%s B2:%s T1:%s T2:%s | TAX:%d%%",
-                bj.b1 and (bj.b1.x .. "," .. bj.b1.y) or "-",
-                bj.b2 and (bj.b2.x .. "," .. bj.b2.y) or "-",
-                bj.t1 and (bj.t1.x .. "," .. bj.t1.y) or "-",
-                bj.t2 and (bj.t2.x .. "," .. bj.t2.y) or "-",
-                bj.tax or 0)
-            pcall(UI.SetValue, UI, "ProxyBjStatus", bjTxt)
-            if DiscordHook.State.authToken ~= "" then
-                pcall(UI.SetValue, UI, "DhTokenDisplay", DiscordHook.State.authToken)
+        if uiVisible then
+            local bMap = UIHooks.buttonMap
+            if not bMap["[PNB]"] or not bMap["[PABRIK]"] or not bMap["[DF]"] or not bMap["[CW]"] or not bMap["[MOVE]"] or not bMap["[SPAM]"] then
+                pcall(UIHooks.scanResponsiveButtons)
+                pcall(UIHooks.updateButtons)
+            end
+            local invHash = computeInvHash()
+            if invHash ~= lastInvHash then
+                lastInvHash = invHash
+                if UIHooks.refreshBP then UIHooks.refreshBP() end
+                if UIHooks.refreshPabBP then UIHooks.refreshPabBP() end
+            end
+            if UIHooks.refreshMap then UIHooks.refreshMap(false) end
+            if UI then
+                local pCnt = (ProxyCommands.P2P and ProxyCommands.P2P.GetPeerCount) and ProxyCommands.P2P.GetPeerCount() or 0
+                local p2pTxt = not ProxyCommands.State.p2pEnabled and "OFF (/p2p off)"
+                    or (pCnt > 0 and string.format("ON (%d Peer Sync)", pCnt)
+                    or (ProxyCommands.State.p2pLive and "ON (Multi-Player)" or "STANDBY (Alone)"))
+                pcall(UI.SetValue, UI, "ProxyP2pStatus", p2pTxt)
+                local bj = ProxyCommands.State.bj
+                local bjTxt = string.format("B1:%s B2:%s T1:%s T2:%s | TAX:%d%%",
+                    bj.b1 and (bj.b1.x .. "," .. bj.b1.y) or "-",
+                    bj.b2 and (bj.b2.x .. "," .. bj.b2.y) or "-",
+                    bj.t1 and (bj.t1.x .. "," .. bj.t1.y) or "-",
+                    bj.t2 and (bj.t2.x .. "," .. bj.t2.y) or "-",
+                    bj.tax or 0)
+                pcall(UI.SetValue, UI, "ProxyBjStatus", bjTxt)
             end
         end
     end
 end)
 getEnv().__SYT_WATCHER_CONN = H.watcherConn
-end
+end)()
 getEnv().SYT_Logic = SYT_Logic
 return SYT_Logic

@@ -15,9 +15,7 @@
       - Spam & ULTIMAX   : Input Spam, Color Prefix / Cycle, Whisper All, ULTIMAX Anti-Kick & Anti-Ban Firewall + [GETC SKIPER]
 ]]
 
--- ═══════════════════════════════════════════════════════════════════════════
 -- 1. LOAD R&8_DV IMGUI FRAMEWORK (INSTANT BOOT + CLEAN MULTI-ROOT MANAGEMENT)
--- ═══════════════════════════════════════════════════════════════════════════
 local cachedR8Source = nil
 local cachedR8Loader = nil
 
@@ -387,9 +385,7 @@ local function safeInitSYTWindow(theme, scale, startHidden)
     return false, tostring(lastErr or "Init window gagal")
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
 -- 2. SERVICES, EXECUTOR HELPERS & SHARED TABLES
--- ═══════════════════════════════════════════════════════════════════════════
 local Players           = game:GetService("Players")
 local CoreGui           = (function() local ok, c = pcall(game.GetService, game, "CoreGui"); return ok and c or nil end)()
 local GuiService        = game:GetService("GuiService")
@@ -417,7 +413,10 @@ getEnv().__SYT_SCRIPT_TOKEN = MY_SCRIPT_TOKEN
 do
     local env = getEnv()
     pcall(function() game:GetService("RunService"):UnbindFromRenderStep("SYT_FlyStep") end)
-    for _, k in ipairs({ "__SYT_WATCHER_CONN", "__SYT_FLY_CONN", "__SYT_ROULETTE_CONN" }) do
+    env.__SYT_WATCHDOG_TOKEN = (env.__SYT_WATCHDOG_TOKEN or 0) + 1
+    env.__SYT_RERUN_TOKEN = (env.__SYT_RERUN_TOKEN or 0) + 1
+    env.__SYT_DISABLE_WATCHDOG = true
+    for _, k in ipairs({ "__SYT_WATCHER_CONN", "__SYT_WATCHDOG_CONN", "__SYT_FLY_CONN", "__SYT_ROULETTE_CONN", "__SYT_AUTOCOLL_CONN", "__SYT_GOD_CONN" }) do
         if env[k] then
             pcall(function() env[k]:Disconnect() end)
             env[k] = nil
@@ -437,7 +436,7 @@ local function getSafeHui()
     return nil
 end
 
-local function getAllGuiRoots()
+getAllGuiRoots = function()
     local roots, seen = {}, {}
     local function add(r)
         if typeof(r) == "Instance" and not seen[r] then
@@ -549,9 +548,7 @@ end
 local MAX_STACK = 200
 local COLOR_CODES = { "`1", "`2", "`3", "`4", "`5", "`6", "`7", "`8", "`9", "`b", "`c", "`d", "`e", "`p", "`#", "`@" }
 
--- ═══════════════════════════════════════════════════════════════════════════
 -- 3. GAME DISCOVERY + IN-GAME ACCOUNT & ITEM ICON ENGINE
--- ═══════════════════════════════════════════════════════════════════════════
 local H = {
     initialized      = false,
     Net              = nil,
@@ -2322,6 +2319,12 @@ function Core.InstallGetgcBypassHooks()
                 return false
             end
         end
+        if type(orig.airJumps) == "function" then
+            sk.airJumps = function(...)
+                if H._stripWingDoubleJump then return 0 end
+                return orig.airJumps(...)
+            end
+        end
         if type(orig.slowFall) == "function" then
             sk.slowFall = function(...)
                 local gs = SYT_Logic.GetcSkipper and SYT_Logic.GetcSkipper.State
@@ -3129,6 +3132,39 @@ function Core.GetItemName(id)
     return info and info.name or ("Item#" .. tostring(id))
 end
 
+function Core.FindItemByName(query)
+    Core.EnsureInit()
+    if not H.ItemDB or type(query) ~= "string" or query == "" then return nil end
+    local q = string.lower((query):match("^%s*(.-)%s*$"))
+    for id, info in pairs(H.ItemDB) do
+        if type(id) == "number" and type(info) == "table" and info.name and string.lower(info.name) == q then
+            return { id = id, info = info }
+        end
+    end
+    for id, info in pairs(H.ItemDB) do
+        if type(id) == "number" and type(info) == "table" and info.name and string.find(string.lower(info.name), q, 1, true) then
+            return { id = id, info = info }
+        end
+    end
+    return nil
+end
+
+function Core.ReadGems()
+    if SYT_Logic.Visual and SYT_Logic.Visual.State and SYT_Logic.Visual.State.fakeGemsActive and type(SYT_Logic.Visual.State.origGems) == "number" then
+        return SYT_Logic.Visual.State.origGems
+    end
+    local sk = H.skillsObj
+    local addFn = sk and rawget(sk, "addGems")
+    if type(addFn) == "function" then
+        local ok, g = pcall(uv, addFn, 1)
+        if ok and type(g) == "number" then return math.max(0, math.floor(g)) end
+    end
+    if H.gt and type(rawget(H.gt, "gems")) == "number" then
+        return math.max(0, math.floor(H.gt.gems))
+    end
+    return 0
+end
+
 function Core.CountItem(id)
     if not id then return 0 end
     local inv = Core.GetLiveInventory()
@@ -3369,9 +3405,7 @@ local function emitNotify(title, text, payload)
     end)
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
 -- 4. [GETC SKIPER] RATE LIMITER, RANGE GUARD & ITEM-UPDATE SKIPPER
--- ═══════════════════════════════════════════════════════════════════════════
 local GetcSkipper = {
     State = {
         enabled                = true,
@@ -3597,9 +3631,7 @@ function GetcSkipper.EnsureRange(tx, ty, maxRange, stepDelay, shouldContinueFn)
     return false
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
 -- 5. REUSABLE RAW PACKETS (PUNCH, HIT DAMAGE, WALK/TP, PLACE, CHAT, COLLECT)
--- ═══════════════════════════════════════════════════════════════════════════
 local Packets = {}
 SYT_Logic.Packets    = Packets
 SYT_Logic.RawPackets = Packets
@@ -5193,9 +5225,7 @@ function Packets.Collect(arg1, filterId, stepMoveIfFar, collectDelay)
     return sum
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
 -- 6. V1 [MISC], V2 [PNB], V3 [AUTO PABRIK], V4 [VISUAL], V5 [SPAM]
--- ═══════════════════════════════════════════════════════════════════════════
 local stopAllAutomationImpl
 local buildSYTMenuFn
 
@@ -6156,11 +6186,10 @@ SYT_Logic.InstallNetGuard = Core.InstallAntiBackGuard
 
 -- Auto Follow Player (Scrollable Dropdown via Walk)
 local function extractFollowName(raw)
-    local function trimStr(x) return (tostring(x or "")):match("^%s*(.-)%s*$") end
-    local s = trimStr(raw)
+    local s = (tostring(raw or "")):match("^%s*(.-)%s*$")
     if s == "" or s == "Tidak ada player lain" then return "" end
     local bare = string.match(s, "^([^%(%[]+)")
-    return trimStr(bare or s)
+    return (bare or s):match("^%s*(.-)%s*$")
 end
 
 function Misc.GetFollowCandidates()
@@ -6983,12 +7012,12 @@ function Pabrik.Start()
             local gt = H.gt
             if not gt or gt.name == "" then break end
 
-            if Core.CountItem(S.blockId) > 0 then
+            if Core.CountItem(S.blockId) > 0 and Core.CountItem(S.seedId) < 200 then
                 setPabrikStatus(string.format("TP x Walk -> BreakPos (%d)", Core.CountItem(S.blockId)))
                 Packets.MoveHybrid(S.breakPos.x, S.breakPos.y, 0, alive)
                 local offs = computePabrikBreakOffsets(S.breakTileCount)
                 local pabPlaceGap = math.max(H.adaptivePlaceGap or 0.155, tonumber(S.placeDelay) or 0.14)
-                while alive() and Core.CountItem(S.blockId) > 0 do
+                while alive() and Core.CountItem(S.blockId) > 0 and Core.CountItem(S.seedId) < 200 do
                     if evaluateSeems() then break end
                     -- 1. Bersihkan dulu blok non-target sekaligus & punch sampai hancur penuh
                     local clearBatch, placeTargets = {}, {}
@@ -7049,7 +7078,7 @@ function Pabrik.Start()
                 local realPlaceDist = math.max(1, math.floor(Core.GetActionRange("place") - 0.35))
                 for _, t in ipairs(Pabrik.GetSortedTiles()) do
                     if not alive() or evaluateSeems() then break end
-                    if Core.CountItem(S.blockId) > 0 or Core.CountItem(S.seedId) <= 0 then break end
+                    if (Core.CountItem(S.blockId) > 0 and Core.CountItem(S.seedId) < 200) or Core.CountItem(S.seedId) <= 0 then break end
                     if Core.IsPlantable(t.x, t.y) then
                         setPabrikStatus(string.format("TP x Walk -> Plant (%d, %d)", t.x, t.y))
                         local okM = Core.IsInActionReach(t.x, t.y, "place") or Packets.MoveHybrid(t.x, t.y, realPlaceDist, alive)
@@ -7155,7 +7184,7 @@ local function parseDfRotationList(rawText)
     local out = {}
     local seen = {}
     for token in string.gmatch(tostring(rawText or ""), "([^,\n;|]+)") do
-        local w = string.upper((token):match("^%s*(.-)%s*$"))
+        local w = string.upper((tostring(token or "")):match("^%s*(.-)%s*$"))
         if w ~= "" and not seen[w] then
             seen[w] = true
             out[#out + 1] = w
@@ -9796,164 +9825,1390 @@ local function toggleRandomTp()
     return true
 end
 
-
--- MoveBlock: Ambil item dari posisi take, bawa ke posisi drop, ulangi
-local MoveBlock = {
-    State = { takePos = nil, dropPos = nil, running = false, thread = nil, status = "Idle", itemId = nil }
+local STORE_OFFERS = {
+    { key = "small_seed_pack", name = "Small Seed Pack", price = 100 },
+    { key = "house_entrance", name = "House Entrance", price = 100 },
+    { key = "basic_clothes", name = "Basic Clothing Pack", price = 100 },
+    { key = "small_lock", name = "Small Lock", price = 50 },
+    { key = "big_lock", name = "Big Lock", price = 200 },
+    { key = "splicing_kit", name = "Basic Splicing Kit", price = 200 },
+    { key = "grow_spray", name = "Grow Spray Fertilizer", price = 200 },
+    { key = "builder_pack", name = "Builder's Pack", price = 300 },
+    { key = "display_box", name = "Display Box", price = 300 },
+    { key = "huge_lock", name = "Huge Lock", price = 500 },
+    { key = "rare_clothes", name = "Rare Clothing Pack", price = 500 },
+    { key = "backpack", name = "Backpack Upgrade", price = 500 },
+    { key = "deluxe_spray", name = "Deluxe Grow Spray", price = 900 },
+    { key = "small_seed_packs", name = "Small Seed Pack Collection", price = 1000 },
+    { key = "rare_seed_pack", name = "Rare Seed Pack", price = 1000 },
+    { key = "parkour_pack", name = "Parkour Pack", price = 1000 },
+    { key = "megaphone", name = "Megaphone", price = 1000 },
+    { key = "world_lock", name = "World Lock", price = 2000 },
+    { key = "signal_jammer", name = "Signal Jammer", price = 2000 },
+    { key = "shop_pack", name = "Shopkeeper's Pack", price = 3000 },
+    { key = "security_camera", name = "Security Camera", price = 4000 },
+    { key = "composer_pack", name = "Composer's Pack", price = 5000 },
+    { key = "mad_science_kit", name = "Mad Science Kit", price = 5000 },
+    { key = "surgery_pack", name = "Surgery Starter Pack", price = 5000 },
+    { key = "builder_machine", name = "Block Machine", price = 5000 },
+    { key = "city_pack", name = "City Pack", price = 8000 },
+    { key = "vending", name = "Vending Machine", price = 8000 },
+    { key = "door_mover", name = "Door Mover", price = 8000 },
+    { key = "wl_pack", name = "World Lock Pack", price = 20000 },
+    { key = "punch_jammer", name = "Punch Jammer", price = 25000 },
+    { key = "mini_mod", name = "Mini Mod", price = 40000 },
+    { key = "builders_lock", name = "Builder's Lock", price = 50000 },
+    { key = "growscan", name = "GrowScan 9000", price = 50000 },
+    { key = "rayman_fist", name = "Rayman's Fist", price = 100000 },
 }
+
+local function findStoreOfferByDisplay(txt)
+    local s = tostring(txt or "")
+    local key = s:match("^([a-z0-9_]+)%s*|") or s
+    for _, o in ipairs(STORE_OFFERS) do
+        if o.key == key or o.name == s then return o end
+    end
+    return nil
+end
+
+local function sanitizeWorldSpec(raw, allowDoor)
+    local s = tostring(raw or ""):gsub("%s+", ""):upper()
+    if allowDoor then
+        local w, d = s:match("^([A-Z0-9]+):?([A-Z0-9]*)$")
+        w = (w or s:gsub("[^A-Z0-9]", "")):sub(1, 8)
+        d = (d or ""):sub(1, 8)
+        return w, d
+    end
+    return (s:gsub("[^A-Z0-9]", "")):sub(1, 8), ""
+end
+
+local function pickOpenSideDirection(tx, ty, preferSide)
+    local gt = H.gt
+    if not gt then return (preferSide == "left") and -1 or 1 end
+    local rightOk = (tx + 1 < gt.w) and not Core.IsSolid(tx + 1, ty)
+    local leftOk = (tx - 1 >= 0) and not Core.IsSolid(tx - 1, ty)
+    if preferSide == "left" and leftOk then return -1 end
+    if preferSide == "right" and rightOk then return 1 end
+    if rightOk then return 1 end
+    if leftOk then return -1 end
+    return 1
+end
+
+function Packets.Drop(itemId, count, opts)
+    Core.EnsureInit()
+    Core.EnsureOutboundFirewall()
+    local gt, net = H.gt, H.Net
+    if not gt or not net or not net.drop or type(net.drop.send) ~= "function" then return false, "net_drop_nil" end
+    itemId = toInt(itemId)
+    count = clamp(toInt(count, 1), 1, 200)
+    if not itemId or itemId <= 0 or Core.CountItem(itemId) <= 0 then return false, "no_item" end
+    count = math.min(count, Core.CountItem(itemId))
+    opts = opts or {}
+    local pos = Core.ReadPos()
+    local dir = pickOpenSideDirection(pos.tx, pos.ty, opts.preferSide)
+    local dropX = clamp(pos.tx + (dir > 0 and 1.2 or -0.2), 0.3, (gt.w or 100) - 0.3)
+    local dropY = pos.ty + 0.5
+    local facingBit = (dir > 0) and 1 or 0
+    Packets.SendRawMove(pos.x, pos.y, 0, 0, facingBit + 2)
+    task.wait(0.06)
+    -- Hormati jeda drop 1.08s dari firewall agar tidak terblokir server
+    local waitLeft = (H.fwLastDropSentAt or 0) + 1.12 - os.clock()
+    if waitLeft > 0 then task.wait(waitLeft) end
+    local ok = pcall(net.drop.send, { id = itemId, n = count, x = dropX, y = dropY })
+    if ok and H.inv and type(H.inv.remove) == "function" then
+        pcall(function() H.inv:remove(itemId, count) end)
+    end
+    return ok, ok and "dropped" or "drop_failed"
+end
+
+function Packets.EnterWorldDoor(spec, aliveFn)
+    Core.EnsureInit()
+    local gt = H.gt
+    if not gt or type(gt.enter) ~= "function" then return false, "enter_nil" end
+    local wName, doorId = sanitizeWorldSpec(spec, true)
+    if wName == "" then return false, "empty_world" end
+    if cleanWorldName(gt.name) ~= wName then
+        pcall(gt.enter, wName)
+        local dl = os.clock() + 12
+        while os.clock() < dl do
+            if type(aliveFn) == "function" and not aliveFn() then return false, "cancelled" end
+            if H.gt and cleanWorldName(H.gt.name) == wName then break end
+            task.wait(0.25)
+        end
+        task.wait(0.85)
+        pcall(SYT_Logic.Init, true)
+    end
+    if cleanWorldName(H.gt and H.gt.name or "") ~= wName then
+        return false, "enter_timeout"
+    end
+    if doorId ~= "" and H.Net and type(H.Net.call) == "function" then
+        gt = H.gt
+        for y = 0, (gt.h or 60) - 1 do
+            for x = 0, (gt.w or 100) - 1 do
+                local id = Core.GetFG(x, y)
+                if id > 0 and id ~= 6 then
+                    local info = Core.GetItemInfo(id)
+                    if info and (info.door or info.entrance) then
+                        local okD = pcall(H.Net.call, "DoorPass", x, y, doorId)
+                        if okD then task.wait(0.5); break end
+                    end
+                end
+            end
+        end
+        pcall(H.Net.call, "UseDoor", doorId)
+        task.wait(0.45)
+    end
+    return true, wName
+end
+
+function Packets.BuyStoreOffer(offerKey)
+    Core.EnsureInit()
+    if not H.Net or type(H.Net.call) ~= "function" then return false, "net_call_nil" end
+    local ok, okRes, data = pcall(H.Net.call, "BuyItem", offerKey)
+    if not ok then return false, tostring(okRes) end
+    return okRes == true, data
+end
+
+-- Forward declarations
+local SystemModule, AutoLeveling, ClearWorld, MoveBlock, DiscordHook, ProxyCommands
+
+local function isAnyMainTaskRunning(exceptName)
+    local active = {
+        PNB = PNB and PNB.State and PNB.State.running,
+        Pabrik = Pabrik and Pabrik.State and Pabrik.State.running,
+        DirtFarm = DirtFarm and DirtFarm.State and DirtFarm.State.running,
+        ClearWorld = ClearWorld and ClearWorld.State and ClearWorld.State.running,
+        MoveBlock = MoveBlock and MoveBlock.State and MoveBlock.State.running,
+        AutoLeveling = AutoLeveling and AutoLeveling.State and AutoLeveling.State.running,
+    }
+    for k, on in pairs(active) do
+        if k ~= exceptName and on == true then return true, k end
+    end
+    return false, nil
+end
+
+local function guardExclusiveStart(modName)
+    local busy, holder = isAnyMainTaskRunning(modName)
+    if busy then
+        emitNotify("SYT", "SORRY YOUR TASK IS DO RIGHT NOW (" .. tostring(holder) .. ")")
+        return false
+    end
+    return true
+end
+
+local function resolveConsoleUi()
+    if H._chatUiObj and type(H._chatUiObj.add) == "function" then return H._chatUiObj end
+    for _, v in ipairs(safeGetGC(true)) do
+        if type(v) == "table" and type(rawget(v, "add")) == "function" and type(rawget(v, "setGems")) == "function" and type(rawget(v, "prefill")) == "function" then
+            H._chatUiObj = v
+            return v
+        end
+    end
+    return nil
+end
+
+local function proxyConsole(msg)
+    local txt = tostring(msg or "")
+    local chatUi = resolveConsoleUi()
+    if chatUi then
+        local ok = pcall(chatUi.add, txt, "system")
+        if ok then return true end
+    end
+    if H.gt and type(H.gt.floatText) == "function" then
+        local pos = Core.ReadPos()
+        pcall(H.gt.floatText, pos.x, pos.y - 1.3, stripColorTags(txt), Color3.fromRGB(130, 230, 255))
+    end
+    return true
+end
+
+local function buildStorageFileSupported()
+    return type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
+end
+
+local function safeReadStorage(fname)
+    if buildStorageFileSupported() then
+        local okE, ex = pcall(isfile, fname)
+        if okE and ex then
+            local okR, dat = pcall(readfile, fname)
+            if okR and type(dat) == "string" then return dat end
+        end
+    end
+    local env = getEnv()
+    return env and env["__SYT_STORE_" .. fname] or nil
+end
+
+local function safeWriteStorage(fname, val)
+    local env = getEnv()
+    if env then env["__SYT_STORE_" .. fname] = val end
+    if buildStorageFileSupported() then
+        pcall(writefile, fname, tostring(val))
+    end
+end
+
+-- Helper Shared Zigzag Clear + Lava-First Safety
+local function resolveActiveDropWorldSafe()
+    local cw = ClearWorld and ClearWorld.State
+    return (cw and cw.noCollect == true)
+end
+
+local function clearSingleTileWithLavaCheck(tx, ty, layers, hitGap, showHand, noCollect, aliveFn)
+    local gt = H.gt
+    if not gt or tx < 0 or tx >= gt.w or ty < 0 or ty >= gt.h then return false end
+    -- Cek 1 tile di bawah (ty + 1): jika mengandung lava/deadly dan bisa dihancurkan, hancurkan dulu dari samping aman (-1)
+    if ty + 1 < gt.h then
+        local belowId = Core.GetFG(tx, ty + 1)
+        if belowId ~= 0 and not Core.IsProtectedTile(belowId) and Core.CanEditTile(tx, ty + 1) then
+            local bInfo = Core.GetItemInfo(belowId)
+            if bInfo and (bInfo.hurts == true or bInfo.deadly == true) then
+                local pos = Core.ReadPos()
+                if not Core.IsInActionReach(tx, ty + 1, "break", pos) then
+                    local safeSideX = (pos.tx <= tx) and math.max(0, tx - 1) or math.min(gt.w - 1, tx + 1)
+                    Packets.MoveHybrid(safeSideX, math.max(0, ty), 1, aliveFn, { preferWalk = true, walkSpeed = 12.2 })
+                end
+                Packets.BreakVerified({ { tx = tx, ty = ty + 1, layer = 1 } }, {
+                    threads = 1, layer = 1, oneHit = false, customHits = 2, hitDelay = hitGap,
+                    showHand = showHand, showVisual = true, autoRange = true, preferWalk = true, shouldContinue = aliveFn
+                })
+                if not noCollect then
+                    Packets.Collect({ radius = 4, stepMoveIfFar = false, preferWalk = true, collectDelay = 0.02, shouldContinue = aliveFn })
+                end
+            end
+        end
+    end
+
+    for _, lyr in ipairs(layers) do
+        if type(aliveFn) == "function" and not aliveFn() then return false end
+        local tid = Core.GetLayerTile(tx, ty, lyr)
+        if tid ~= 0 and not Core.IsProtectedTile(tid) and Core.CanEditTile(tx, ty) then
+            local reached = Core.IsInActionReach(tx, ty, "break") or Packets.MoveWalkNear(tx, ty, 2, aliveFn, 12.2) or Packets.MoveHybrid(tx, ty, 2, aliveFn)
+            if reached and (type(aliveFn) ~= "function" or aliveFn()) then
+                -- Boosted hit damage (bukan 1-hit visual mentah agar anti rollback)
+                H.oneHitForceUntil = os.clock() + 0.35
+                Packets.BreakVerified({ { tx = tx, ty = ty, layer = lyr } }, {
+                    threads = 1, layer = lyr, oneHit = false, customHits = 2, hitDelay = hitGap,
+                    showHand = showHand, showVisual = true, autoRange = true, preferWalk = true, shouldContinue = aliveFn
+                })
+                if not noCollect then
+                    Packets.Collect({ radius = 4.2, stepMoveIfFar = false, preferWalk = true, collectDelay = 0.02, shouldContinue = aliveFn })
+                end
+            end
+        end
+    end
+    return true
+end
+
+-- ClearWorld: FIFO World List, Zigzag FG + BG (kecuali Door/Lock/Bedrock), Lava Pre-Break
+ClearWorld = {
+    State = {
+        running = false, sessionToken = 0, thread = nil, status = "Idle",
+        worldInput = "", worldList = {}, worldIdx = 1,
+        switchingWorld = false, halfWorldMode = false, noCollect = false,
+        progress = 0,
+    }
+}
+SYT_Logic.ClearWorld = ClearWorld
+
+local function setCwStatus(msg)
+    ClearWorld.State.status = msg
+    if UI then UI:SetValue("CwStatusDisplay", msg) end
+    if UIHooks.updateButtons then UIHooks.updateButtons() end
+end
+
+function ClearWorld.AddWorld(raw)
+    local w = sanitizeWorldSpec(raw, false)
+    if w == "" then return false, ClearWorld.State.worldList end
+    for _, existing in ipairs(ClearWorld.State.worldList) do
+        if existing == w then return false, ClearWorld.State.worldList end
+    end
+    table.insert(ClearWorld.State.worldList, w)
+    if UIHooks.refreshCwList then UIHooks.refreshCwList() end
+    return true, ClearWorld.State.worldList
+end
+
+function ClearWorld.RemoveWorldAt(idx)
+    if idx >= 1 and idx <= #ClearWorld.State.worldList then
+        table.remove(ClearWorld.State.worldList, idx)
+        if UIHooks.refreshCwList then UIHooks.refreshCwList() end
+    end
+end
+
+function ClearWorld.Stop()
+    Core.ClearManualInput()
+    ClearWorld.State.running = false
+    ClearWorld.State.switchingWorld = false
+    ClearWorld.State.sessionToken += 1
+    if ClearWorld.State.thread then
+        pcall(task.cancel, ClearWorld.State.thread)
+        ClearWorld.State.thread = nil
+    end
+    setCwStatus("Stopped")
+    return false
+end
+
+function ClearWorld.Start(opts)
+    opts = opts or {}
+    if not opts.fromAutoLevel and not guardExclusiveStart("ClearWorld") then return false end
+    Core.EnsureInit()
+    Core.EnsureManualInputHook()
+    local S = ClearWorld.State
+    if S.running then return true end
+    S.halfWorldMode = opts.halfWorld == true
+    S.noCollect = opts.noCollect == true
+    S.running = true
+    S.sessionToken += 1
+    S.progress = 0
+    local tok = S.sessionToken
+    local function alive() return S.running and S.sessionToken == tok end
+    if UIHooks.updateButtons then UIHooks.updateButtons() end
+
+    S.thread = task.spawn(function()
+        while alive() do
+            Core.EnsureInit()
+            local gt = H.gt
+            if not gt or gt.name == "" then
+                setCwStatus("Menunggu world...")
+                task.wait(0.4)
+            else
+                local curW = cleanWorldName(gt.name)
+                if not opts.fromAutoLevel and #S.worldList > 0 then
+                    local inQueue = false
+                    for _, w in ipairs(S.worldList) do
+                        if w == curW then inQueue = true; break end
+                    end
+                    if not inQueue then
+                        S.switchingWorld = true
+                        setCwStatus("Masuk antrian world: " .. S.worldList[1])
+                        Packets.EnterWorldDoor(S.worldList[1], alive)
+                        S.switchingWorld = false
+                        if not alive() then break end
+                        gt = H.gt
+                        curW = cleanWorldName(gt and gt.name or "")
+                    end
+                end
+
+                local w, h = gt.w or 100, gt.h or 60
+                local maxY = h - 1
+                -- Cari batas atas bedrock terbawah
+                for y = h - 1, 0, -1 do
+                    local bedCnt = 0
+                    for x = 0, w - 1 do
+                        local fid = Core.GetFG(x, y)
+                        if fid == 8 then bedCnt += 1 end
+                    end
+                    if bedCnt >= math.floor(w * 0.6) then
+                        maxY = math.max(2, y - 1)
+                    else
+                        break
+                    end
+                end
+                if S.halfWorldMode then
+                    maxY = math.max(3, math.floor(maxY * 0.5))
+                end
+
+                -- Cari sisi kiri atau kanan paling dekat dari posisi player
+                local p0 = Core.ReadPos()
+                local dirRev = (p0.tx > math.floor(w * 0.5))
+
+                -- Hitung total tile target untuk Progress 0-100%
+                local targets = {}
+                for y = 0, maxY do
+                    local xs = dirRev and (w - 1) or 0
+                    local xe = dirRev and 0 or (w - 1)
+                    local stepX = dirRev and -1 or 1
+                    for x = xs, xe, stepX do
+                        local fgId = Core.GetFG(x, y)
+                        local bgId = Core.GetBG(x, y)
+                        local needFg = (fgId ~= 0 and not Core.IsProtectedTile(fgId) and Core.CanEditTile(x, y))
+                        local needBg = (bgId ~= 0 and not Core.IsProtectedTile(bgId) and Core.CanEditTile(x, y))
+                        if needFg or needBg then
+                            targets[#targets + 1] = { x = x, y = y, needFg = needFg, needBg = needBg }
+                        end
+                    end
+                    dirRev = not dirRev
+                end
+
+                local totalT = #targets
+                if totalT == 0 then
+                    S.progress = 100
+                    if opts.fromAutoLevel then
+                        setCwStatus("Setengah world bersih!")
+                        S.running = false
+                        break
+                    end
+                    -- Pop FIFO list jika world saat ini sudah selesai
+                    local nextW = nil
+                    if #S.worldList > 0 then
+                        for i = #S.worldList, 1, -1 do
+                            if S.worldList[i] == curW then table.remove(S.worldList, i) end
+                        end
+                        if UIHooks.refreshCwList then UIHooks.refreshCwList() end
+                        nextW = S.worldList[1]
+                    end
+                    if nextW and nextW ~= curW then
+                        S.switchingWorld = true
+                        setCwStatus("World bersih -> Next: " .. nextW)
+                        Packets.EnterWorldDoor(nextW, alive)
+                        S.switchingWorld = false
+                    else
+                        setCwStatus("Clear World Selesai: " .. curW)
+                        emitNotify("Clear World", "World " .. curW .. " selesai dibersihkan!")
+                        S.running = false
+                        break
+                    end
+                else
+                    for idx, t in ipairs(targets) do
+                        if not alive() then break end
+                        if not opts.fromAutoLevel and SystemModule.State.enabled then
+                            -- Biarkan System security menangani jika ada orang masuk
+                        elseif opts.fromAutoLevel and #Core.GetInWorldPlayers(false) > 0 then
+                            setCwStatus("Player lain terdeteksi saat AutoLevel -> Ganti world")
+                            break
+                        end
+                        S.progress = math.floor((idx / totalT) * 100)
+                        setCwStatus(string.format("[%s] Clear %d/%d (%d%%) @(%d,%d)", curW, idx, totalT, S.progress, t.x, t.y))
+                        clearSingleTileWithLavaCheck(t.x, t.y, { 1, 2 }, 0.11, true, S.noCollect, alive)
+                    end
+                end
+            end
+            task.wait(0.05)
+        end
+        Core.ClearManualInput()
+        ClearWorld.State.switchingWorld = false
+        if ClearWorld.State.sessionToken == tok then
+            ClearWorld.State.running = false
+            ClearWorld.State.thread = nil
+            if UIHooks.updateButtons then UIHooks.updateButtons() end
+        end
+    end)
+    return true
+end
+
+function ClearWorld.Toggle()
+    if ClearWorld.State.running then return ClearWorld.Stop() end
+    return ClearWorld.Start()
+end
+
+-- MoveBlock: Set Take, Set Drop, ambil item dari take, walk ke drop, Packets.Drop, delay 2 detik
+MoveBlock = {
+    State = { takePos = nil, dropPos = nil, running = false, sessionToken = 0, thread = nil, status = "Idle", itemId = nil, progress = 0 }
+}
+SYT_Logic.MoveBlock = MoveBlock
 
 function MoveBlock.SetTake()
     local pos = Core.ReadPos()
     MoveBlock.State.takePos = { x = pos.tx, y = pos.ty }
-    MoveBlock.State.status = string.format("TakePos=(%d,%d)", pos.tx, pos.ty)
+    MoveBlock.State.status = string.format("Take=(%d,%d)", pos.tx, pos.ty)
     if UI then UI:SetValue("MoveBlockStatus", MoveBlock.State.status) end
 end
 
 function MoveBlock.SetDrop()
     local pos = Core.ReadPos()
     MoveBlock.State.dropPos = { x = pos.tx, y = pos.ty }
-    MoveBlock.State.status = string.format("TakePos set | DropPos=(%d,%d)", pos.tx, pos.ty)
+    MoveBlock.State.status = string.format("Drop=(%d,%d)", pos.tx, pos.ty)
     if UI then UI:SetValue("MoveBlockStatus", MoveBlock.State.status) end
 end
 
 function MoveBlock.Stop()
     MoveBlock.State.running = false
-    MoveBlock.State.thread = nil
+    MoveBlock.State.sessionToken += 1
+    if MoveBlock.State.thread then
+        pcall(task.cancel, MoveBlock.State.thread)
+        MoveBlock.State.thread = nil
+    end
     MoveBlock.State.status = "Stopped"
     if UI then UI:SetValue("MoveBlockStatus", MoveBlock.State.status) end
+    if UIHooks.updateButtons then UIHooks.updateButtons() end
 end
 
 function MoveBlock.Start()
-    if MoveBlock.State.running then return end
+    if MoveBlock.State.running then return true end
+    if not guardExclusiveStart("MoveBlock") then return false end
     if not MoveBlock.State.takePos or not MoveBlock.State.dropPos then
-        emitNotify("MoveBlock", "Set posisi Take & Drop dulu!")
-        return
+        emitNotify("Move Block", "Set Take dan Drop position dulu!")
+        return false
     end
+    Core.EnsureInit()
     MoveBlock.State.running = true
+    MoveBlock.State.sessionToken += 1
+    local tok = MoveBlock.State.sessionToken
+    local function alive() return MoveBlock.State.running and MoveBlock.State.sessionToken == tok end
+    if UIHooks.updateButtons then UIHooks.updateButtons() end
+
     MoveBlock.State.thread = task.spawn(function()
-        local tok = MoveBlock.State.thread
-        while MoveBlock.State.running and MoveBlock.State.thread == tok do
+        while alive() do
             local tp = MoveBlock.State.takePos
             local dp = MoveBlock.State.dropPos
-            MoveBlock.State.status = "Jalan ke Take..."
-            if UI then UI:SetValue("MoveBlockStatus", MoveBlock.State.status) end
-            Packets.WalkTeleport({ tx = tp.x, ty = tp.y, mode = "step", stepSize = 3, stepDelay = 0.08 })
-            task.wait(0.3)
-            -- Collect di area take
-            Packets.Collect({ radius = 2, stepMoveIfFar = false, collectDelay = 0 })
-            MoveBlock.State.status = "Jalan ke Drop..."
-            if UI then UI:SetValue("MoveBlockStatus", MoveBlock.State.status) end
-            Packets.WalkTeleport({ tx = dp.x, ty = dp.y, mode = "step", stepSize = 3, stepDelay = 0.08 })
-            task.wait(0.3)
-            -- Drop / place di area drop (kiri bawah)
-            local placeOk = pcall(Packets.Place, { tx = dp.x, ty = dp.y + 1, id = MoveBlock.State.itemId or PNB.State.selectedBlockId or 0 })
-            if not placeOk then
-                -- coba collect jika tidak ada item untuk di-place
-                Packets.Collect({ radius = 1, stepMoveIfFar = false, collectDelay = 0 })
+            -- 1. Cek apakah sudah ada item non-gems di backpack atau deteksi dari drop di posisi Take
+            local beforeCounts = {}
+            for _, sl in ipairs(Core.GetBackpackSlots()) do
+                if sl.id ~= 18 and sl.id ~= 32 and sl.id ~= 112 then
+                    beforeCounts[sl.id] = (beforeCounts[sl.id] or 0) + (sl.n or 0)
+                end
             end
-            GetcSkipper.RandomizedWait(2.0)
+
+            MoveBlock.State.status = string.format("Walk -> Take (%d,%d)", tp.x, tp.y)
+            if UI then UI:SetValue("MoveBlockStatus", MoveBlock.State.status) end
+            Packets.WalkTeleport({ tx = tp.x, ty = tp.y, mode = "walk" })
+            task.wait(0.15)
+            if not alive() then break end
+
+            Packets.Collect({ radius = 2.0, stepMoveIfFar = false, preferWalk = true, collectDelay = 0.05, shouldContinue = alive })
+            task.wait(0.15)
+
+            -- Otomatis tentukan block/item ID yang bertambah di BP setelah collect
+            local targetId, targetCount = MoveBlock.State.itemId, 0
+            for _, sl in ipairs(Core.GetBackpackSlots()) do
+                if sl.id ~= 18 and sl.id ~= 32 and sl.id ~= 112 then
+                    local diff = (sl.n or 0) - (beforeCounts[sl.id] or 0)
+                    if diff > 0 then
+                        targetId = sl.id
+                        MoveBlock.State.itemId = targetId
+                        break
+                    end
+                end
+            end
+            if not targetId then
+                -- Fallback: ambil block/seed pertama yang ada jumlah > 0 di BP
+                for _, sl in ipairs(Core.GetBackpackSlots()) do
+                    if sl.id ~= 18 and sl.id ~= 32 and sl.id ~= 112 and (sl.n or 0) > 0 then
+                        targetId = sl.id
+                        break
+                    end
+                end
+            end
+            if targetId then targetCount = Core.CountItem(targetId) end
+
+            if targetId and targetCount > 0 then
+                MoveBlock.State.status = string.format("Walk -> Drop %s x%d (%d,%d)", Core.GetItemName(targetId), targetCount, dp.x, dp.y)
+                if UI then UI:SetValue("MoveBlockStatus", MoveBlock.State.status) end
+                Packets.WalkTeleport({ tx = dp.x, ty = dp.y, mode = "walk" })
+                task.wait(0.15)
+                if not alive() then break end
+                Packets.Drop(targetId, targetCount)
+            else
+                MoveBlock.State.status = "Menunggu drop di Take..."
+                if UI then UI:SetValue("MoveBlockStatus", MoveBlock.State.status) end
+            end
+
+            -- Delay 2 detik sesuai spesifikasi README
+            local dl = os.clock() + 2.0
+            while os.clock() < dl and alive() do task.wait(0.05) end
         end
-        MoveBlock.Stop()
+        if MoveBlock.State.sessionToken == tok then
+            MoveBlock.State.running = false
+            MoveBlock.State.thread = nil
+            if UIHooks.updateButtons then UIHooks.updateButtons() end
+        end
     end)
+    return true
 end
 
 function MoveBlock.Toggle()
-    if MoveBlock.State.running then MoveBlock.Stop() else MoveBlock.Start() end
+    if MoveBlock.State.running then return MoveBlock.Stop() end
+    return MoveBlock.Start()
 end
 
--- AutoLeveling: Bersihkan setengah world sambil leveling ke L10
-local AutoLeveling = {
-    State = { running = false, thread = nil, status = "Idle", targetLevel = 10 }
+-- System & Security + Auto Leveling (Target L10 via Half-World ClearWorld & 7-8 Random Letter Worlds)
+SystemModule = {
+    State = {
+        enabled = true,      -- ON / OFF security (Default ON + FREEZE)
+        mode = "FREEZE",     -- "FREEZE" | "LEAVE"
+        discordLog = false,  -- Sync join log to DiscordHook
+        frozenByJoin = false,
+        joinLogs = {},       -- Scrollable join entries
+        knownPlayers = {},
+        safeCount = 0,
+    }
 }
+SYT_Logic.System = SystemModule
+
+function SystemModule._pushJoinLog(name, isStaff, actionTag)
+    local stamp = os.date("%H:%M:%S")
+    local roleTag = isStaff and "[MOD]" or "[PLAYER]"
+    local line = string.format("[%s] %s %s -> %s", stamp, roleTag, tostring(name or "-"), tostring(actionTag or "JOIN"))
+    table.insert(SystemModule.State.joinLogs, 1, { text = line, isStaff = isStaff == true, name = tostring(name or "-") })
+    while #SystemModule.State.joinLogs > 80 do
+        table.remove(SystemModule.State.joinLogs)
+    end
+    if SystemModule.State.discordLog and DiscordHook and DiscordHook.State.url ~= "" then
+        task.spawn(function() pcall(DiscordHook.Send, line) end)
+    end
+    if UIHooks.refreshSysLog then pcall(UIHooks.refreshSysLog) end
+end
+
+function SystemModule.CheckWorldEntrants()
+    if not H.gt or (H.gt.name or "") == "" then return end
+    local plrs = Core.GetInWorldPlayers(false)
+    local curWorld = cleanWorldName(H.gt.name)
+    local currentSet = {}
+    for _, p in ipairs(plrs) do
+        local k = curWorld .. ":" .. tostring(p.userId)
+        currentSet[k] = true
+        if not SystemModule.State.knownPlayers[k] then
+            SystemModule.State.knownPlayers[k] = true
+            local actionDesc = SystemModule.State.enabled and SystemModule.State.mode or "LOG ONLY"
+            SystemModule._pushJoinLog(p.gameName, p.isStaff, actionDesc)
+            if p.isStaff then
+                emitNotify("MOD JOINED!", p.gameName .. " bergabung ke world!")
+            end
+            if SystemModule.State.enabled and not (AutoLeveling and AutoLeveling.State and AutoLeveling.State.running) then
+                SystemModule.State.safeCount = (SystemModule.State.safeCount or 0) + 1
+                if SystemModule.State.mode == "LEAVE" then
+                    stopAllAutomationImpl("SYSTEM LEAVE: " .. p.gameName)
+                    if H.Net and type(H.Net.call) == "function" then
+                        pcall(H.Net.call, "LeaveWorld")
+                    elseif H.gt and type(H.gt.enter) == "function" then
+                        pcall(H.gt.enter, "EXIT")
+                    end
+                else
+                    SystemModule.State.frozenByJoin = true
+                    stopAllAutomationImpl("SYSTEM FREEZE: " .. p.gameName)
+                    Core.ClearManualInput()
+                end
+            end
+        end
+    end
+    for k in pairs(SystemModule.State.knownPlayers) do
+        if k:sub(1, #curWorld + 1) == (curWorld .. ":") and not currentSet[k] then
+            SystemModule.State.knownPlayers[k] = nil
+        end
+    end
+end
+
+function SystemModule._random78World()
+    local len = math.random(7, 8)
+    local chars = {}
+    for i = 1, len do
+        chars[i] = string.char(math.random(65, 90))
+    end
+    return table.concat(chars)
+end
+
+AutoLeveling = {
+    State = { running = false, sessionToken = 0, thread = nil, status = "Idle", targetLevel = 10, switchingWorld = false }
+}
+SYT_Logic.AutoLeveling = AutoLeveling
 
 function AutoLeveling.GetLevel()
-    -- Baca level dari stateObj / gt
-    local gt = H.gt
-    if gt and type(gt.level) == "number" then return gt.level end
-    local ok, stObj = pcall(function()
-        local so = Core.GetStateObj()
-        return so and (so.level or so.Level or so.xp or so.lv) or nil
-    end)
-    return (ok and tonumber(stObj)) or 0
+    if LP then
+        local lvAttr = LP:GetAttribute("PlayerLevel") or LP:GetAttribute("Level")
+        if type(lvAttr) == "number" then return lvAttr end
+    end
+    if H.gt and type(rawget(H.gt, "level")) == "number" then return rawget(H.gt, "level") end
+    return 0
 end
 
 function AutoLeveling.Stop()
     AutoLeveling.State.running = false
-    AutoLeveling.State.thread = nil
+    AutoLeveling.State.switchingWorld = false
+    AutoLeveling.State.sessionToken += 1
+    if AutoLeveling.State.thread then
+        pcall(task.cancel, AutoLeveling.State.thread)
+        AutoLeveling.State.thread = nil
+    end
+    ClearWorld.Stop()
     AutoLeveling.State.status = "Stopped"
-    DirtFarm.Stop()
     if UI then UI:SetValue("AutoLvlStatus", AutoLeveling.State.status) end
+    if UIHooks.updateButtons then UIHooks.updateButtons() end
 end
 
 function AutoLeveling.Start()
-    if AutoLeveling.State.running then return end
+    if AutoLeveling.State.running then return true end
+    if not guardExclusiveStart("AutoLeveling") then return false end
+    Core.EnsureInit()
     AutoLeveling.State.running = true
+    AutoLeveling.State.sessionToken += 1
+    local tok = AutoLeveling.State.sessionToken
+    local function alive() return AutoLeveling.State.running and AutoLeveling.State.sessionToken == tok end
+    if UIHooks.updateButtons then UIHooks.updateButtons() end
+
     AutoLeveling.State.thread = task.spawn(function()
-        while AutoLeveling.State.running do
+        while alive() do
             local lv = AutoLeveling.GetLevel()
             if lv >= AutoLeveling.State.targetLevel then
-                AutoLeveling.State.status = string.format("Level %d tercapai!", lv)
+                AutoLeveling.State.status = string.format("Target L%d Tercapai!", lv)
                 if UI then UI:SetValue("AutoLvlStatus", AutoLeveling.State.status) end
-                AutoLeveling.Stop()
-                return
+                emitNotify("Auto Leveling", AutoLeveling.State.status)
+                break
             end
-            AutoLeveling.State.status = string.format("Level %d/%d | Farm...", lv, AutoLeveling.State.targetLevel)
-            if UI then UI:SetValue("AutoLvlStatus", AutoLeveling.State.status) end
-            -- Cek apakah mod/staff ada di world -> warp jika ada
-            local players = Core.GetInWorldPlayers(true)
-            local modHere = false
-            for _, p in ipairs(players) do
-                if p.isStaff then modHere = true; break end
-            end
-            if modHere then
-                AutoLeveling.State.status = "MOD terdeteksi! Pindah world..."
+
+            -- Jika ada player/mod di world ini, pindah ke random world 7-8 huruf
+            local others = Core.GetInWorldPlayers(false)
+            if #others > 0 or not H.gt or H.gt.name == "" then
+                local rw = SystemModule._random78World()
+                AutoLeveling.State.switchingWorld = true
+                AutoLeveling.State.status = string.format("Lv%d/10 | Warp -> %s", lv, rw)
                 if UI then UI:SetValue("AutoLvlStatus", AutoLeveling.State.status) end
-                -- Pindah ke world di rotation list DF jika ada
-                local gt = H.gt
-                local rotList = DirtFarm.State.rotationList or {}
-                if #rotList > 0 and gt and type(gt.enter) == "function" then
-                    local curW = cleanWorldName(gt.name)
-                    local nxt = rotList[1]
-                    for i, w in ipairs(rotList) do
-                        if w == curW and rotList[i+1] then nxt = rotList[i+1]; break end
-                    end
-                    pcall(gt.enter, nxt)
-                end
-                task.wait(3)
+                Packets.EnterWorldDoor(rw, alive)
+                AutoLeveling.State.switchingWorld = false
             else
-                -- Farm setengah world (jalankan DirtFarm dengan batas tile)
-                DirtFarm.State.halfWorldMode = true
-                DirtFarm.Start()
-                -- Tunggu hingga DF selesai atau stop
-                local waitCount = 0
-                while DirtFarm.State.running and AutoLeveling.State.running do
-                    task.wait(1)
-                    waitCount = waitCount + 1
-                    if waitCount > 600 then break end -- max 10 menit per world
+                AutoLeveling.State.status = string.format("Lv%d/10 | Half Clear %s", lv, cleanWorldName(H.gt.name))
+                if UI then UI:SetValue("AutoLvlStatus", AutoLeveling.State.status) end
+                ClearWorld.Start({ fromAutoLevel = true, halfWorld = true, noCollect = true })
+                while ClearWorld.State.running and alive() do
+                    if AutoLeveling.GetLevel() >= AutoLeveling.State.targetLevel then
+                        ClearWorld.Stop()
+                        break
+                    end
+                    if #Core.GetInWorldPlayers(false) > 0 then
+                        ClearWorld.Stop()
+                        break
+                    end
+                    AutoLeveling.State.status = string.format("Lv%d/10 | %s (%d%%)", AutoLeveling.GetLevel(), cleanWorldName(H.gt and H.gt.name or "-"), ClearWorld.State.progress or 0)
+                    if UI then UI:SetValue("AutoLvlStatus", AutoLeveling.State.status) end
+                    task.wait(0.4)
                 end
-                DirtFarm.State.halfWorldMode = false
+                if alive() and AutoLeveling.GetLevel() < AutoLeveling.State.targetLevel then
+                    local rw = SystemModule._random78World()
+                    AutoLeveling.State.switchingWorld = true
+                    AutoLeveling.State.status = string.format("Lv%d/10 | Next Random -> %s", AutoLeveling.GetLevel(), rw)
+                    if UI then UI:SetValue("AutoLvlStatus", AutoLeveling.State.status) end
+                    Packets.EnterWorldDoor(rw, alive)
+                    AutoLeveling.State.switchingWorld = false
+                end
             end
-            task.wait(0.5)
+            task.wait(0.25)
+        end
+        if AutoLeveling.State.sessionToken == tok then
+            AutoLeveling.State.running = false
+            AutoLeveling.State.switchingWorld = false
+            ClearWorld.Stop()
+            AutoLeveling.State.thread = nil
+            if UIHooks.updateButtons then UIHooks.updateButtons() end
         end
     end)
+    return true
 end
 
 function AutoLeveling.Toggle()
-    if AutoLeveling.State.running then AutoLeveling.Stop() else AutoLeveling.Start() end
+    if AutoLeveling.State.running then return AutoLeveling.Stop() end
+    return AutoLeveling.Start()
 end
 
--- DiscordHook: Post/Patch status farm ke Discord webhook (opt-in)
-local DiscordHook = {
+-- Override Misc Engine Features to match exact README.MD specifications:
+-- 1. Ghost/NoClip (visual only + return to exact anchor on OFF)
+function Misc.SetNoClip(enabled)
+    Core.EnsureInit()
+    Core.EnsureMoveHook()
+    local gt = H.gt
+    if not gt then return false end
+    local on = enabled == true
+    if on == Misc.State.noClip then return on end
+    Misc.State.noClip = on
+    if on then
+        local pos = Core.ReadPos()
+        Misc.State.noClipAnchor = { x = pos.x, y = pos.y, tx = pos.tx, ty = pos.ty }
+        gt.ghost = true
+        gt.stuckAt = nil
+        if type(SYT_Logic.InstallNetGuard) == "function" then pcall(SYT_Logic.InstallNetGuard) end
+    else
+        local anchor = Misc.State.noClipAnchor
+        Misc.State.noClipAnchor = nil
+        gt.ghost = (Misc.State.fly == true)
+        if anchor then
+            Core.SetLocalCoords(anchor.x, anchor.y, 0, 0)
+            Packets.SendRawMove(anchor.x, anchor.y, 0, 0, 2)
+        end
+    end
+    return Misc.State.noClip
+end
+
+-- 2. Bounded Fly (max +5 up, max +-4 left/right from start, visual barrier indicators, fall on OFF)
+do
+local flyBarriers = {}
+local function clearFlyBarriers()
+    for _, b in ipairs(flyBarriers) do pcall(function() b:Destroy() end) end
+    table.clear(flyBarriers)
+end
+
+local function showFlyBarrierFeedback(reasonTxt)
+    local now = os.clock()
+    if (H._lastFlyWallAt or 0) + 0.6 < now then
+        H._lastFlyWallAt = now
+        local pos = Core.ReadPos()
+        if H.gt and type(H.gt.floatText) == "function" then
+            pcall(H.gt.floatText, pos.x, pos.y - 1.4, reasonTxt, Color3.fromRGB(248, 113, 113))
+        end
+    end
+end
+
+function Misc.SetFly(enabled)
+    Core.EnsureInit()
+    Core.EnsureMoveHook()
+    unbindFlyRenderStep()
+    clearFlyBarriers()
+    if H.flyConn then H.flyConn:Disconnect(); H.flyConn = nil end
+    Misc.State.fly = enabled == true
+    local gt = H.gt
+    if not gt then return false end
+
+    if not Misc.State.fly then
+        gt.ghost = (Misc.State.noClip == true)
+        -- Jatuh dari posisi saat ini (tidak kembali ke origin)
+        local p = Core.ReadPos()
+        Core.SetLocalCoords(p.x, p.y, 0, 0.2)
+        Packets.SendRawMove(p.x, p.y, 0, 0, 0)
+        return false
+    end
+
+    pcall(Core.InstallAntiBackGuard)
+    if type(SYT_Logic.InstallNetGuard) == "function" then pcall(SYT_Logic.InstallNetGuard) end
+    local p0 = Core.ReadPos()
+    local visX, visY = p0.x, p0.y
+    local syncX, syncY = p0.x, p0.y
+    local minX = math.max(0.5, p0.x - 4.0)
+    local maxX = math.min(math.max(1, (gt.w or 100) - 0.5), p0.x + 4.0)
+    local minY = math.max(0.35, p0.y - 5.0)
+    local maxY = math.min(math.max(1, (gt.h or 60) - 0.5), p0.y + 0.5)
+    local lastSyncAt, facing = os.clock(), 1
+
+    -- Buat penanda batas visual blok pada HUD (atas -5, kiri -4, kanan +4)
+    local parentHud = getSafeHui() or CoreGui or (LP and LP:FindFirstChildOfClass("PlayerGui"))
+    if parentHud then
+        local bgui = Instance.new("ScreenGui")
+        bgui.Name = "SYT_FlyBarrierHud"
+        bgui.IgnoreGuiInset = true
+        bgui.ResetOnSpawn = false
+        bgui.Parent = parentHud
+        flyBarriers[#flyBarriers + 1] = bgui
+        local pill = Instance.new("TextLabel", bgui)
+        pill.Size = UDim2.fromOffset(250, 24)
+        pill.AnchorPoint = Vector2.new(0.5, 0)
+        pill.Position = UDim2.new(0.5, 0, 0, 8)
+        pill.BackgroundColor3 = Color3.fromRGB(15, 23, 42)
+        pill.BackgroundTransparency = 0.2
+        pill.Font = Enum.Font.Code
+        pill.TextSize = 11
+        pill.TextColor3 = Color3.fromRGB(250, 204, 21)
+        pill.Text = "FLY BARRIER | X:-4..+4 | UP:+5"
+        Instance.new("UICorner", pill).CornerRadius = UDim.new(0, 6)
+        flyBarriers[#flyBarriers + 1] = pill
+    end
+
+    gt.ghost = true
+    gt.stuckAt = nil
+    H.lastSentMove = { x = syncX, y = syncY, vx = 0, vy = 0, flags = 3, t = lastSyncAt }
+    Packets.SendRawMove(syncX, syncY, 0, 0, 3)
+
+    local alive = true
+    RunService:BindToRenderStep("SYT_FlyStep", Enum.RenderPriority.Last.Value + 20, function(dt)
+        if not alive or getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN or not Misc.State.fly or H.gt ~= gt then
+            alive = false
+            unbindFlyRenderStep()
+            clearFlyBarriers()
+            return
+        end
+        gt.ghost = true
+        gt.stuckAt = nil
+        local frameDt = clamp(tonumber(dt) or 0.016, 0.004, 0.06)
+        local speed = 10.5
+        local mvX, mvY = 0, 0
+        if not UserInputService:GetFocusedTextBox() then
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.Left) then mvX -= 1 end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) or UserInputService:IsKeyDown(Enum.KeyCode.Right) then mvX += 1 end
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) or UserInputService:IsKeyDown(Enum.KeyCode.Up) or UserInputService:IsKeyDown(Enum.KeyCode.Space) then mvY -= 1 end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.Down) then mvY += 1 end
+        end
+        if mvX ~= 0 then facing = (mvX > 0) and 1 or -1 end
+        local mag = math.sqrt(mvX * mvX + mvY * mvY)
+        if mag > 0 then mvX, mvY = mvX / mag, mvY / mag end
+
+        local nextX = visX + mvX * speed * frameDt
+        local nextY = visY + mvY * speed * frameDt
+        if nextX < minX then nextX = minX; showFlyBarrierFeedback("[BARRIER] Batas Kiri (-4)") end
+        if nextX > maxX then nextX = maxX; showFlyBarrierFeedback("[BARRIER] Batas Kanan (+4)") end
+        if nextY < minY then nextY = minY; showFlyBarrierFeedback("[BARRIER] Batas Atas (+5)") end
+        if nextY > maxY then nextY = maxY end
+        visX, visY = nextX, nextY
+        Core.SetLocalCoords(visX, visY, 0, 0)
+
+        local now = os.clock()
+        local elapsed = now - lastSyncAt
+        if elapsed >= 0.068 then
+            local stepDx = clamp(visX - syncX, -1.0, 1.0)
+            local stepDy = clamp(visY - syncY, -1.1, 1.1)
+            syncX, syncY = syncX + stepDx, syncY + stepDy
+            Packets.SendRawMove(syncX, syncY, 0, 0, (facing > 0 and 1 or 0) + 2)
+            lastSyncAt = now
+        end
+    end)
+    H.flyConn = { Disconnect = function() alive = false; unbindFlyRenderStep(); clearFlyBarriers() end }
+    return true
+end
+
+-- 3. Zoom 2.5x Out (with crash-safe boundary)
+Misc.State.zoom25x = false
+function Misc.SetZoom25x(enabled)
+    Core.EnsureInit()
+    local on = enabled == true
+    Misc.State.zoom25x = on
+    local gt = H.gt
+    if on then
+        if Misc.State._origCamMaxZoom == nil and LP then
+            pcall(function() Misc.State._origCamMaxZoom = LP.CameraMaxZoomDistance end)
+        end
+        if LP then
+            pcall(function() LP:SetAttribute("ModZoom", true) end)
+            pcall(function()
+                if Misc.State._origCamMaxZoom then
+                    LP.CameraMaxZoomDistance = math.min(400, Misc.State._origCamMaxZoom * 2.5)
+                end
+            end)
+        end
+        if gt and type(rawget(gt, "zoomMin")) == "number" then
+            Misc.State._origGtZoomMin = Misc.State._origGtZoomMin or gt.zoomMin
+            gt.zoomMin = Misc.State._origGtZoomMin / 2.5
+        end
+    else
+        if LP then
+            pcall(function() LP:SetAttribute("ModZoom", nil) end)
+            pcall(function()
+                if Misc.State._origCamMaxZoom then
+                    LP.CameraMaxZoomDistance = Misc.State._origCamMaxZoom
+                end
+            end)
+        end
+        if gt and type(Misc.State._origGtZoomMin) == "number" then
+            gt.zoomMin = Misc.State._origGtZoomMin
+            if type(rawget(gt, "zoom")) == "number" and gt.zoom < gt.zoomMin then
+                gt.zoom = gt.zoomMin
+            end
+        end
+    end
+    return on
+end
+
+-- 4. Skip Update Item
+Misc.State.skipUpdateItem = false
+function Misc.SetSkipUpdateItem(enabled)
+    local on = enabled == true
+    Misc.State.skipUpdateItem = on
+    GetcSkipper.SetSkipUpdateItems(on)
+    if H._skipUpdConn then H._skipUpdConn:Disconnect(); H._skipUpdConn = nil end
+    if on then
+        local function hideLoadingBanners()
+            local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
+            if not pg then return end
+            for _, obj in ipairs(pg:GetDescendants()) do
+                if obj:IsA("TextLabel") and obj.Visible then
+                    local txt = string.lower(obj.Text or "")
+                    if string.find(txt, "updating", 1, true) or string.find(txt, "entering", 1, true) then
+                        local f = obj:FindFirstAncestorOfClass("Frame")
+                        if f and f.Name ~= "Console" then f.Visible = false end
+                    end
+                end
+            end
+        end
+        hideLoadingBanners()
+        local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
+        if pg then
+            H._skipUpdConn = pg.DescendantAdded:Connect(function(obj)
+                if Misc.State.skipUpdateItem and obj:IsA("TextLabel") then
+                    task.defer(hideLoadingBanners)
+                end
+            end)
+        end
+    end
+    return on
+end
+
+-- 5. Slow Fall (2x lebih lambat dari jatuh normal)
+Misc.State.slowFall = false
+function Misc.SetSlowFall(enabled)
+    local on = enabled == true
+    Misc.State.slowFall = on
+    pcall(RunService.UnbindFromRenderStep, RunService, "SYT_SlowFallStep")
+    if on then
+        local lastY, lastVelSet = nil, 0
+        RunService:BindToRenderStep("SYT_SlowFallStep", Enum.RenderPriority.Last.Value + 10, function(dt)
+            if not Misc.State.slowFall or getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then
+                pcall(RunService.UnbindFromRenderStep, RunService, "SYT_SlowFallStep")
+                return
+            end
+            local gt = H.gt
+            if not gt or (gt.name or "") == "" or Misc.State.fly or Misc.State.noClip then
+                lastY = nil
+                return
+            end
+            local p = Core.ReadPos()
+            if not p.grounded and p.vy > 0.45 then
+                -- Kurangi kenaikan jatuh sebesar 50% (2x lebih lambat)
+                if lastY and p.y > lastY then
+                    local dy = p.y - lastY
+                    local slowY = lastY + dy * 0.5
+                    Core.SetLocalCoords(p.x, slowY, p.vx, p.vy * 0.5)
+                    p.y = slowY
+                end
+                if os.clock() - lastVelSet > 0.08 then
+                    lastVelSet = os.clock()
+                    Core.SetLocalCoords(p.x, p.y, p.vx, math.min(p.vy, 6.5))
+                end
+            end
+            lastY = p.y
+        end)
+    end
+    return on
+end
+end
+
+-- Enhance Spam per README.MD: Random `0..`9 per-word rainbow OR single prefix, REQUIRED empty check, send first then delay
+do
+Spam.State.maxLength = 85
+Spam.State.rainbowOn = false
+Spam.State.prefixOn = false
+Spam.State.delay = 5.0
+
+local function randColorCode()
+    return "`" .. tostring(math.random(0, 9))
+end
+
+function Spam.FormatNextMessage()
+    local S = Spam.State
+    local raw = tostring(S.text or ""):sub(1, 85)
+    if S.rainbowOn then
+        local words = {}
+        for w in raw:gmatch("%S+") do
+            words[#words + 1] = randColorCode() .. " " .. w
+        end
+        return table.concat(words, " "):sub(1, 85)
+    elseif S.prefixOn then
+        return (randColorCode() .. " " .. raw):sub(1, 85)
+    end
+    return raw
+end
+
+function Spam.Start()
+    Core.EnsureInit()
+    local S = Spam.State
+    if S.running then return true end
+    local curInput = UI and UI:GetValue("SpamTextInput")
+    if type(curInput) == "string" and curInput ~= "REQUIRED" then
+        S.text = curInput:sub(1, 85)
+    end
+    if not S.text or S.text == "" or S.text == "REQUIRED" then
+        S.text = ""
+        if UI then UI:SetValue("SpamTextInput", "REQUIRED") end
+        setSpamStatus("REQUIRED: Isi pesan spam dulu!")
+        emitNotify("Spam", "Text wajib diisi (REQUIRED)")
+        return false
+    end
+    S.running = true
+    S.sessionToken += 1
+    local token = S.sessionToken
+    local function alive() return S.running and S.sessionToken == token end
+    setSpamStatus("Spamming...")
+
+    S.thread = task.spawn(function()
+        Core.EnsureOutboundFirewall()
+        while alive() do
+            if not H.gt or H.gt.name == "" then break end
+            local msg = Spam.FormatNextMessage()
+            Packets.SendChat({ message = msg, maxLength = 85, shouldContinue = alive })
+            local d = clamp(tonumber(S.delay) or 5.0, 3.0, 7.0)
+            local dl = os.clock() + d
+            while os.clock() < dl and alive() do task.wait(0.05) end
+        end
+        if S.sessionToken == token then
+            S.running = false
+            S.thread = nil
+            setSpamStatus("Stopped")
+        end
+    end)
+    return true
+end
+end
+
+-- Enhance PNB with README.MD Storage Block, Safe, Auto Buy (5x gems, 2s delay)
+PNB.State.storageBlock = ""
+PNB.State.storageSafe = ""
+PNB.State.autoBuyKey = "OFF"
+PNB.State.speedPct = 60
+PNB.State.switchingWorld = false
+PNB.State.progress = 0
+
+H._origPnbStart = PNB.Start
+function PNB.Start()
+    if PNB.State.running then return true end
+    if not guardExclusiveStart("PNB") then return false end
+    Core.EnsureInit()
+    local S = PNB.State
+    if not S.selectedBlockId then setPNBStatus("Pilih block di Block Selector!", "Waiting Block", "-"); return false end
+    if #PNB.GetActiveOffsets() == 0 then setPNBStatus("Pilih minimal 1 tile pada Pad 5x5", "Waiting Pad", "-"); return false end
+    if Core.CountItem(S.selectedBlockId) <= 0 and S.storageBlock == "" then
+        setPNBStatus("Block habis & World Storage Block kosong", "No Block", "-")
+        return false
+    end
+
+    -- Speed 0-100% -> PNB.State.speed (1..10) + custom boosted damage
+    local pct = clamp(tonumber(S.speedPct) or 60, 0, 100)
+    S.speed = clamp(math.floor(1 + (pct / 100) * 9 + 0.5), 1, 10)
+    S.oneHit = false -- README: bukan 1-hit visual, hit damage diperbesar agar break cepat
+
+    -- Wrapper loop dengan support Storage Block, Safe & Auto Buy
+    S.running = true
+    S.cycles = 0
+    S.progress = 0
+    S.sessionToken += 1
+    local token = S.sessionToken
+    local pos0 = Core.ReadPos()
+    S.centerPos = { tx = pos0.tx, ty = pos0.ty }
+    local pnbWorld = cleanWorldName(H.gt and H.gt.name or "")
+    local function alive() return S.running and S.sessionToken == token end
+    setPNBStatus("Running...", "Inspecting", "-")
+
+    local function warpToStorageAndBack(spec, taskKind, extraPayload)
+        if not spec or spec == "" then return false end
+        local originPos = S.centerPos
+        S.switchingWorld = true
+        setPNBStatus("Storage: Masuk " .. spec, "Storage", taskKind)
+        local okW = Packets.EnterWorldDoor(spec, alive)
+        if okW and alive() then
+            if taskKind == "fetch" then
+                local gt = H.gt
+                if gt and type(gt.dropList) == "function" then
+                    local okD, drops = pcall(gt.dropList)
+                    if okD and type(drops) == "table" then
+                        for _, d in ipairs(drops) do
+                            if not alive() or Core.GetItemRoom(S.selectedBlockId) <= 0 then break end
+                            if type(d) == "table" and d.id == S.selectedBlockId and (d.n or 0) > 0 then
+                                Packets.WalkTeleport({ tx = math.floor(d.x), ty = math.floor(d.y), mode = "walk" })
+                                Packets.Collect({ radius = 3, filterId = S.selectedBlockId, stepMoveIfFar = true, preferWalk = true, collectDelay = 0.05, shouldContinue = alive })
+                            end
+                        end
+                    end
+                end
+            elseif taskKind == "safe" and type(extraPayload) == "table" then
+                for _, item in ipairs(extraPayload) do
+                    if not alive() then break end
+                    if Core.CountItem(item.id) >= item.amount then
+                        Packets.Drop(item.id, item.amount)
+                        SystemModule.State.safeCount = (SystemModule.State.safeCount or 0) + item.amount
+                    end
+                end
+            end
+        end
+        if alive() and pnbWorld ~= "" then
+            Packets.EnterWorldDoor(pnbWorld, alive)
+            if alive() and originPos then
+                Packets.WalkTeleport({ tx = originPos.tx, ty = originPos.ty, mode = "step", stepSize = 3 })
+            end
+        end
+        S.switchingWorld = false
+        return true
+    end
+
+    local function runAutoBuyCheck()
+        local offer = findStoreOfferByDisplay(S.autoBuyKey)
+        if not offer then return end
+        local gems = Core.ReadGems()
+        -- Minimal kelipatan 5 dari harga item sebelum memicu Auto Buy
+        if gems < (offer.price * 5) then return end
+        setPNBStatus(string.format("AutoBuy %s (Gems: %d >= 5x %d)", offer.name, gems, offer.price), "AutoBuy", offer.key)
+        local boughtItems = {}
+        while alive() do
+            local curGems = Core.ReadGems()
+            if curGems < offer.price then break end
+            task.wait(2.0) -- Delay 2s sebelum buy
+            if not alive() then break end
+            local okB, resB = Packets.BuyStoreOffer(offer.key)
+            task.wait(2.0) -- Delay 2s sesudah buy agar tidak crash
+            if not okB then break end
+            if type(resB) == "table" and type(resB.items) == "table" then
+                for _, pair in ipairs(resB.items) do
+                    if type(pair) == "table" and pair[1] then
+                        boughtItems[pair[1]] = true
+                    end
+                end
+            end
+        end
+        if alive() and S.storageSafe ~= "" then
+            local payload = {}
+            for id in pairs(boughtItems) do
+                local c = Core.CountItem(id)
+                if c > 0 then payload[#payload + 1] = { id = id, amount = c } end
+            end
+            if #payload > 0 then warpToStorageAndBack(S.storageSafe, "safe", payload) end
+        end
+    end
+
+    local function checkSafeMultiples()
+        if S.storageSafe == "" then return end
+        local payload = {}
+        -- Kelipatan 10 untuk Locks (WL=242, Small=202, Big=204, Huge=206) dan 200 untuk seed/SSP box
+        for _, lockId in ipairs({ 242, 202, 204, 206, 4994 }) do
+            local cnt = Core.CountItem(lockId)
+            if cnt >= 10 then
+                payload[#payload + 1] = { id = lockId, amount = math.floor(cnt / 10) * 10 }
+            end
+        end
+        for _, sl in ipairs(Core.GetBackpackSlots()) do
+            if sl.id ~= S.selectedBlockId and sl.id ~= 18 and sl.id ~= 32 and sl.id ~= 112 and (sl.n or 0) >= 200 then
+                local info = Core.GetItemInfo(sl.id)
+                if info and (info.kind == "seed" or string.find(string.lower(info.name or ""), "pack", 1, true)) then
+                    payload[#payload + 1] = { id = sl.id, amount = 200 }
+                end
+            end
+        end
+        if #payload > 0 then
+            warpToStorageAndBack(S.storageSafe, "safe", payload)
+        end
+    end
+
+    S.thread = task.spawn(function()
+        while alive() do
+            if not H.gt or H.gt.name == "" then setPNBStatus("Keluar world", "Idle", "-"); break end
+            if SystemModule.State.enabled and SystemModule.State.frozenByJoin then break end
+            runAutoBuyCheck()
+            checkSafeMultiples()
+
+            local bid = S.selectedBlockId
+            local startCnt = Core.CountItem(bid)
+            if startCnt <= 0 then
+                if S.storageBlock ~= "" then
+                    warpToStorageAndBack(S.storageBlock, "fetch")
+                    if Core.CountItem(bid) <= 0 then
+                        setPNBStatus("Block habis di BP & Storage", "Selesai", "-")
+                        break
+                    end
+                else
+                    setPNBStatus("Block habis di Backpack", "Selesai", "-")
+                    break
+                end
+            end
+
+            local info = Core.GetItemInfo(bid)
+            local layer = (info and info.background) and 2 or 1
+            local cp = S.centerPos or Core.ReadPos()
+            local targets = {}
+            for _, off in ipairs(PNB.GetActiveOffsets()) do
+                local tx, ty = cp.tx + off.dx, cp.ty + off.dy
+                if tx >= 0 and tx < H.gt.w and ty >= 0 and ty < H.gt.h and Core.CanEditTile(tx, ty) then
+                    if not (info and info.solid and layer == 1 and tx == cp.tx and ty == cp.ty) then
+                        targets[#targets + 1] = { tx = tx, ty = ty, layer = layer }
+                    end
+                end
+            end
+            if #targets == 0 then setPNBStatus("Tidak ada tile valid", "Idle", "-"); break end
+
+            local spd, actGap, verifyWait, cycleWait = pnbTimingsForSpeed(S.speed)
+            -- Boosted custom hit damage via handPower window
+            H.oneHitForceUntil = os.clock() + 0.5
+            local placeGap = math.max(H.adaptivePlaceGap or 0.155, clamp(0.28 / spd, 0.145, 0.28))
+            local breakOpts = {
+                layer = layer, threads = clamp(toInt(S.breakThreads, 5), 1, 9),
+                oneHit = false, customHits = 2, noLocalMirror = false,
+                hitDelay = math.max(0.06, actGap), verifyTimeout = verifyWait,
+                stable = clamp(0.05 / math.max(1, spd * 0.4), 0.015, 0.05),
+                showHand = S.showHand, showVisual = true, shouldContinue = alive,
+            }
+
+            local snap = inspectPnbTargets(targets, bid, layer)
+            if #snap.empty > 0 and Core.CountItem(bid) > 0 then
+                setPNBStatus(string.format("Fase 1: Place (%d%%)", pct), "Place", "-")
+                Packets.EnsureActionReach(snap.empty[1].tx, snap.empty[1].ty, "build", alive)
+                Packets.RunPool(snap.empty, math.min(5, #snap.empty), function(t)
+                    Packets.PlaceVerified(t.tx, t.ty, bid, layer, {
+                        showHand = S.showHand, delay = 0, noLocalMirror = false, autoRange = false,
+                        placeGap = placeGap, verifyTimeout = 0.18, shouldContinue = alive
+                    })
+                end, alive)
+                snap = inspectPnbTargets(targets, bid, layer)
+            end
+
+            if #snap.placed > 0 then
+                setPNBStatus(string.format("Fase 2: Break (%d%%)", pct), "Break", "-")
+                for _ = 1, 4 do
+                    if not alive() then break end
+                    local curS = inspectPnbTargets(targets, bid, layer)
+                    if #curS.placed == 0 then break end
+                    H.oneHitForceUntil = os.clock() + 0.5
+                    Packets.BreakVerified(curS.placed, breakOpts)
+                end
+                setPNBStatus(string.format("Fase 3: Collect (%d%%)", pct), "Collect", "-")
+                Packets.CollectVerified(targets, { expectDrops = true, waitDrop = 0.12, collectDelay = 0, shouldContinue = alive })
+                S.cycles += 1
+                S.progress = clamp(100 - math.floor((Core.CountItem(bid) / math.max(1, startCnt)) * 100), 1, 100)
+                setPNBStatus(string.format("Cycle #%d | Sisa BP: %d", S.cycles, Core.CountItem(bid)), "OK", "Done")
+            end
+            task.wait(cycleWait)
+        end
+        if S.sessionToken == token then
+            S.running = false
+            S.thread = nil
+            if UIHooks.refreshBP then UIHooks.refreshBP() end
+            if UIHooks.updateButtons then UIHooks.updateButtons() end
+        end
+    end)
+    return true
+end
+
+-- Enhance Pabrik with Speed 0-100%, strict README flow, and progress tracking
+Pabrik.State.speedPct = 60
+Pabrik.State.progress = 0
+
+H._origPabrikStart = Pabrik.Start
+function Pabrik.Start()
+    if Pabrik.State.running then return true end
+    if not guardExclusiveStart("Pabrik") then return false end
+    Core.EnsureInit()
+    local S = Pabrik.State
+    if not S.blockId or not S.seedId then setPabrikStatus("Pilih Block / Seed dulu"); return false end
+    if #Pabrik.GetSortedTiles() == 0 then setPabrikStatus("Pilih tile Dirt dulu di Dirt Selector"); return false end
+    if not S.breakPos then Pabrik.SetBreakPos() end
+    local pct = clamp(tonumber(S.speedPct) or 60, 0, 100)
+    local factor = 0.35 + (pct / 100) * 1.15
+    S.placeDelay = clamp(0.18 / factor, 0.12, 0.30)
+    S.breakDelay = clamp(0.18 / factor, 0.08, 0.25)
+    S.collectDelay = clamp(0.06 / factor, 0.02, 0.12)
+    return H._origPabrikStart()
+end
+
+-- Wrap DirtFarm.Start with Mutual Exclusion Check + FIFO Pop
+H._origDfStart = DirtFarm.Start
+function DirtFarm.Start()
+    if DirtFarm.State.running then return true end
+    if not guardExclusiveStart("DirtFarm") then return false end
+    return H._origDfStart()
+end
+
+-- Discord Hook: Exact README.MD JSON Embed + OS Storage MessageID + First-Execute Chinese Auth Token
+DiscordHook = {
     State = {
         url = "",
-        delay = 120, -- detik, 1-5 menit
+        delay = 120, -- 1-5 menit
         enabled = false,
         messageId = nil,
         startTime = nil,
         thread = nil,
+        authToken = "",
+        lastActionNote = "",
     }
 }
-local _DHOOK_MID_KEY = "__SYT_DHOOK_MID"
+SYT_Logic.DiscordHook = DiscordHook
+
+function DiscordHook._jsonEscape(s)
+    return tostring(s or ""):gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "")
+end
+
+function DiscordHook.generateChineseAuthToken(userName)
+    -- Enkripsi ringkas karakter CJK (< 1 KB) unik per username + PlaceId + Device/UserId
+    local lp = LP or Players.LocalPlayer
+    local uid = lp and lp.UserId or 0
+    local seedStr = tostring(userName or "USER") .. "|" .. tostring(uid) .. "|" .. tostring(game.PlaceId)
+    local out = {}
+    local key = 137
+    for i = 1, #seedStr do
+        local b = string.byte(seedStr, i)
+        key = (key * 33 + b + i) % 65535
+        -- Petakan ke rentang CJK Unified Ideographs U+4E00..U+9FAF
+        local cp = 0x4E00 + ((b * 79 + key) % (0x9FA0 - 0x4E00))
+        out[#out + 1] = utf8.char(cp)
+    end
+    local tok = table.concat(out)
+    safeWriteStorage("syt_auth_token.dat", tok)
+    DiscordHook.State.authToken = tok
+    return tok
+end
 
 function DiscordHook.GetSafeRequest()
     if type(syn) == "table" and type(syn.request) == "function" then return syn.request end
@@ -9962,271 +11217,958 @@ function DiscordHook.GetSafeRequest()
     return nil
 end
 
-function DiscordHook.BuildEmbed()
-    local gt = H.gt
-    local worldName = (gt and gt.name ~= "" and gt.name) or "-"
-    local lp = LP or Players.LocalPlayer
-    local playerName = lp and lp.DisplayName or "-"
-    local uptime = DiscordHook.State.startTime and math.floor(os.clock() - DiscordHook.State.startTime) or 0
-    local uptimeStr = string.format("%dm %ds", math.floor(uptime/60), uptime % 60)
-
-    -- Status dari modul aktif
-    local farmStatus = "Idle"
-    local prog = ""
-    if PNB.State.running then
-        farmStatus = "PNB"
-        prog = PNB.State.status or "-"
-    elseif Pabrik.State.running then
-        farmStatus = "Pabrik"
-        prog = Pabrik.State.status or "-"
-    elseif DirtFarm.State.running then
-        farmStatus = "DirtFarm"
-        prog = DirtFarm.State.status or "-"
-    elseif AutoLeveling.State.running then
-        farmStatus = "AutoLeveling"
-        prog = AutoLeveling.State.status or "-"
-    elseif MoveBlock.State.running then
-        farmStatus = "MoveBlock"
-        prog = MoveBlock.State.status or "-"
-    end
-
-    return {
-        embeds = {{
-            title = "SYT Farm Status",
-            color = 0x00bfff,
-            fields = {
-                { name = "Player", value = playerName, inline = true },
-                { name = "World", value = worldName, inline = true },
-                { name = "Mode", value = farmStatus, inline = true },
-                { name = "Uptime", value = uptimeStr, inline = true },
-                { name = "Progress", value = prog ~= "" and prog or "-", inline = false },
-            },
-            footer = { text = "SYT DRY CURSED | " .. os.date("%H:%M:%S") },
-        }}
-    }
+function DiscordHook._activeFarmProgress()
+    if PNB.State.running then return "PNB", tostring(PNB.State.progress or 0) .. "%" end
+    if Pabrik.State.running then return "PABRIK", tostring(Pabrik.State.progress or 0) .. "%" end
+    if DirtFarm.State.running then return "DIRT FARM", tostring(DirtFarm.State.status or "Running") end
+    if ClearWorld.State.running then return "CLEAR WORLD", tostring(ClearWorld.State.progress or 0) .. "%" end
+    if MoveBlock.State.running then return "MOVE BLOCK", tostring(MoveBlock.State.status or "Running") end
+    if AutoLeveling.State.running then return "AUTO LEVELING", "Lv" .. tostring(AutoLeveling.GetLevel()) .. "/10" end
+    return "IDLE", "0%"
 end
 
-function DiscordHook.Send()
+function DiscordHook.SendFirstExecuteIfNeeded(reqFn, webhookUrl)
+    local lp = LP or Players.LocalPlayer
+    local gName = Core.GetInGameName(LP, true)
+    local uKey = gName:gsub("[^%w_]", "_")
+    local regFile = "syt_reg_" .. uKey .. ".dat"
+    DiscordHook.generateChineseAuthToken(gName)
+    if safeReadStorage(regFile) then return end
+    local rName = lp and lp.Name or "-"
+    local ipAddr = H._cachedIp or "-"
+    if ipAddr == "-" then
+        pcall(function()
+            local res = game:HttpGet("https://api.ipify.org", true)
+            if type(res) == "string" and #res < 64 then
+                H._cachedIp = (res):match("^%s*(.-)%s*$")
+                ipAddr = H._cachedIp
+            end
+        end)
+    end
+    local bodyStr = string.format(
+        '{"content":null,"embeds":[{"color":5765375,"fields":[{"name":"<a:angry:1515044838008160258> Growblox Name","value":"<a:damn:947061120944963594> %s","inline":true},{"name":"<a:angry:1515044838008160258> Discord ","value":"<a:damn:947061120944963594> %s","inline":true},{"name":"<a:angry:1515044838008160258> Addres","value":"<a:damn:947061120944963594> %s | Token:%s"}]}],"attachments":[]}',
+        DiscordHook._jsonEscape(gName),
+        DiscordHook._jsonEscape(rName),
+        DiscordHook._jsonEscape(ipAddr),
+        DiscordHook._jsonEscape(DiscordHook.State.authToken)
+    )
+    local ok = pcall(reqFn, {
+        Url = webhookUrl,
+        Method = "POST",
+        Headers = { ["Content-Type"] = "application/json" },
+        Body = bodyStr
+    })
+    if ok then safeWriteStorage(regFile, "1") end
+end
+
+function DiscordHook.Send(noteLine)
     local reqFn = DiscordHook.GetSafeRequest()
-    if not reqFn or DiscordHook.State.url == "" then return end
+    if not reqFn or DiscordHook.State.url == "" then return false end
+    if noteLine then DiscordHook.State.lastActionNote = tostring(noteLine) end
 
-    local body = DiscordHook.BuildEmbed()
-    local ok, bodyStr = pcall(function()
-        -- Manual JSON encode (simple)
-        local fields = {}
-        for _, f in ipairs(body.embeds[1].fields) do
-            table.insert(fields, string.format('{"name":"%s","value":"%s","inline":%s}',
-                f.name, tostring(f.value):gsub('"', '\\"'), f.inline and "true" or "false"))
-        end
-        return string.format(
-            '{"embeds":[{"title":"%s","color":%d,"fields":[%s],"footer":{"text":"%s"}}]}',
-            body.embeds[1].title,
-            body.embeds[1].color,
-            table.concat(fields, ","),
-            body.embeds[1].footer.text:gsub('"', '\\"')
-        )
-    end)
-    if not ok then return end
+    local gt = H.gt
+    local worldName = (gt and gt.name ~= "" and gt.name) or "-"
+    local playerName = Core.GetInGameName(LP, true)
+    local stName, progStr = DiscordHook._activeFarmProgress()
+    local uptime = DiscordHook.State.startTime and math.floor(os.clock() - DiscordHook.State.startTime) or 0
+    local uptimeStr = string.format("%02dh %02dm %02ds", math.floor(uptime / 3600), math.floor((uptime % 3600) / 60), uptime % 60)
+    local safeTotal = tostring(SystemModule.State.safeCount or 0)
+    if DiscordHook.State.lastActionNote ~= "" then
+        safeTotal = safeTotal .. " | " .. DiscordHook.State.lastActionNote
+    end
 
-    local mid = DiscordHook.State.messageId
-    local method = mid and "PATCH" or "POST"
-    local url = mid and (DiscordHook.State.url .. "/messages/" .. mid) or DiscordHook.State.url
+    local authorIcon = "https://media.discordapp.net/attachments/1571862046969176137/1571872000744620164/9b3d0135-5ab8-4239-8589-7ca6a12e246b.webp?ex=6afc4f60&is=6afafde0&hm=83fe3e652dfa9a704e7928a1ea692ebc432994e6259785fa8f3a8ef3d177c8b6&format=webp&width=768&height=768"
+    local bannerImg = "https://media.discordapp.net/attachments/1571862046969176137/1571872352936140860/Gemini_Generated_Image_kqlim5kqlim5kqli.jpg?ex=6afc4fb4&is=6afafe34&hm=959ae0c770f6998ed2116041a9ff3af55278c2d0808a541d5276539c6bcb2cec&format=webp&width=1536&height=651"
+
+    local bodyStr = string.format(
+        '{"content":null,"embeds":[{"color":5765375,"fields":[' ..
+        '{"name":"[  <a:king:1238156871282724895>  ]  -  NAME","value":"<a:angry:1515044838008160258> [  %s ]","inline":true},' ..
+        '{"name":"[  <a:world:1113108638094069880>  ] -  WORLD","value":"<a:angry:1515044838008160258> [ %s ]"},' ..
+        '{"name":"[  <a:damn:1462853718713045225>  ] -  STATE","value":"<a:angry:1515044838008160258> [ %s ]"},' ..
+        '{"name":"[  <a:time:1345668076854841374>  ] -  UP TIME","value":"<a:angry:1515044838008160258> [ %s ]"},' ..
+        '{"name":"[  <a:PROG:1430165994885746821>  ] -  PROGRESS","value":"<a:angry:1515044838008160258> [ %s ]"},' ..
+        '{"name":"[  <a:SAFE:1280719300495282246>  ] -  SAFE TOTAL","value":"<a:angry:1515044838008160258> [ %s ]"}' ..
+        '],"author":{"name":"sadadaw","url":"%s"},"footer":{"text":"Script created By DryCursed Community"},"image":{"url":"%s"}}],"attachments":[]}',
+        DiscordHook._jsonEscape(playerName),
+        DiscordHook._jsonEscape(worldName),
+        DiscordHook._jsonEscape(stName),
+        DiscordHook._jsonEscape(uptimeStr),
+        DiscordHook._jsonEscape(progStr),
+        DiscordHook._jsonEscape(safeTotal),
+        authorIcon,
+        bannerImg
+    )
+
+    local mid = DiscordHook.State.messageId or safeReadStorage("syt_dhook_mid.txt")
+    local isPatch = type(mid) == "string" and mid:match("^%d+$") ~= nil
+    local method = isPatch and "PATCH" or "POST"
+    local reqUrl = isPatch and (DiscordHook.State.url .. "/messages/" .. mid) or (DiscordHook.State.url .. "?wait=true")
 
     local ok2, resp = pcall(reqFn, {
-        Url = url .. "?wait=true",
+        Url = reqUrl,
         Method = method,
         Headers = { ["Content-Type"] = "application/json" },
         Body = bodyStr
     })
-    if ok2 and type(resp) == "table" and resp.StatusCode and resp.StatusCode >= 200 and resp.StatusCode < 300 then
-        -- Simpan message ID dari respons POST pertama
-        if method == "POST" and type(resp.Body) == "string" then
-            local id = resp.Body:match('"id"%s*:%s*"(%d+)"')
-            if id then
-                DiscordHook.State.messageId = id
-                local env = getEnv()
-                if env then env[_DHOOK_MID_KEY] = id end
+    if ok2 and type(resp) == "table" then
+        if resp.StatusCode == 404 and isPatch then
+            DiscordHook.State.messageId = nil
+            safeWriteStorage("syt_dhook_mid.txt", "")
+            return DiscordHook.Send(noteLine)
+        elseif resp.StatusCode and resp.StatusCode >= 200 and resp.StatusCode < 300 then
+            if method == "POST" and type(resp.Body) == "string" then
+                local newId = resp.Body:match('"id"%s*:%s*"(%d+)"')
+                if newId then
+                    DiscordHook.State.messageId = newId
+                    safeWriteStorage("syt_dhook_mid.txt", newId)
+                    if UI then pcall(UI.SetValue, UI, "DhMessageIdDisplay", newId) end
+                end
             end
+            return true
         end
     end
+    return false
 end
 
 function DiscordHook.Stop()
     DiscordHook.State.enabled = false
-    DiscordHook.State.thread = nil
+    if DiscordHook.State.thread then
+        pcall(task.cancel, DiscordHook.State.thread)
+        DiscordHook.State.thread = nil
+    end
 end
 
 function DiscordHook.Start()
-    if DiscordHook.State.enabled then return end
+    local curUrl = UI and UI:GetValue("SysDiscordUrlInput")
+    if type(curUrl) == "string" and curUrl ~= "" then
+        DiscordHook.State.url = curUrl:sub(1, 300)
+    end
     if DiscordHook.State.url == "" then
-        emitNotify("DiscordHook", "Masukkan Webhook URL dulu!")
-        return
+        DiscordHook.State.enabled = false
+        if UI then pcall(UI.SetValue, UI, "DhEnabledToggle", false, true) end
+        emitNotify("Discord Hook", "Masukkan link Discord Webhook terlebih dahulu!")
+        return false
     end
+    if DiscordHook.State.enabled then return true end
     DiscordHook.State.enabled = true
-    DiscordHook.State.startTime = os.clock()
-    -- Restore saved message ID
-    local env = getEnv()
-    if env and env[_DHOOK_MID_KEY] then
-        DiscordHook.State.messageId = env[_DHOOK_MID_KEY]
+    DiscordHook.State.startTime = DiscordHook.State.startTime or os.clock()
+    DiscordHook.State.messageId = DiscordHook.State.messageId or safeReadStorage("syt_dhook_mid.txt")
+    if DiscordHook.State.messageId and UI then
+        pcall(UI.SetValue, UI, "DhMessageIdDisplay", DiscordHook.State.messageId)
     end
+
+    local reqFn = DiscordHook.GetSafeRequest()
+    if reqFn then
+        task.spawn(function() pcall(DiscordHook.SendFirstExecuteIfNeeded, reqFn, DiscordHook.State.url) end)
+    end
+
     DiscordHook.State.thread = task.spawn(function()
         while DiscordHook.State.enabled do
             pcall(DiscordHook.Send)
-            task.wait(math.max(60, DiscordHook.State.delay))
+            local waitSec = clamp(tonumber(DiscordHook.State.delay) or 120, 60, 300)
+            local dl = os.clock() + waitSec
+            while os.clock() < dl and DiscordHook.State.enabled do task.wait(0.25) end
         end
     end)
+    return true
 end
 
 function DiscordHook.Toggle()
-    if DiscordHook.State.enabled then DiscordHook.Stop() else DiscordHook.Start() end
+    if DiscordHook.State.enabled then return DiscordHook.Stop() end
+    return DiscordHook.Start()
 end
 
--- ProxyCommands: Hook chat masuk untuk parsing /command dari owner
-local ProxyCommands = {}
-local _proxyHookConn = nil
+-- Proxy System (/p2p, /reme, /clothes, Host BJ /set b /lock t /set tax /cal /info, /get, /cn, /news)
+ProxyCommands = {
+    State = {
+        p2pEnabled = true,
+        p2pLive = false,
+        remeEnabled = false,
+        lastRealWheelByUser = {},
+        bj = { b1 = nil, b2 = nil, t1 = nil, t2 = nil, tax = 0, running = false },
+        activeDialogs = {},
+    }
+}
+SYT_Logic.Proxy = ProxyCommands
 
-local function proxyReply(msg)
-    -- Kirim reply via Net.chat jika tersedia, else floatText
-    pcall(function()
-        if H.Net and type(H.Net.chat) == "table" and type(H.Net.chat.FireServer) == "function" then
-            H.Net.chat:FireServer(tostring(msg))
-        elseif H.gt and type(H.gt.floatText) == "function" then
-            H.gt.floatText(tostring(msg))
-        else
-            Packets.SendChat(tostring(msg))
-        end
+local function closeProxyDialog(name)
+    local prev = ProxyCommands.State.activeDialogs[name]
+    if prev then
+        pcall(function() prev:Destroy() end)
+        ProxyCommands.State.activeDialogs[name] = nil
+    end
+end
+
+local function makeNativeGameDialog(name, titleText, wPx, hPx)
+    closeProxyDialog(name)
+    local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
+    local rootParent = pg or getSafeHui() or CoreGui
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "SYT_GameDialog_" .. name
+    sg.ResetOnSpawn = false
+    sg.DisplayOrder = 10050
+    sg.IgnoreGuiInset = true
+    sg.Parent = rootParent
+
+    local box = Instance.new("Frame", sg)
+    box.Size = UDim2.fromOffset(wPx, hPx)
+    box.AnchorPoint = Vector2.new(0.5, 0.5)
+    box.Position = UDim2.fromScale(0.5, 0.5)
+    box.BackgroundColor3 = Color3.fromRGB(30, 100, 120)
+    box.BorderSizePixel = 0
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
+    local stOuter = Instance.new("UIStroke", box)
+    stOuter.Color = Color3.fromRGB(135, 184, 204)
+    stOuter.Thickness = 3
+
+    local inner = Instance.new("Frame", box)
+    inner.Position = UDim2.fromOffset(6, 6)
+    inner.Size = UDim2.new(1, -12, 1, -12)
+    inner.BackgroundColor3 = Color3.fromRGB(16, 46, 58)
+    inner.BorderSizePixel = 0
+    Instance.new("UICorner", inner).CornerRadius = UDim.new(0, 6)
+    local stInner = Instance.new("UIStroke", inner)
+    stInner.Color = Color3.fromRGB(4, 8, 10)
+    stInner.Thickness = 1.5
+
+    local hdr = Instance.new("TextLabel", inner)
+    hdr.Size = UDim2.new(1, -80, 0, 32)
+    hdr.Position = UDim2.fromOffset(12, 6)
+    hdr.BackgroundTransparency = 1
+    hdr.Font = Enum.Font.GothamBold
+    hdr.TextSize = 16
+    hdr.TextXAlignment = Enum.TextXAlignment.Left
+    hdr.TextColor3 = Color3.fromRGB(255, 230, 180)
+    hdr.Text = titleText
+
+    local closeBtn = Instance.new("TextButton", inner)
+    closeBtn.Size = UDim2.fromOffset(64, 26)
+    closeBtn.Position = UDim2.new(1, -72, 0, 8)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(196, 40, 40)
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 12
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Text = "CLOSE"
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 5)
+    closeBtn.MouseButton1Click:Connect(function()
+        closeProxyDialog(name)
+    end)
+
+    ProxyCommands.State.activeDialogs[name] = sg
+    return sg, inner
+end
+
+-- Overhead Tag Popup (muncul di atas kepala player / NameTag, TIDAK menimpa layar kita jika player tidak terlihat)
+local function showOverheadTagPopup(userId, tagText, borderColor)
+    local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
+    local gg = pg and pg:FindFirstChild("GameGui")
+    if not gg then return end
+
+    local anchorFrame = nil
+    if LP and userId == LP.UserId then
+        anchorFrame = findNameTag()
+    elseif H.others and type(H.others.tagOf) == "function" then
+        local ok, nt = pcall(H.others.tagOf, userId)
+        if ok and typeof(nt) == "Instance" then anchorFrame = nt end
+    end
+    if not anchorFrame or not anchorFrame.Parent then return end
+
+    local old = anchorFrame:FindFirstChild("SYT_RemeOverhead")
+    if old then old:Destroy() end
+
+    local pill = Instance.new("Frame", anchorFrame)
+    pill.Name = "SYT_RemeOverhead"
+    pill.AutomaticSize = Enum.AutomaticSize.X
+    pill.Size = UDim2.fromOffset(120, 22)
+    pill.AnchorPoint = Vector2.new(0.5, 1)
+    pill.Position = UDim2.new(0.5, 0, 0, -6)
+    pill.BackgroundColor3 = Color3.fromRGB(20, 42, 54)
+    pill.ZIndex = (anchorFrame.ZIndex or 10) + 10
+    Instance.new("UICorner", pill).CornerRadius = UDim.new(0, 5)
+    local st = Instance.new("UIStroke", pill)
+    st.Color = borderColor or Color3.fromRGB(80, 255, 140)
+    st.Thickness = 1.6
+
+    local lbl = Instance.new("TextLabel", pill)
+    lbl.AutomaticSize = Enum.AutomaticSize.X
+    lbl.Size = UDim2.fromScale(0, 1)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 11
+    lbl.TextColor3 = Color3.new(1, 1, 1)
+    lbl.Text = "  " .. tagText .. "  "
+    lbl.ZIndex = pill.ZIndex + 1
+
+    task.delay(4.5, function()
+        if pill and pill.Parent then pcall(function() pill:Destroy() end) end
     end)
 end
 
-local function handleProxyCommand(cmd, args, senderName)
-    local lp = LP or Players.LocalPlayer
-    local myName = lp and lp.DisplayName or ""
-    -- Hanya respon ke owner (diri sendiri atau nama cocok)
-    if senderName and senderName ~= "" and senderName ~= myName then return end
+-- Dialog 1: /CLOTHES (3-Column Character Edit: Left Filter Categories, Center Player Preview + Preset, Right Searchable Clothes List + Sprite + Effects, Remove Wings Double Jump)
+function ProxyCommands.OpenClothesDialog()
+    Core.EnsureInit()
+    local _, inner = makeNativeGameDialog("Clothes", "Character Edit - Wardrobe (/clothes)", 700, 420)
+    local selectedCat = "all"
+    local searchQ = ""
 
-    if cmd == "reme" then
-        -- Fast roulette (spin wheel)
-        Misc.SetFastRoulette(true)
-        task.delay(2, function() Misc.SetFastRoulette(false) end)
-        proxyReply("[SYT] Fast Roulette ON 2s")
+    -- Left Column: Slot Category Shortcuts
+    local leftCol = Instance.new("ScrollingFrame", inner)
+    leftCol.Position = UDim2.fromOffset(10, 44)
+    leftCol.Size = UDim2.fromOffset(115, 354)
+    leftCol.BackgroundColor3 = Color3.fromRGB(20, 66, 84)
+    leftCol.BorderSizePixel = 0
+    leftCol.ScrollBarThickness = 4
+    leftCol.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    leftCol.CanvasSize = UDim2.new()
+    Instance.new("UICorner", leftCol).CornerRadius = UDim.new(0, 6)
+    local lLayout = Instance.new("UIListLayout", leftCol)
+    lLayout.Padding = UDim.new(0, 4)
 
-    elseif cmd == "clothes" then
-        -- Toggle visual outfit editor notification
-        proxyReply("[SYT] /clothes: Gunakan GUI Visual tab untuk edit outfit")
+    -- Center Column: Player Icon Preview + Preset Save/Load
+    local midCol = Instance.new("Frame", inner)
+    midCol.Position = UDim2.fromOffset(132, 44)
+    midCol.Size = UDim2.fromOffset(200, 354)
+    midCol.BackgroundColor3 = Color3.fromRGB(20, 66, 84)
+    midCol.BorderSizePixel = 0
+    Instance.new("UICorner", midCol).CornerRadius = UDim.new(0, 6)
 
-    elseif cmd == "set" and args[1] == "b" then
-        -- /set b 1 atau /set b 2 -> set block PNB ke slot 1 atau 2
-        local slot = tonumber(args[2]) or 1
-        proxyReply("[SYT] /set b" .. tostring(slot) .. " -> Block slot diatur via GUI PNB")
+    local avatarBox = Instance.new("Frame", midCol)
+    avatarBox.Size = UDim2.fromOffset(140, 160)
+    avatarBox.Position = UDim2.new(0.5, -70, 0, 12)
+    avatarBox.BackgroundColor3 = Color3.fromRGB(12, 34, 46)
+    Instance.new("UICorner", avatarBox).CornerRadius = UDim.new(0, 6)
 
-    elseif cmd == "lock" and args[1] == "t" then
-        local t = args[2] or "1"
-        proxyReply("[SYT] /lock t" .. t .. " -> Lock tile via Visual tab")
+    local previewGrid = Instance.new("Frame", avatarBox)
+    previewGrid.Size = UDim2.new(1, -12, 1, -30)
+    previewGrid.Position = UDim2.fromOffset(6, 6)
+    previewGrid.BackgroundTransparency = 1
+    local pgLayout = Instance.new("UIGridLayout", previewGrid)
+    pgLayout.CellSize = UDim2.fromOffset(38, 38)
+    pgLayout.CellPadding = UDim2.fromOffset(4, 4)
 
-    elseif cmd == "cal" then
-        -- Info kalkulasi gems/jam
-        local gems = H.gt and type(H.gt.gems) == "number" and H.gt.gems or 0
-        proxyReply(string.format("[SYT] Gems saat ini: %d", gems))
+    local pNameLbl = Instance.new("TextLabel", avatarBox)
+    pNameLbl.Size = UDim2.new(1, -8, 0, 20)
+    pNameLbl.Position = UDim2.new(0, 4, 1, -22)
+    pNameLbl.BackgroundTransparency = 1
+    pNameLbl.Font = Enum.Font.GothamBold
+    pNameLbl.TextSize = 11
+    pNameLbl.TextColor3 = Color3.fromRGB(255, 230, 180)
+    pNameLbl.Text = Core.GetInGameName(LP, true)
 
-    elseif cmd == "set" and args[1] == "tax" then
-        proxyReply("[SYT] /set tax -> Atur via GUI System tab")
-
-    elseif cmd == "info" then
-        -- Host BJ info
-        local players = Core.GetInWorldPlayers(true)
-        local hosts = {}
-        for _, p in ipairs(players) do
-            if p.isStaff or (p.role and string.lower(p.role):find("host")) then
-                table.insert(hosts, p.gameName)
+    local function rebuildMidPreview()
+        for _, ch in ipairs(previewGrid:GetChildren()) do
+            if not ch:IsA("UIGridLayout") then ch:Destroy() end
+        end
+        local wt = H.wornTbl or {}
+        for _, sl in ipairs({ "hat", "hair", "face", "shirt", "back", "hand", "pants", "feet" }) do
+            local id = Visual.State.fakeWorn[sl]
+            if id == nil then id = wt[sl] end
+            local slotF = Instance.new("Frame", previewGrid)
+            slotF.BackgroundColor3 = Color3.fromRGB(28, 52, 58)
+            Instance.new("UICorner", slotF).CornerRadius = UDim.new(0, 4)
+            if type(id) == "number" and id > 0 then
+                Core.AttachItemSprite(slotF, id, 30)
+            else
+                local slbl = Instance.new("TextLabel", slotF)
+                slbl.Size = UDim2.fromScale(1, 1)
+                slbl.BackgroundTransparency = 1
+                slbl.Font = Enum.Font.Code
+                slbl.TextSize = 8
+                slbl.TextColor3 = Color3.fromRGB(160, 190, 205)
+                slbl.Text = sl:upper()
             end
         end
-        proxyReply("[SYT] Host/BJ: " .. (#hosts > 0 and table.concat(hosts, ", ") or "Tidak ada"))
-
-    elseif cmd == "get" then
-        -- IP info (hanya tampil di UI, tidak dikirim ke orang lain)
-        proxyReply("[SYT] /get -> IP hanya ditampilkan di GUI lokal")
-
-    elseif cmd == "cn" then
-        -- Role/name info
-        proxyReply("[SYT] /cn -> Custom name via Visual tab")
-
-    elseif cmd == "news" then
-        proxyReply("[SYT] DRY CURSED " .. (getEnv().__SYT_VERSION or "v1.0") .. " | 2-Tab Farm+Tools")
     end
+
+    local presetDropBtn = Instance.new("TextButton", midCol)
+    presetDropBtn.Size = UDim2.new(1, -16, 0, 28)
+    presetDropBtn.Position = UDim2.fromOffset(8, 184)
+    presetDropBtn.BackgroundColor3 = Color3.fromRGB(39, 125, 159)
+    presetDropBtn.Font = Enum.Font.GothamBold
+    presetDropBtn.TextSize = 11
+    presetDropBtn.TextColor3 = Color3.new(1, 1, 1)
+    presetDropBtn.Text = "Preset: Default / Save"
+    Instance.new("UICorner", presetDropBtn).CornerRadius = UDim.new(0, 5)
+
+    local saveBtn = Instance.new("TextButton", midCol)
+    saveBtn.Size = UDim2.new(0.5, -10, 0, 28)
+    saveBtn.Position = UDim2.fromOffset(8, 220)
+    saveBtn.BackgroundColor3 = Color3.fromRGB(64, 186, 84)
+    saveBtn.Font = Enum.Font.GothamBold
+    saveBtn.TextSize = 11
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.Text = "SAVE SET"
+    Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 5)
+
+    local loadBtn = Instance.new("TextButton", midCol)
+    loadBtn.Size = UDim2.new(0.5, -10, 0, 28)
+    loadBtn.Position = UDim2.new(0.5, 2, 0, 220)
+    loadBtn.BackgroundColor3 = Color3.fromRGB(140, 180, 192)
+    loadBtn.Font = Enum.Font.GothamBold
+    loadBtn.TextSize = 11
+    loadBtn.TextColor3 = Color3.fromRGB(10, 20, 28)
+    loadBtn.Text = "LOAD SET"
+    Instance.new("UICorner", loadBtn).CornerRadius = UDim.new(0, 5)
+
+    local clearBtn = Instance.new("TextButton", midCol)
+    clearBtn.Size = UDim2.new(1, -16, 0, 28)
+    clearBtn.Position = UDim2.fromOffset(8, 256)
+    clearBtn.BackgroundColor3 = Color3.fromRGB(180, 70, 70)
+    clearBtn.Font = Enum.Font.GothamBold
+    clearBtn.TextSize = 11
+    clearBtn.TextColor3 = Color3.new(1, 1, 1)
+    clearBtn.Text = "RESET OUTFIT REAL"
+    Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0, 5)
+
+    local wingsNote = Instance.new("TextLabel", midCol)
+    wingsNote.Size = UDim2.new(1, -16, 0, 52)
+    wingsNote.Position = UDim2.fromOffset(8, 292)
+    wingsNote.BackgroundTransparency = 1
+    wingsNote.Font = Enum.Font.Gotham
+    wingsNote.TextSize = 10
+    wingsNote.TextWrapped = true
+    wingsNote.TextColor3 = Color3.fromRGB(200, 225, 235)
+    wingsNote.Text = "Efek visual aktif. Double-jump wings otomatis dinonaktifkan untuk keamanan."
+
+    saveBtn.MouseButton1Click:Connect(function()
+        local pairsList = {}
+        for sl, id in pairs(Visual.State.fakeWorn) do
+            pairsList[#pairsList + 1] = tostring(sl) .. "=" .. tostring(id)
+        end
+        safeWriteStorage("syt_clothes_preset.txt", table.concat(pairsList, ";"))
+        proxyConsole("`2[Clothes] Preset outfit disimpan!``")
+    end)
+
+    loadBtn.MouseButton1Click:Connect(function()
+        local raw = safeReadStorage("syt_clothes_preset.txt")
+        if raw and raw ~= "" then
+            Visual.State.fakeWorn = {}
+            for pair in raw:gmatch("[^;]+") do
+                local sl, id = pair:match("([^=]+)=(%d+)")
+                if sl and id then Visual.State.fakeWorn[sl] = tonumber(id) end
+            end
+            H._stripWingDoubleJump = true
+            Visual.ApplyOutfit()
+            rebuildMidPreview()
+            proxyConsole("`2[Clothes] Preset outfit dimuat!``")
+        else
+            proxyConsole("`o[Clothes] Belum ada preset tersimpan.``")
+        end
+    end)
+
+    clearBtn.MouseButton1Click:Connect(function()
+        Visual.State.fakeWorn = {}
+        H._stripWingDoubleJump = false
+        Visual.ApplyOutfit()
+        rebuildMidPreview()
+        proxyConsole("`2[Clothes] Outfit dikembalikan ke asli.``")
+    end)
+
+    -- Right Column: Search Box + Scrollable Clothes List
+    local rightCol = Instance.new("Frame", inner)
+    rightCol.Position = UDim2.fromOffset(340, 44)
+    rightCol.Size = UDim2.fromOffset(338, 354)
+    rightCol.BackgroundColor3 = Color3.fromRGB(20, 66, 84)
+    rightCol.BorderSizePixel = 0
+    Instance.new("UICorner", rightCol).CornerRadius = UDim.new(0, 6)
+
+    local searchBox = Instance.new("TextBox", rightCol)
+    searchBox.Size = UDim2.new(1, -16, 0, 28)
+    searchBox.Position = UDim2.fromOffset(8, 8)
+    searchBox.BackgroundColor3 = Color3.fromRGB(12, 34, 46)
+    searchBox.Font = Enum.Font.Gotham
+    searchBox.TextSize = 12
+    searchBox.TextColor3 = Color3.new(1, 1, 1)
+    searchBox.PlaceholderText = "Search clothes name or ID..."
+    searchBox.Text = ""
+    searchBox.ClearTextOnFocus = false
+    Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 5)
+
+    local itemScroll = Instance.new("ScrollingFrame", rightCol)
+    itemScroll.Position = UDim2.fromOffset(8, 42)
+    itemScroll.Size = UDim2.new(1, -16, 1, -50)
+    itemScroll.BackgroundColor3 = Color3.fromRGB(14, 38, 48)
+    itemScroll.BorderSizePixel = 0
+    itemScroll.ScrollBarThickness = 5
+    itemScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    itemScroll.CanvasSize = UDim2.new()
+    local rLayout = Instance.new("UIListLayout", itemScroll)
+    rLayout.Padding = UDim.new(0, 4)
+
+    local function rebuildItems()
+        for _, ch in ipairs(itemScroll:GetChildren()) do
+            if not ch:IsA("UIListLayout") then ch:Destroy() end
+        end
+        local db = H.ItemDB
+        if type(db) ~= "table" then return end
+        local q = string.lower(searchQ or "")
+        local list = {}
+        for id, info in pairs(db) do
+            if type(id) == "number" and type(info) == "table" and info.kind == "cloth" and type(info.name) == "string" then
+                if selectedCat == "all" or info.slot == selectedCat then
+                    if q == "" or string.find(string.lower(info.name), q, 1, true) or string.find(tostring(id), q, 1, true) then
+                        list[#list + 1] = { id = id, info = info }
+                    end
+                end
+            end
+        end
+        table.sort(list, function(a, b) return a.id < b.id end)
+        for i = 1, math.min(#list, 120) do
+            local entry = list[i]
+            local row = Instance.new("TextButton", itemScroll)
+            row.Size = UDim2.new(1, -8, 0, 38)
+            row.BackgroundColor3 = Color3.fromRGB(28, 52, 58)
+            row.BorderSizePixel = 0
+            row.Text = ""
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 5)
+            local iconF = Instance.new("Frame", row)
+            iconF.Size = UDim2.fromOffset(30, 30)
+            iconF.Position = UDim2.fromOffset(4, 4)
+            iconF.BackgroundTransparency = 1
+            Core.AttachItemSprite(iconF, entry.id, 28)
+
+            local fxHint = ""
+            if entry.info.speed then fxHint = " [Speed]" end
+            if entry.info.punchRange then fxHint = fxHint .. " [Reach]" end
+            local txtLbl = Instance.new("TextLabel", row)
+            txtLbl.Size = UDim2.new(1, -44, 1, 0)
+            txtLbl.Position = UDim2.fromOffset(40, 0)
+            txtLbl.BackgroundTransparency = 1
+            txtLbl.Font = Enum.Font.GothamBold
+            txtLbl.TextSize = 11
+            txtLbl.TextXAlignment = Enum.TextXAlignment.Left
+            txtLbl.TextColor3 = Color3.new(1, 1, 1)
+            txtLbl.Text = string.format("[%s] %s (#%d)%s", tostring(entry.info.slot or "?"):upper(), entry.info.name, entry.id, fxHint)
+
+            row.MouseButton1Click:Connect(function()
+                local sl = entry.info.slot or "back"
+                Visual.State.fakeWorn[sl] = entry.id
+                -- Ilangkan double jump semua wings
+                H._stripWingDoubleJump = true
+                Visual.ApplyOutfit()
+                rebuildMidPreview()
+            end)
+        end
+    end
+
+    local cats = {
+        { key = "all", label = "ALL" }, { key = "hat", label = "HAT / KEPALA" },
+        { key = "hair", label = "HAIR" }, { key = "face", label = "FACE" },
+        { key = "shirt", label = "SHIRT / BADAN" }, { key = "pants", label = "PANTS" },
+        { key = "feet", label = "FEET / KAKI" }, { key = "back", label = "BACK / WINGS" },
+        { key = "hand", label = "HAND" }, { key = "neck", label = "NECK / CHEST" },
+    }
+    for _, c in ipairs(cats) do
+        local cb = Instance.new("TextButton", leftCol)
+        cb.Size = UDim2.new(1, -8, 0, 28)
+        cb.BackgroundColor3 = Color3.fromRGB(39, 125, 159)
+        cb.Font = Enum.Font.GothamBold
+        cb.TextSize = 10
+        cb.TextColor3 = Color3.new(1, 1, 1)
+        cb.Text = c.label
+        Instance.new("UICorner", cb).CornerRadius = UDim.new(0, 4)
+        cb.MouseButton1Click:Connect(function()
+            selectedCat = c.key
+            rebuildItems()
+        end)
+    end
+
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        searchQ = searchBox.Text
+        rebuildItems()
+    end)
+
+    rebuildMidPreview()
+    rebuildItems()
+end
+
+-- Dialog 2: /CN (Set Role & Name with Close + Apply across Profile & Game UI)
+function ProxyCommands.OpenCnDialog()
+    Core.EnsureInit()
+    local _, inner = makeNativeGameDialog("SetRoleName", "Custom Name & Role (/cn)", 420, 360)
+
+    local nameLbl = Instance.new("TextLabel", inner)
+    nameLbl.Position = UDim2.fromOffset(12, 46)
+    nameLbl.Size = UDim2.new(1, -24, 0, 20)
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.Font = Enum.Font.GothamBold
+    nameLbl.TextSize = 12
+    nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+    nameLbl.TextColor3 = Color3.new(1, 1, 1)
+    nameLbl.Text = "Custom Name (kosong = nama asli):"
+
+    local nameInput = Instance.new("TextBox", inner)
+    nameInput.Position = UDim2.fromOffset(12, 68)
+    nameInput.Size = UDim2.new(1, -24, 0, 30)
+    nameInput.BackgroundColor3 = Color3.fromRGB(12, 34, 46)
+    nameInput.Font = Enum.Font.GothamBold
+    nameInput.TextSize = 13
+    nameInput.TextColor3 = Color3.new(1, 1, 1)
+    nameInput.PlaceholderText = "Contoh: REDY"
+    nameInput.Text = Visual.State.customName or ""
+    Instance.new("UICorner", nameInput).CornerRadius = UDim.new(0, 5)
+
+    local rLbl = Instance.new("TextLabel", inner)
+    rLbl.Position = UDim2.fromOffset(12, 106)
+    rLbl.Size = UDim2.new(1, -24, 0, 20)
+    rLbl.BackgroundTransparency = 1
+    rLbl.Font = Enum.Font.GothamBold
+    rLbl.TextSize = 12
+    rLbl.TextXAlignment = Enum.TextXAlignment.Left
+    rLbl.TextColor3 = Color3.new(1, 1, 1)
+    rLbl.Text = "Pilih Role (semua role):"
+
+    local roleScroll = Instance.new("ScrollingFrame", inner)
+    roleScroll.Position = UDim2.fromOffset(12, 130)
+    roleScroll.Size = UDim2.new(1, -24, 0, 155)
+    roleScroll.BackgroundColor3 = Color3.fromRGB(14, 38, 48)
+    roleScroll.ScrollBarThickness = 5
+    roleScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    roleScroll.CanvasSize = UDim2.new()
+    local gLay = Instance.new("UIGridLayout", roleScroll)
+    gLay.CellSize = UDim2.fromOffset(118, 30)
+    gLay.CellPadding = UDim.new(0, 6)
+
+    local chosenRole = Visual.State.role or "none"
+    local roleBtns = {}
+    for _, roleName in ipairs(VISUAL_ROLES) do
+        local rb = Instance.new("TextButton", roleScroll)
+        rb.BackgroundColor3 = (chosenRole == roleName) and Color3.fromRGB(64, 186, 84) or Color3.fromRGB(39, 125, 159)
+        rb.Font = Enum.Font.GothamBold
+        rb.TextSize = 11
+        rb.TextColor3 = Color3.new(1, 1, 1)
+        rb.Text = roleName:upper()
+        Instance.new("UICorner", rb).CornerRadius = UDim.new(0, 4)
+        roleBtns[roleName] = rb
+        rb.MouseButton1Click:Connect(function()
+            chosenRole = roleName
+            for rn, btn in pairs(roleBtns) do
+                btn.BackgroundColor3 = (rn == chosenRole) and Color3.fromRGB(64, 186, 84) or Color3.fromRGB(39, 125, 159)
+            end
+        end)
+    end
+
+    local applyBtn = Instance.new("TextButton", inner)
+    applyBtn.Position = UDim2.new(0, 12, 1, -44)
+    applyBtn.Size = UDim2.new(0.5, -16, 0, 32)
+    applyBtn.BackgroundColor3 = Color3.fromRGB(64, 186, 84)
+    applyBtn.Font = Enum.Font.GothamBold
+    applyBtn.TextSize = 13
+    applyBtn.TextColor3 = Color3.new(1, 1, 1)
+    applyBtn.Text = "APPLY NAME & ROLE"
+    Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0, 6)
+    applyBtn.MouseButton1Click:Connect(function()
+        Visual.State.customName = (nameInput.Text or ""):match("^%s*(.-)%s*$")
+        Visual.State.role = chosenRole
+        Visual.State.lockNames = true
+        -- Tambahkan efek animasi nama otomatis sesuai role bila user tidak memilih effect lain
+        if chosenRole == "supporter" then Visual.State.effect = "Supporter Wave"
+        elseif chosenRole == "sponsor" then Visual.State.effect = "Sponsor Sparkle"
+        elseif chosenRole == "legend" then Visual.State.effect = "Legend Gold"
+        elseif chosenRole == "royal" then Visual.State.effect = "Royal Pulse"
+        end
+        Visual.Apply()
+        -- Update atribut nama & GameGui player labels juga
+        if LP then pcall(function() LP:SetAttribute("GameName", Visual.State.customName ~= "" and Visual.State.customName or Visual.State.origGameName) end) end
+        proxyConsole(string.format("`2[CN] Nama='%s' | Role='%s' diterapkan ke tag & profil!``", Visual.State.customName ~= "" and Visual.State.customName or Core.GetInGameName(LP, true), chosenRole))
+    end)
+
+    local resetBtn = Instance.new("TextButton", inner)
+    resetBtn.Position = UDim2.new(0.5, 4, 1, -44)
+    resetBtn.Size = UDim2.new(0.5, -16, 0, 32)
+    resetBtn.BackgroundColor3 = Color3.fromRGB(140, 180, 192)
+    resetBtn.Font = Enum.Font.GothamBold
+    resetBtn.TextSize = 13
+    resetBtn.TextColor3 = Color3.fromRGB(10, 20, 28)
+    resetBtn.Text = "RESTORE REAL"
+    Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 6)
+    resetBtn.MouseButton1Click:Connect(function()
+        Visual.Restore()
+        nameInput.Text = ""
+        chosenRole = "none"
+        proxyConsole("`2[CN] Nama & Role dipulihkan ke asli.``")
+    end)
+end
+
+-- Dialog 3: /NEWS (Changelog & Full Command List)
+function ProxyCommands.OpenNewsDialog()
+    local _, inner = makeNativeGameDialog("News", "SYT Proxy News & Commands (/news)", 480, 380)
+    local sc = Instance.new("ScrollingFrame", inner)
+    sc.Position = UDim2.fromOffset(10, 44)
+    sc.Size = UDim2.new(1, -20, 1, -54)
+    sc.BackgroundColor3 = Color3.fromRGB(14, 38, 48)
+    sc.ScrollBarThickness = 5
+    sc.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    sc.CanvasSize = UDim2.new()
+    local lbl = Instance.new("TextLabel", sc)
+    lbl.Size = UDim2.new(1, -16, 0, 0)
+    lbl.Position = UDim2.fromOffset(8, 6)
+    lbl.AutomaticSize = Enum.AutomaticSize.Y
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.Code
+    lbl.TextSize = 12
+    lbl.TextWrapped = true
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextYAlignment = Enum.TextYAlignment.Top
+    lbl.TextColor3 = Color3.new(1, 1, 1)
+    lbl.Text = table.concat({
+        "[ + ] SYSTEM: Anti-Kick Freeze/Leave default ON, Player/Mod Join Log & Auto Leveling L10",
+        "[ + ] MISC: Visual Ghost/NoClip, Bounded Fly (+5 Up, +-4 X), Zoom 2.5x, Skip Update, Slow Fall 2x",
+        "[ + ] SPAM: Random Rainbow Word / Prefix Color (3-7s)",
+        "[ + ] PNB: 5x5 Pad, Backpack Card Grid, World Storage Block/Safe, Auto Buy 5x Gems",
+        "[ + ] PABRIK: Rendered Plantable Dirt Selector + Harvest & Break Loop",
+        "[ + ] DIRT FARM & CLEAR WORLD: FIFO Queue + Lava Safe Zigzag",
+        "[ + ] MOVE BLOCK: Set Take/Drop + Walk & Drop loop",
+        "[ + ] DISCORD HOOK: POST -> PATCH Embed + Saved Message ID",
+        "",
+        "-- COMMAND ---",
+        "/p2p off | /p2p on : Toggle P2P client visual sync",
+        "/reme              : Toggle Fast Roulette ([REAL]/[FAKE] di atas kepala)",
+        "/clothes           : Buka Dialog Character Edit Outfit (+ efek visual)",
+        "/set b 1 /set b 2  : Set posisi Break Player 1 & Player 2 (Host BJ)",
+        "/lock t 1 /lock t 2: Set posisi Drop Lock Player 1 & Player 2 (Host BJ)",
+        "/set tax <0-100>   : Atur pajak Host BJ (%)",
+        "/info              : Cek koordinat B1, B2, T1, T2 & TAX",
+        "/cal               : Hitung gems B1 & B2 (+2s), ambil lock & drop pemenang",
+        "/get               : Tampilkan IP asli di Console",
+        "/cn                : Buka Dialog Set Role & Custom Name",
+        "/news              : Buka dialog News & Command ini",
+    }, "\n")
+end
+
+-- Host BJ /cal Execution
+function ProxyCommands.RunHostBjCalculate()
+    local bj = ProxyCommands.State.bj
+    if bj.running then proxyConsole("`4[BJ] Kalkulasi sedang berjalan!``"); return end
+    if not bj.b1 or not bj.b2 or not bj.t1 or not bj.t2 then
+        proxyConsole("`4[BJ] Set semua posisi dulu (/set b 1, /set b 2, /lock t 1, /lock t 2)!``")
+        return
+    end
+    bj.running = true
+    task.spawn(function()
+        local function alive() return bj.running end
+        local function countGemsAroundB(pos)
+            Packets.WalkTeleport({ tx = pos.x, ty = pos.y, mode = "walk" })
+            task.wait(0.25)
+            local before = Core.ReadGems()
+            -- Radius kecil (1.15) agar akurat dan tidak terambil ke kotak lawan
+            Packets.Collect({ radius = 1.15, filterId = 112, stepMoveIfFar = false, preferWalk = true, collectDelay = 0.05, shouldContinue = alive })
+            task.wait(0.30)
+            return math.max(0, Core.ReadGems() - before)
+        end
+
+        local g1 = countGemsAroundB(bj.b1)
+        Packets.SendChat({ message = string.format("[ + %d ]", g1), maxLength = 85 })
+        task.wait(2.0)
+
+        local g2 = countGemsAroundB(bj.b2)
+        Packets.SendChat({ message = string.format("[ + %d ]", g2), maxLength = 85 })
+        task.wait(0.8)
+
+        -- Cek gems paling besar, lalu kumpulkan Lock dari T1 dan T2
+        local winPos = (g1 >= g2) and bj.t1 or bj.t2
+        local winnerLabel = (g1 >= g2) and "P1" or "P2"
+        local beforeWL = Core.CountItem(242)
+        local beforeDL = Core.CountItem(1796)
+        Packets.WalkTeleport({ tx = bj.t1.x, ty = bj.t1.y, mode = "walk" })
+        Packets.Collect({ radius = 1.4, stepMoveIfFar = false, preferWalk = true, collectDelay = 0.05, shouldContinue = alive })
+        task.wait(0.3)
+        Packets.WalkTeleport({ tx = bj.t2.x, ty = bj.t2.y, mode = "walk" })
+        Packets.Collect({ radius = 1.4, stepMoveIfFar = false, preferWalk = true, collectDelay = 0.05, shouldContinue = alive })
+        task.wait(0.3)
+
+        local totalWL = math.max(0, (Core.CountItem(242) - beforeWL)) + math.max(0, (Core.CountItem(1796) - beforeDL)) * 100
+        local payoutWL = math.floor(totalWL * (100 - clamp(bj.tax or 0, 0, 100)) / 100)
+        Packets.WalkTeleport({ tx = winPos.x, ty = winPos.y, mode = "walk" })
+        task.wait(0.25)
+        if payoutWL >= 100 and Core.CountItem(1796) > 0 then
+            local dls = math.min(Core.CountItem(1796), math.floor(payoutWL / 100))
+            if dls > 0 then Packets.Drop(1796, dls); payoutWL = payoutWL - dls * 100 end
+        end
+        if payoutWL > 0 and Core.CountItem(242) > 0 then
+            Packets.Drop(242, math.min(Core.CountItem(242), payoutWL))
+        end
+        proxyConsole(string.format("`2[BJ] %s WIN (%d vs %d) | Total:%d WL | Tax:%d%% | Drop:%d WL``", winnerLabel, g1, g2, totalWL, bj.tax or 0, math.floor(totalWL * (100 - (bj.tax or 0)) / 100)))
+        bj.running = false
+    end)
+end
+
+local function handleProxyCommand(rawText, senderName)
+    local lp = LP or Players.LocalPlayer
+    local myName = lp and lp.DisplayName or ""
+    local myAccount = lp and lp.Name or ""
+    if senderName and senderName ~= "" and senderName ~= myName and senderName ~= myAccount then
+        -- Deteksi [FAKE] Roulette jika player lain mengetik hasil roulette di chat
+        if ProxyCommands.State.remeEnabled then
+            local numHit = rawText:match("spun the wheel and got[^%d]*(%d+)") or rawText:match("GET NUMBER%s+(%d+)")
+            if numHit then
+                local n = tonumber(numHit)
+                if n and n >= 0 and n <= 36 then
+                    local uid = nil
+                    for _, p in ipairs(Core.GetInWorldPlayers(true)) do
+                        if p.gameName == senderName then uid = p.userId; break end
+                    end
+                    local recentReal = uid and ProxyCommands.State.lastRealWheelByUser[uid]
+                    if uid and (not recentReal or (os.clock() - recentReal) > 2.0) then
+                        showOverheadTagPopup(uid, string.format("[ FAKE ] %s GET NUMBER %d", senderName, n), Color3.fromRGB(239, 68, 68))
+                    end
+                end
+            end
+        end
+        return false
+    end
+
+    if rawText:sub(1, 1) ~= "/" then return false end
+    local parts = {}
+    for w in rawText:gmatch("%S+") do parts[#parts + 1] = w end
+    local cmd = parts[1] and parts[1]:sub(2):lower() or ""
+    local a1 = parts[2] and parts[2]:lower() or ""
+    local a2 = parts[3] and parts[3]:lower() or ""
+
+    if cmd == "p2p" then
+        if a1 == "off" then
+            ProxyCommands.State.p2pEnabled = false
+            ProxyCommands.State.p2pLive = false
+            proxyConsole("`4[Proxy P2P] OFF``")
+        else
+            ProxyCommands.State.p2pEnabled = true
+            ProxyCommands.State.p2pLive = (#Core.GetInWorldPlayers(false) > 0)
+            proxyConsole("`2[Proxy P2P] ON``")
+        end
+        return true
+    elseif cmd == "reme" then
+        ProxyCommands.State.remeEnabled = not ProxyCommands.State.remeEnabled
+        Misc.SetFastRoulette(ProxyCommands.State.remeEnabled)
+        proxyConsole(ProxyCommands.State.remeEnabled and "`2[Proxy /reme] ON (Fast Roulette)``" or "`4[Proxy /reme] OFF``")
+        return true
+    elseif cmd == "clothes" then
+        task.spawn(ProxyCommands.OpenClothesDialog)
+        return true
+    elseif cmd == "set" and a1 == "b" and (a2 == "1" or a2 == "2") then
+        local pos = Core.ReadPos()
+        ProxyCommands.State.bj["b" .. a2] = { x = pos.tx, y = pos.ty }
+        proxyConsole(string.format("`2[Host BJ] B%s set -> (%d, %d)``", a2, pos.tx, pos.ty))
+        return true
+    elseif cmd == "lock" and a1 == "t" and (a2 == "1" or a2 == "2") then
+        local pos = Core.ReadPos()
+        ProxyCommands.State.bj["t" .. a2] = { x = pos.tx, y = pos.ty }
+        proxyConsole(string.format("`2[Host BJ] T%s set -> (%d, %d)``", a2, pos.tx, pos.ty))
+        return true
+    elseif cmd == "set" and a1 == "tax" then
+        local txPct = clamp(tonumber(a2) or 0, 0, 100)
+        ProxyCommands.State.bj.tax = math.floor(txPct)
+        proxyConsole(string.format("`2[Host BJ] TAX set -> %d%%``", ProxyCommands.State.bj.tax))
+        return true
+    elseif cmd == "info" then
+        local bj = ProxyCommands.State.bj
+        local fmt = function(p) return p and string.format("(%d,%d)", p.x, p.y) or "UNSET" end
+        proxyConsole(string.format("`9[Host BJ Info] B1:%s | B2:%s | T1:%s | T2:%s | TAX:%d%%``", fmt(bj.b1), fmt(bj.b2), fmt(bj.t1), fmt(bj.t2), bj.tax or 0))
+        return true
+    elseif cmd == "cal" then
+        ProxyCommands.RunHostBjCalculate()
+        return true
+    elseif cmd == "get" then
+        local ip = H._cachedIp
+        if not ip or ip == "" then
+            local ok, res = pcall(function() return game:HttpGet("https://api.ipify.org", true) end)
+            ip = (ok and type(res) == "string" and #res < 64) and (res):match("^%s*(.-)%s*$") or "Unavailable"
+            H._cachedIp = ip
+        end
+        proxyConsole(string.format("`2 YOUR'E IP IS %s ``", ip))
+        return true
+    elseif cmd == "cn" then
+        task.spawn(ProxyCommands.OpenCnDialog)
+        return true
+    elseif cmd == "news" then
+        task.spawn(ProxyCommands.OpenNewsDialog)
+        return true
+    end
+    return false
 end
 
 function ProxyCommands.Install()
-    if _proxyHookConn then pcall(function() _proxyHookConn:Disconnect() end) end
-    _proxyHookConn = nil
-    -- Hook TextChatService jika tersedia
-    local ok, TCS = pcall(game.GetService, game, "TextChatService")
-    if ok and TCS then
-        local okCh, ch = pcall(function()
-            return TCS:FindFirstChildOfClass("TextChannel") or TCS.RootChannel
-        end)
-        if okCh and ch then
-            _proxyHookConn = ch.MessageReceived:Connect(function(msg)
-                local text = msg and msg.Text or ""
-                local sender = msg and msg.TextSource and msg.TextSource.Name or ""
-                if text:sub(1,1) == "/" then
-                    local parts = {}
-                    for p in text:gmatch("%S+") do table.insert(parts, p) end
-                    local cmd = parts[1] and parts[1]:sub(2):lower() or ""
-                    local args = {}
-                    for i = 2, #parts do args[#args+1] = parts[i] end
-                    handleProxyCommand(cmd, args, sender)
+    if H._proxyWheelConn then pcall(function() H._proxyWheelConn:Disconnect() end) end
+    -- Hook ByteNet wheelSpun untuk menampilkan [ REAL ] popup di atas kepala roller saat /reme ON
+    if H.Net and H.Net.wheelSpun and type(H.Net.wheelSpun.listen) == "function" and not H._proxyWheelHooked then
+        H._proxyWheelHooked = true
+        pcall(function()
+            H.Net.wheelSpun.listen(function(pkt)
+                if type(pkt) ~= "table" or not ProxyCommands.State.remeEnabled then return end
+                local n = tonumber(pkt.n)
+                local uid = pkt.userId
+                local nm = stripColorTags(tostring(pkt.name or "Player"))
+                if uid then ProxyCommands.State.lastRealWheelByUser[uid] = os.clock() end
+                if n and n >= 0 and n <= 36 then
+                    showOverheadTagPopup(uid or (LP and LP.UserId), string.format("[ REAL ] %s GET NUMBER %d", nm, n), Color3.fromRGB(34, 197, 94))
                 end
             end)
-        end
+        end)
     end
-    -- Fallback: hook via H.Net.chat jika TCS tidak ada
-    if not _proxyHookConn and H.Net and H.Net.chat and type(H.Net.chat.OnClientEvent) == "table" then
-        local ev = H.Net.chat.OnClientEvent
-        if ev then
-            _proxyHookConn = ev:Connect(function(data)
-                local text = type(data) == "table" and (data.msg or data.text or "") or tostring(data)
-                local sender = type(data) == "table" and (data.name or data.gameName or "") or ""
-                if text:sub(1,1) == "/" then
-                    local parts = {}
-                    for p in text:gmatch("%S+") do table.insert(parts, p) end
-                    local cmd = parts[1] and parts[1]:sub(2):lower() or ""
-                    local args = {}
-                    for i = 2, #parts do args[#args+1] = parts[i] end
-                    handleProxyCommand(cmd, args, sender)
-                end
+
+    -- Intercept outgoing slash commands di TextChatService agar dieksekusi Proxy secara visual & privat
+    if not H._proxySendHooked then
+        H._proxySendHooked = true
+        local ok, TCS = pcall(game.GetService, game, "TextChatService")
+        if ok and TCS then
+            local function hookChannel(ch)
+                if not ch or not ch:IsA("TextChannel") or ch:GetAttribute("SYT_Hooked") then return end
+                ch:SetAttribute("SYT_Hooked", true)
+                pcall(function()
+                    local origSend = ch.SendAsync
+                    if type(hookfunction) == "function" then
+                        local oldFn
+                        oldFn = hookfunction(origSend, function(selfCh, msg, ...)
+                            if selfCh == ch and type(msg) == "string" and msg:sub(1, 1) == "/" then
+                                if handleProxyCommand(msg, LP and LP.Name or "") then
+                                    return nil
+                                end
+                            end
+                            return oldFn(selfCh, msg, ...)
+                        end)
+                    end
+                end)
+            end
+            for _, d in ipairs(TCS:GetDescendants()) do
+                if d:IsA("TextChannel") then hookChannel(d) end
+            end
+            TCS.DescendantAdded:Connect(function(d)
+                if d:IsA("TextChannel") then hookChannel(d) end
+            end)
+            pcall(function()
+                TCS.MessageReceived:Connect(function(msg)
+                    local txt = msg and msg.Text or ""
+                    local src = msg and msg.TextSource and msg.TextSource.Name or ""
+                    handleProxyCommand(txt, src)
+                end)
             end)
         end
     end
 end
 
-
 stopAllAutomationImpl = function(reason)
-    PNB.Stop()
-    Pabrik.Stop()
-    DirtFarm.Stop()
-    Spam.Stop()
+    if PNB then PNB.Stop() end
+    if Pabrik then Pabrik.Stop() end
+    if DirtFarm then DirtFarm.Stop() end
+    if ClearWorld then ClearWorld.Stop() end
+    if MoveBlock then MoveBlock.Stop() end
+    if AutoLeveling then AutoLeveling.Stop() end
+    if Spam then Spam.Stop() end
     stopRandomTp()
-    -- DRY CURSED: tambahan modul baru
-    if MoveBlock and MoveBlock.State.running then MoveBlock.Stop() end
-    if AutoLeveling and AutoLeveling.State.running then AutoLeveling.Stop() end
-    if Misc.State.autoFollow then Misc.SetAutoFollow(false) end
-    if Misc.State.autoCollect then Misc.SetAutoCollect(false) end
-    if Misc.State.fly then Misc.SetFly(false) end
-    if Misc.State.noClip then Misc.SetNoClip(false) end
     if reason and reason ~= "" and UI then
-        UI:SetValue("ValidStatusDisplay", reason)
         setPNBStatus(reason)
         setPabrikStatus(reason)
         setDfStatus(reason)
+        setCwStatus(reason)
         setSpamStatus(reason)
-        if UI:SetValue then pcall(UI.SetValue, UI, "MoveBlockStatus", reason) end
-        if UI:SetValue then pcall(UI.SetValue, UI, "AutoLvlStatus", reason) end
+        pcall(UI.SetValue, UI, "MoveBlockStatus", reason)
+        pcall(UI.SetValue, UI, "AutoLvlStatus", reason)
     end
     if UIHooks.updateButtons then UIHooks.updateButtons() end
 end
 SYT_Logic.StopAllAutomation = stopAllAutomationImpl
 
-local function getActiveMenuGui()
+function UIHooks.getActiveMenuGui()
     if UI and UI.ScreenGui and UI.ScreenGui.Parent then return UI.ScreenGui end
     local gEnv = getEnv()
     local activeUi = gEnv and gEnv.__R8_DV_ACTIVE_UI
@@ -10250,527 +12192,277 @@ local function getActiveMenuGui()
     return nil
 end
 
-local function menuIsReady()
-    local sg = getActiveMenuGui()
+function UIHooks.menuIsReady()
+    local sg = UIHooks.getActiveMenuGui()
     if not sg or not sg.Parent then return false end
     if UI and UI.MainWindow and not UI.MainWindow.Parent then return false end
-    -- DRY CURSED: 2 tab (Farm + Tools), threshold diturunkan sesuai
     if not UI or type(UI.Features) ~= "table" or #UI.Features < 2 then return false end
     local okCnt, cnt = pcall(function() return #sg:GetDescendants() end)
     return okCnt and cnt > 20
 end
 
-local function allCanvasesReady()
-    return menuIsReady()
-        and UIHooks.refreshBP ~= nil
-        and UIHooks.refreshPad5x5 ~= nil
-        and UIHooks.refreshPadPab ~= nil
+function UIHooks.allCanvasesReady()
+    return UIHooks.menuIsReady() and UIHooks.refreshBP ~= nil and UIHooks.refreshPad5x5 ~= nil
 end
 
-local function enforceSingleActiveFeatureTab()
+function UIHooks.enforceSingleActiveFeatureTab()
     if not UI then return end
-    if type(UI.SelectFeature) == "function" then
-        pcall(UI.SelectFeature, UI, 1)
-    end
+    if type(UI.SelectFeature) == "function" then pcall(UI.SelectFeature, UI, 1) end
     if type(UI.Features) == "table" then
         for idx, feat in ipairs(UI.Features) do
             if type(feat) == "table" then
                 local isFirst = (idx == 1)
-                if feat.CenterPage and typeof(feat.CenterPage) == "Instance" then
-                    feat.CenterPage.Visible = isFirst
-                end
-                if feat.RightPage and typeof(feat.RightPage) == "Instance" then
-                    feat.RightPage.Visible = isFirst
-                end
+                if feat.CenterPage and typeof(feat.CenterPage) == "Instance" then feat.CenterPage.Visible = isFirst end
+                if feat.RightPage and typeof(feat.RightPage) == "Instance" then feat.RightPage.Visible = isFirst end
             end
         end
     end
-    if type(UI.SyncRightPanelVisibility) == "function" then
-        pcall(UI.SyncRightPanelVisibility, UI)
-    end
-    if type(UI.SyncNavCanvas) == "function" then
-        pcall(UI.SyncNavCanvas)
-    end
+    if type(UI.SyncRightPanelVisibility) == "function" then pcall(UI.SyncRightPanelVisibility, UI) end
+    if type(UI.SyncNavCanvas) == "function" then pcall(UI.SyncNavCanvas) end
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
--- 7. SYT GUI LAYOUT (TERSTRUKTUR: CENTER = KONTROL & CANVAS | RIGHT = AKSI & STATUS)
--- ═══════════════════════════════════════════════════════════════════════════
-local buildMountedCanvasesFn
-
+-- Strict 2-Tab GUI Layout (Tab 1: Farm | Tab 2: Tools) aligned with README.MD
 buildSYTMenuFn = function()
     UIHooks.refreshBP      = nil
+    UIHooks.refreshPabBP   = nil
     UIHooks.refreshPad5x5  = nil
-    UIHooks.refreshPadPab  = nil
+    UIHooks.refreshMap     = nil
+    UIHooks.refreshDfList  = nil
+    UIHooks.refreshCwList  = nil
+    UIHooks.refreshSysLog  = nil
     UIHooks.sidebarNameLbl = nil
     UIHooks.sidebarSubLbl  = nil
 
-    local okAcc, accName = pcall(Core.GetInGameName, LP, true)
-    accName = (okAcc and type(accName) == "string" and accName ~= "") and accName or (LP and LP.DisplayName) or "-"
+    local autoBuyOptions = { "OFF" }
+    for _, o in ipairs(STORE_OFFERS) do
+        autoBuyOptions[#autoBuyOptions + 1] = string.format("%s | %s (%d)", o.key, o.name, o.price)
+    end
 
-    -- ═══ TAB 1: FARM ═══
-    if UI.Category then UI:Category("Farm") end
+    if UI.Category then UI:Category("DryCursed") end
 
-    feature("Farm", "Farm")({
+    -- TAB 1: FARM (PNB, Pabrik, Dirt Farm, Clear World, Move Block)
+    feature("AutoFarm", "Farm")({
         center = center(function(c)
-            c:Header("SYT DRY CURSED — Farm Suite", "PNB, Pabrik, Dirt Farm, Clear World, Move Block & System", "SYT")
+            c:Header("DRY CURSED - Farm Engine", "PNB, Pabrik, Dirt Farm, Clear World & Move Block", "SYT")
 
-            -- == SYSTEM ==
-            local SysCard = c:Card("System & Kontrol Sesi", nil, "Shield", {
-                Subtitle = "Discord Log, Leave/Freeze toggle, Auto Leveling"
+            local PnbCard = c:Card("PNB Configuration", nil, "Combat", {
+                Subtitle = "Pad 5x5 (Anda di tengah) & Card Grid Block Selector"
             })
-            SysCard:Input("Akun Game & World", "LiveInGameAccount", "Menunggu world...", accName)
-            SysCard:Toggle("Discord Log (Kirim ke Webhook)", "SysDiscordLogToggle", false, function(v)
-                if v then
-                    DiscordHook.State.url = UI:GetValue("SysDiscordUrlInput") or ""
-                    DiscordHook.Start()
-                else
-                    DiscordHook.Stop()
-                end
-            end)
-            SysCard:Toggle("Mode: Leave (OFF) / Freeze (ON)", "SysLeaveFreezeToggle", true, function(v)
-                -- true = Freeze mode, false = Leave mode
-                H._sysLeaveMode = not v
-            end)
-            SysCard:Button("STOP SEMUA OTOMASI", "STOP ALL", "Shield", function()
-                stopAllAutomationImpl("Dihentikan manual oleh user")
-            end)
-
-            -- == AUTO LEVELING ==
-            local LvlCard = c:Card("Auto Leveling (Target L10)", nil, "Bolt", {
-                Subtitle = "Bersihkan setengah world sambil leveling, warp jika ada MOD"
-            })
-            LvlCard:Input("Status Auto Leveling", "AutoLvlStatus", "Idle", AutoLeveling.State.status)
-            LvlCard:Button("[AUTO LVL] Start / Stop", "TOGGLE", "Bolt", function()
-                local busy = PNB.State.running or Pabrik.State.running or DirtFarm.State.running or MoveBlock.State.running
-                if busy and not AutoLeveling.State.running then
-                    emitNotify("SYT", "Sorry, your task is do right now")
-                    return
-                end
-                AutoLeveling.Toggle()
-            end)
-
-            -- == PNB ==
-            local BpCard = c:Card("PNB — Backpack Item Selector", nil, "Visuals", {
-                Subtitle = "Pilih block dari Backpack, tentukan tile 5x5 & atur speed"
-            })
-            BpCard:Input("Embedded Backpack Items", "__BP_ITEM_ANCHOR__", "__BP_ITEM_ANCHOR_KEY__", "__BP_ITEM_ANCHOR_KEY__")
-            BpCard:Button("Refresh Backpack", "REFRESH BP", "Visuals", function()
+            PnbCard:Input("Tile Selector 5x5", "__PAD_5X5_ANCHOR__", "__PAD_5X5_ANCHOR_KEY__", "__PAD_5X5_ANCHOR_KEY__")
+            PnbCard:Input("Block Selector (Backpack)", "__BP_ITEM_ANCHOR__", "__BP_ITEM_ANCHOR_KEY__", "__BP_ITEM_ANCHOR_KEY__")
+            PnbCard:Button("Refresh Backpack", "REFRESH", "Visuals", function()
                 Core.EnsureInit()
                 if UIHooks.refreshBP then UIHooks.refreshBP() end
             end)
-
-            local PadCard = c:Card("PNB — Pad Tile 5x5", nil, "Teleports", {
-                Subtitle = "Pilih tile target Place → Break → Collect"
-            })
-            PadCard:Input("Embedded 5x5 Pad", "__PAD_5X5_ANCHOR__", "__PAD_5X5_ANCHOR_KEY__", "__PAD_5X5_ANCHOR_KEY__")
-
-            local PnbOptCard = c:Card("PNB — Speed & Opsi", nil, "Sliders", {
-                Subtitle = "Kecepatan 0-100% (map ke speed ratio 1x-10x)"
-            })
-            PnbOptCard:Slider("PNB Speed (%)", "PnbSpeedPct", 0, 100, math.floor((PNB.State.speed or 2) / 10 * 100), "%", function(v)
-                PNB.State.speed = math.max(1, math.floor(clamp(tonumber(v) or 20, 0, 100) / 10))
+            PnbCard:Input("World Storage Block (WORLD:ID)", "PnbStorageBlockInput", "Maks 8 char...", PNB.State.storageBlock, function(txt)
+                PNB.State.storageBlock = tostring(txt or ""):gsub("%s+", ""):upper():sub(1, 17)
+            end)
+            PnbCard:Input("World Storage Safe (WORLD:ID)", "PnbStorageSafeInput", "Maks 8 char...", PNB.State.storageSafe, function(txt)
+                PNB.State.storageSafe = tostring(txt or ""):gsub("%s+", ""):upper():sub(1, 17)
+            end)
+            PnbCard:Slider("Speed (0 - 100%)", "PnbSpeedPct", 0, 100, PNB.State.speedPct or 60, "%", function(v)
+                PNB.State.speedPct = clamp(tonumber(v) or 60, 0, 100)
             end, 5)
-            PnbOptCard:Toggle("1-Hit Break", "PnbOneHit", PNB.State.oneHit, function(v) PNB.State.oneHit = v == true end)
-            PnbOptCard:Toggle("Auto Collect Drops", "PnbAutoCollect", PNB.State.autoCollect, function(v) PNB.State.autoCollect = v == true end)
+            PnbCard:Dropdown("Auto Buy (Min 5x Gems)", "PnbAutoBuySelect", autoBuyOptions, "OFF", function(v)
+                PNB.State.autoBuyKey = v or "OFF"
+            end)
 
-            -- == PABRIK ==
-            local PabCard = c:Card("Pabrik — Item & Pad", nil, "Bolt", {
-                Subtitle = "Pasang tile plant+harvest, pilih block/seed pair"
+            local PabCard = c:Card("Pabrik — Dirt Selector & Block/Seed", nil, "AutoFarm", {
+                Subtitle = "Pilih tile tanam plantable di atas dirt/platform"
             })
-            PabCard:Input("Nama / ID Block atau Seed", "PabrikItemInput", "Contoh: Dirt atau 2", tostring(Pabrik.State.itemName or ""), function(txt)
+            PabCard:Input("Dirt Selector (Rendered Grid)", "__WORLD_MAP_ANCHOR__", "__WORLD_MAP_ANCHOR_KEY__", "__WORLD_MAP_ANCHOR_KEY__")
+            PabCard:Input("Block / Seed Selector Grid Card", "__PAB_BP_ANCHOR__", "__PAB_BP_ANCHOR_KEY__", "__PAB_BP_ANCHOR_KEY__")
+            PabCard:Input("Block / Seed Pair", "PabrikItemInput", "Nama atau ID item...", tostring(Pabrik.State.itemName or ""), function(txt)
                 if txt and txt ~= "" then Pabrik.SetItem(txt) end
             end)
-            PabCard:Button("Set Item dari Input", "SET ITEM", "Shield", function()
-                local pair = Pabrik.SetItem(UI:GetValue("PabrikItemInput"))
-                if not pair then UI:SetValue("PabrikPairDisplay", "Item tidak ditemukan") end
-            end)
-            PabCard:Input("Embedded Pabrik Head Pad", "__PAD_PABRIK_ANCHOR__", "__PAD_PABRIK_ANCHOR_KEY__", "__PAD_PABRIK_ANCHOR_KEY__")
-            PabCard:Slider("Break Tile Count (1-3)", "PabrikBreakCount", 1, 3, Pabrik.State.breakTileCount, " tile", function(v)
-                Pabrik.SetBreakCount(v)
-            end, 1)
-
-            -- == DIRT FARM ==
-            local DfCard = c:Card("Dirt Farm — Rotation World", nil, "Teleports", {
-                Subtitle = "FIFO queue worlds, zigzag 2-wide, skip door/bedrock/lock"
-            })
-            DfCard:Input("Daftar World (pisah koma)", "DfRotationInput", "WORLD1, WORLD2", DirtFarm.State.rotationText or "", function(txt)
-                DirtFarm.SetRotationWorlds(txt)
-            end)
-            DfCard:Button("Add World Saat Ini", "ADD", "Teleports", function()
-                Core.EnsureInit()
-                local curW = H.gt and cleanWorldName(H.gt.name) or ""
-                if curW == "" then return end
-                local list = DirtFarm.SetRotationWorlds(UI:GetValue("DfRotationInput") or DirtFarm.State.rotationText)
-                local exists = false
-                for _, w in ipairs(list) do if w == curW then exists = true; break end end
-                if not exists then
-                    list[#list + 1] = curW
-                    local joined = table.concat(list, ", ")
-                    DirtFarm.SetRotationWorlds(joined)
-                    UI:SetValue("DfRotationInput", joined)
-                    setDfStatus("Ditambahkan: " .. curW)
-                end
-            end)
-
-            -- == MOVE BLOCK ==
-            local MbCard = c:Card("Move Block", nil, "Teleports", {
-                Subtitle = "Walk ke take, ambil item, walk ke drop, delay 2s, ulangi"
-            })
-            MbCard:Input("Status Move Block", "MoveBlockStatus", "Idle", MoveBlock.State.status)
+            PabCard:Slider("Speed Pabrik (0 - 100%)", "PabrikSpeedPct", 0, 100, Pabrik.State.speedPct or 60, "%", function(v)
+                Pabrik.State.speedPct = clamp(tonumber(v) or 60, 0, 100)
+            end, 5)
         end),
 
         right = right(function(r)
-            -- PNB Controls
-            local PnbCtrl = r:Card("PNB Kontrol", "Run", "Bolt", {
-                Subtitle = "Start/Stop PNB & lihat fase"
-            })
-            PnbCtrl:Button("[PNB] Start / Stop", "TOGGLE", "Bolt", function()
-                local busy = Pabrik.State.running or DirtFarm.State.running or MoveBlock.State.running or AutoLeveling.State.running
-                if busy and not PNB.State.running then
-                    emitNotify("SYT", "Sorry, your task is do right now")
-                    return
-                end
-                PNB.Toggle()
-            end)
-            PnbCtrl:Input("Block Terpilih", "PnbSelectedDisplay", "Belum dipilih", PNB.State.selectedBlockId and string.format("ID:%d", PNB.State.selectedBlockId) or "Belum dipilih")
-            PnbCtrl:Input("Fase PNB", "PnbPhaseDisplay", "Idle", PNB.State.phase or "Idle")
+            local PnbCtrl = r:Card("PNB Control", "PNB", "Bolt", {})
+            PnbCtrl:Button("[PNB] Start / Stop", "TOGGLE", "Bolt", function() PNB.Toggle() end)
+            PnbCtrl:Input("Block Dipilih", "PnbSelectedDisplay", "None", PNB.State.selectedBlockId and tostring(PNB.State.selectedBlockId) or "None")
             PnbCtrl:Input("Status PNB", "PnbStatusDisplay", "Idle", PNB.State.status or "Idle")
 
-            -- Pabrik Controls
-            local PabCtrl = r:Card("Pabrik Kontrol", "Run", "Bolt", {
-                Subtitle = "Start/Stop Pabrik & pantau pair"
-            })
-            PabCtrl:Button("[PABRIK] Start / Stop", "TOGGLE", "Bolt", function()
-                local busy = PNB.State.running or DirtFarm.State.running or MoveBlock.State.running or AutoLeveling.State.running
-                if busy and not Pabrik.State.running then
-                    emitNotify("SYT", "Sorry, your task is do right now")
-                    return
-                end
-                Pabrik.Toggle()
-            end)
-            PabCtrl:Input("Status Pabrik", "PabrikStatusDisplay", "Idle", "Idle")
-            PabCtrl:Input("Pair Block & Seed", "PabrikPairDisplay", "Belum diatur", "-")
-            PabCtrl:Button("Set BreakPos Sekarang", "SET POS", "Teleports", function()
+            local PabCtrl = r:Card("Pabrik Control", "Pabrik", "Bolt", {})
+            PabCtrl:Button("Set Break Pos (Posisi Sekarang)", "SET BREAK", "Teleports", function()
                 Pabrik.SetBreakPos()
-                UI:SetValue("PabrikBreakPosDisplay", Pabrik.State.breakPos and string.format("(%d,%d)", Pabrik.State.breakPos.x, Pabrik.State.breakPos.y) or "-")
             end)
-            PabCtrl:Input("BreakPos", "PabrikBreakPosDisplay", "Belum diset", "-")
+            PabCtrl:Input("Break Pos", "PabrikBreakPosDisplay", "Unset", "-")
+            PabCtrl:Input("Pair Aktif", "PabrikPairDisplay", "Unset", "-")
+            PabCtrl:Button("[PABRIK] Start / Stop", "TOGGLE", "Bolt", function() Pabrik.Toggle() end)
+            PabCtrl:Input("Status Pabrik", "PabrikStatusDisplay", "Idle", "Idle")
 
-            -- Dirt Farm Controls
-            local DfCtrl = r:Card("Dirt Farm Kontrol", "Run", "Bolt", {
-                Subtitle = "Start/Stop DF"
+            local DfCard = r:Card("Dirt Farm (FIFO)", "DF", "Active", {
+                Subtitle = "Max 8 karakter huruf/angka per World Name"
             })
-            DfCtrl:Button("[DF] Start / Stop", "TOGGLE", "Bolt", function()
-                local busy = PNB.State.running or Pabrik.State.running or MoveBlock.State.running or AutoLeveling.State.running
-                if busy and not DirtFarm.State.running then
-                    emitNotify("SYT", "Sorry, your task is do right now")
-                    return
-                end
-                DirtFarm.Toggle()
+            DfCard:Input("World Name", "DfWorldInput", "WORLD (Max 8)", "", function(txt)
+                local clean = sanitizeWorldSpec(txt, false)
+                DirtFarm.State.rotationInput = clean
             end)
-            DfCtrl:Input("Status Dirt Farm", "DfStatusDisplay", "Idle", DirtFarm.State.status or "Idle")
+            DfCard:Button("Add World to List", "ADD WORLD", "Teleports", function()
+                local raw = UI:GetValue("DfWorldInput") or ""
+                local clean = sanitizeWorldSpec(raw, false)
+                if clean == "" then return end
+                local list = DirtFarm.State.rotationWorlds or {}
+                local exists = false
+                for _, w in ipairs(list) do if w == clean then exists = true; break end end
+                if not exists then
+                    list[#list + 1] = clean
+                    DirtFarm.State.rotationWorlds = list
+                    DirtFarm.State.rotationText = table.concat(list, ", ")
+                    UI:SetValue("DfWorldInput", "")
+                    if UIHooks.refreshDfList then UIHooks.refreshDfList() end
+                end
+            end)
+            DfCard:Input("World List Queue", "__DF_LIST_ANCHOR__", "__DF_LIST_ANCHOR_KEY__", "__DF_LIST_ANCHOR_KEY__")
+            DfCard:Button("[DF] Start / Stop", "TOGGLE", "Bolt", function() DirtFarm.Toggle() end)
+            DfCard:Input("Status DF", "DfStatusDisplay", "Idle", DirtFarm.State.status or "Idle")
 
-            -- Move Block Controls
-            local MbCtrl = r:Card("Move Block Kontrol", "Move", "Bolt", {
-                Subtitle = "Set posisi ambil & taruh, lalu start"
+            local CwCard = r:Card("Clear World (FIFO)", "CW", "Active", {
+                Subtitle = "Break semua FG & BG kecuali Door, Lock, Bedrock"
             })
-            MbCtrl:Button("Set Take Pos (Posisi Sekarang)", "SET TAKE", "Teleports", function()
-                MoveBlock.SetTake()
+            CwCard:Input("World Name", "CwWorldInput", "WORLD (Max 8)", "", function(txt)
+                ClearWorld.State.worldInput = sanitizeWorldSpec(txt, false)
             end)
-            MbCtrl:Button("Set Drop Pos (Posisi Sekarang)", "SET DROP", "Teleports", function()
-                MoveBlock.SetDrop()
+            CwCard:Button("Add World to List", "ADD WORLD", "Teleports", function()
+                local ok = ClearWorld.AddWorld(UI:GetValue("CwWorldInput") or "")
+                if ok then UI:SetValue("CwWorldInput", "") end
             end)
-            MbCtrl:Button("[MOVE] Start / Stop", "TOGGLE", "Bolt", function()
-                local busy = PNB.State.running or Pabrik.State.running or DirtFarm.State.running or AutoLeveling.State.running
-                if busy and not MoveBlock.State.running then
-                    emitNotify("SYT", "Sorry, your task is do right now")
-                    return
-                end
-                MoveBlock.Toggle()
-            end)
+            CwCard:Input("World List Queue", "__CW_LIST_ANCHOR__", "__CW_LIST_ANCHOR_KEY__", "__CW_LIST_ANCHOR_KEY__")
+            CwCard:Button("[CW] Start / Stop", "TOGGLE", "Bolt", function() ClearWorld.Toggle() end)
+            CwCard:Input("Status Clear World", "CwStatusDisplay", "Idle", ClearWorld.State.status or "Idle")
 
-            -- Close
-            local CloseCard = r:Card("Tutup Menu", nil, "Shield", {})
-            CloseCard:Button("Tutup Menu Permanen", "CLOSE", "Shield", function()
+            local MbCard = r:Card("Move Block", "Move", "Teleports", {})
+            MbCard:Button("Set Take", "SET TAKE", "Teleports", function() MoveBlock.SetTake() end)
+            MbCard:Button("Set Drop", "SET DROP", "Teleports", function() MoveBlock.SetDrop() end)
+            MbCard:Button("[MOVE] Start / Stop", "TOGGLE", "Bolt", function() MoveBlock.Toggle() end)
+            MbCard:Input("Status Move Block", "MoveBlockStatus", "Idle", MoveBlock.State.status or "Idle")
+        end)
+    })
+
+    -- TAB 2: TOOLS (System, Misc, Spaming, Discord Hook's, Proxy)
+    feature("Misc", "Tools")({
+        center = center(function(c)
+            c:Header("DRY CURSED - Tools & Security", "System, Misc, Spaming, Discord Hook & Proxy", "V2")
+
+            local SysCard = c:Card("System Security & Auto Leveling", nil, "Shield", {
+                Subtitle = "Default ON + FREEZE saat player/mod join"
+            })
+            SysCard:Toggle("System ON / OFF", "SysMasterToggle", SystemModule.State.enabled, function(v)
+                SystemModule.State.enabled = v == true
+                if not v then SystemModule.State.frozenByJoin = false end
+            end)
+            SysCard:Toggle("Leave (OFF) / Freeze (ON)", "SysLeaveFreezeSwitch", SystemModule.State.mode == "FREEZE", function(v)
+                SystemModule.State.mode = v and "FREEZE" or "LEAVE"
+            end)
+            SysCard:Toggle("Log Discord (Gabung Join Log)", "SysLogDiscordToggle", SystemModule.State.discordLog, function(v)
+                SystemModule.State.discordLog = v == true
+            end)
+            SysCard:Toggle("Auto Leveling (Target L10)", "SysAutoLevelToggle", AutoLeveling.State.running, function(v)
+                if v then AutoLeveling.Start() else AutoLeveling.Stop() end
+            end)
+            SysCard:Input("Leveling Status", "AutoLvlStatus", "Idle", AutoLeveling.State.status or "Idle")
+            SysCard:Input("Scrollable Player & Mod Join Log", "__SYS_LOG_ANCHOR__", "__SYS_LOG_ANCHOR_KEY__", "__SYS_LOG_ANCHOR_KEY__")
+
+            local MiscCard = c:Card("Misc Tools", nil, "Sliders", {
+                Subtitle = "5 Basic Tools sesuai spesifikasi"
+            })
+            MiscCard:Toggle("Ghost / No Clip (Visual Only)", "MiscNoClipToggle", Misc.State.noClip, function(on)
+                Misc.SetNoClip(on)
+            end)
+            MiscCard:Toggle("Fly (+5 Up, +-4 Horizontal)", "MiscFlyToggle", Misc.State.fly, function(on)
+                Misc.SetFly(on)
+            end)
+            MiscCard:Toggle("Zoom (2.5x Max Zoom Out)", "MiscZoomToggle", Misc.State.zoom25x, function(on)
+                Misc.SetZoom25x(on)
+            end)
+            MiscCard:Toggle("Skip Update Item", "MiscSkipUpdateToggle", Misc.State.skipUpdateItem, function(on)
+                Misc.SetSkipUpdateItem(on)
+            end)
+            MiscCard:Toggle("Slow Fall (2x Lebih Lambat)", "MiscSlowFallToggle", Misc.State.slowFall, function(on)
+                Misc.SetSlowFall(on)
+            end)
+        end),
+
+        right = right(function(r)
+            local SpamCard = r:Card("Spaming", "Chat", "Bolt", {
+                Subtitle = "Max 85 char, Rainbow / Prefix Color saling eksklusif"
+            })
+            SpamCard:Input("Text (Max 85 char)", "SpamTextInput", "Ketik pesan...", Spam.State.text, function(txt)
+                Spam.State.text = tostring(txt or ""):sub(1, 85)
+            end)
+            SpamCard:Toggle("Rainbow Colour (per kata)", "SpamRainbowToggle", Spam.State.rainbowOn, function(v)
+                Spam.State.rainbowOn = v == true
+                if v and Spam.State.prefixOn then
+                    Spam.State.prefixOn = false
+                    pcall(UI.SetValue, UI, "SpamPrefixToggle", false, true)
+                end
+            end)
+            SpamCard:Toggle("Prefix Color (1 warna acak)", "SpamPrefixToggle", Spam.State.prefixOn, function(v)
+                Spam.State.prefixOn = v == true
+                if v and Spam.State.rainbowOn then
+                    Spam.State.rainbowOn = false
+                    pcall(UI.SetValue, UI, "SpamRainbowToggle", false, true)
+                end
+            end)
+            SpamCard:Input("Delay Radio (3 - 7 s)", "__SPAM_RADIO_ANCHOR__", "__SPAM_RADIO_ANCHOR_KEY__", "__SPAM_RADIO_ANCHOR_KEY__")
+            SpamCard:Button("[SPAM] Start / Stop", "TOGGLE", "Bolt", function() Spam.Toggle() end)
+            SpamCard:Input("Status Spam", "SpamStatusDisplay", "Idle", Spam.State.status or "Idle")
+
+            local DhCard = r:Card("Discord Hook's", "Hook", "Shield", {
+                Subtitle = "POST sekali lalu PATCH Message ID"
+            })
+            DhCard:Input("Link Discord Webhooks (Max 300)", "SysDiscordUrlInput", "https://discord.com/api/webhooks/...", DiscordHook.State.url, function(txt)
+                DiscordHook.State.url = tostring(txt or ""):sub(1, 300)
+            end)
+            DhCard:Input("Delay Radio (1 - 5 Menit)", "__DH_RADIO_ANCHOR__", "__DH_RADIO_ANCHOR_KEY__", "__DH_RADIO_ANCHOR_KEY__")
+            DhCard:Toggle("ON / OFF Discord Hook", "DhEnabledToggle", DiscordHook.State.enabled, function(v)
+                if v then DiscordHook.Start() else DiscordHook.Stop() end
+            end)
+            DhCard:Input("Saved Message ID", "DhMessageIdDisplay", "-", DiscordHook.State.messageId or "-")
+
+            local ProxyCard = r:Card("Proxy System (P2P Default ON)", "Proxy", "Player", {
+                Subtitle = "Gunakan /commands di chat game"
+            })
+            ProxyCard:Button("Buka Wardrobe (/clothes)", "CLOTHES", "Visuals", function()
+                ProxyCommands.OpenClothesDialog()
+            end)
+            ProxyCard:Button("Buka Role & Name (/cn)", "CN", "Player", function()
+                ProxyCommands.OpenCnDialog()
+            end)
+            ProxyCard:Button("Buka News & Commands (/news)", "NEWS", "Shield", function()
+                ProxyCommands.OpenNewsDialog()
+            end)
+            ProxyCard:Button("Tutup Menu", "CLOSE", "Shield", function()
                 UIHooks.userDestroy = true
-                if type(stopAllAutomationImpl) == "function" then
-                    stopAllAutomationImpl("Menu ditutup permanen oleh user")
-                end
+                stopAllAutomationImpl("Menu ditutup permanen")
                 cleanupSYTGuiContainers(nil)
             end)
         end)
     })
 
-    -- ═══ TAB 2: TOOLS ═══
-    if UI.Category then UI:Category("Tools") end
-
-    feature("Tools", "Tools")({
-        center = center(function(c)
-            c:Header("SYT Tools — Misc, Spam, Discord, Proxy", "Ghost/Fly/Zoom, Spam Chat, Discord Hook & Proxy Commands", "V2")
-
-            -- == MISC ==
-            local MiscMove = c:Card("Misc: Pergerakan & Visual", nil, "Teleports", {
-                Subtitle = "Ghost/NoClip, Fly (max +5 atas, ±4 horizontal), Zoom 2.5x, Slow Fall"
-            })
-            MiscMove:Toggle("Fly Mode (WASD / Space / Touch)", "MiscFlyToggle", Misc.State.fly, function(on)
-                Misc.SetFly(on)
-            end)
-            MiscMove:Slider("Kecepatan Fly", "MiscFlySpeed", 6, 45, Misc.State.flySpeed, " t/s", function(v)
-                Misc.State.flySpeed = clamp(tonumber(v) or 14, 6, 45)
-            end)
-            MiscMove:Toggle("No Clip (Visual Ghost Only)", "MiscNoClipToggle", Misc.State.noClip, function(on)
-                Misc.SetNoClip(on)
-            end)
-            MiscMove:Toggle("Zoom 2.5x (Max Zoom Out)", "MiscZoomToggle", false, function(on)
-                pcall(function()
-                    local Camera = workspace.CurrentCamera
-                    if Camera then
-                        if on then
-                            Camera.FieldOfView = math.min(120, Camera.FieldOfView * 2.5)
-                        else
-                            Camera.FieldOfView = 70
-                        end
-                    end
-                end)
-            end)
-            MiscMove:Toggle("Slow Fall (2x lebih lambat)", "MiscSlowFallToggle", false, function(on)
-                pcall(function()
-                    local char = LP and LP.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local bg = hrp:FindFirstChild("SYT_SlowFall") or Instance.new("BodyVelocity")
-                        if on then
-                            bg.Name = "SYT_SlowFall"
-                            bg.Velocity = Vector3.new(0, 0, 0)
-                            bg.P = 500
-                            bg.MaxForce = Vector3.new(0, 500, 0)
-                            bg.Parent = hrp
-                        else
-                            local bf = hrp:FindFirstChild("SYT_SlowFall")
-                            if bf then bf:Destroy() end
-                        end
-                    end
-                end)
-            end)
-            MiscMove:Toggle("Skip Update Item (Freeze Inv)", "MiscSkipUpdateToggle", false, function(on)
-                pcall(function()
-                    GetcSkipper.SetBypassOption("bypassUiBlock", on)
-                end)
-            end)
-
-            local MiscSys = c:Card("Misc: Safety & Roulette", nil, "Shield", {
-                Subtitle = "God Mode, Fast Roulette, FPS Boost"
-            })
-            MiscSys:Toggle("SEEMS (Auto Stop jika bahaya)", "MiscSeemsToggle", Misc.State.seems, function(on)
-                Misc.SetSeems(on)
-            end)
-            MiscSys:Toggle("God Mode (No HP Loss)", "MiscGodToggle", Misc.State.godMode, function(on)
-                Misc.SetGodMode(on)
-            end)
-            MiscSys:Toggle("Fast Roulette (0-36 instan)", "MiscRouletteToggle", Misc.State.fastRoulette, function(on)
-                Misc.SetFastRoulette(on)
-            end)
-            MiscSys:Toggle("FPS Boost (Hide BG/FX)", "MiscFpsBoost", Misc.State.fpsBoost, function(on)
-                Misc.SetFpsBoost(on)
-            end)
-
-            -- == SPAM ==
-            local SpamCard = c:Card("Spam Chat (Max 85 Karakter)", nil, "Bolt", {
-                Subtitle = "Rainbow color ATAU prefix color (saling eksklusif)"
-            })
-            SpamCard:Input("Pesan Spam (max 85 char)", "SpamTextInput", "Ketik pesan di sini...", Spam.State.text, function(txt)
-                Spam.State.text = tostring(txt or ""):sub(1, 85)
-            end)
-            SpamCard:Toggle("Rainbow Color (`1..`9 auto-cycle)", "SpamAutoColor", Spam.State.autoCycleColor, function(v)
-                Spam.State.autoCycleColor = v
-                if v then
-                    -- Matikan prefix manual jika rainbow aktif
-                    Spam.State.prefixColor = ""
-                    if UI then UI:SetValue("SpamPrefixSelect", "None") end
-                end
-            end)
-            SpamCard:Dropdown("Prefix Color (non-rainbow)", "SpamPrefixSelect",
-                { "None", "`1", "`2", "`3", "`4", "`5", "`6", "`7", "`8", "`9" },
-                (Spam.State.prefixColor ~= "" and Spam.State.prefixColor) or "None",
-                function(v)
-                    Spam.State.prefixColor = (v == "None") and "" or v
-                    if v ~= "None" then
-                        -- Matikan rainbow jika pilih prefix manual
-                        Spam.State.autoCycleColor = false
-                        if UI then UI:SetValue("SpamAutoColor", false) end
-                    end
-                end
-            )
-            SpamCard:Slider("Delay Kirim (3-7 detik)", "SpamDelaySec", 3.0, 7.0, clamp(Spam.State.delay, 3, 7), " s", function(v)
-                Spam.State.delay = clamp(tonumber(v) or 5, 3, 7)
-            end, 0.5)
-
-            -- == DISCORD HOOK ==
-            local DhCard = c:Card("Discord Hook (Farm Status)", nil, "Shield", {
-                Subtitle = "POST pertama, lalu PATCH message ID agar tidak spam"
-            })
-            DhCard:Input("Webhook URL (max 300 char)", "SysDiscordUrlInput", "https://discord.com/api/webhooks/...", DiscordHook.State.url, function(txt)
-                DiscordHook.State.url = tostring(txt or ""):sub(1, 300)
-            end)
-            DhCard:Slider("Interval Kirim (menit)", "DhDelayMin", 1, 5, math.floor(DiscordHook.State.delay / 60), " min", function(v)
-                DiscordHook.State.delay = math.max(60, (tonumber(v) or 2) * 60)
-            end, 1)
-        end),
-
-        right = right(function(r)
-            -- Misc Controls
-            local MiscCtrl = r:Card("Misc Status", "V1", "Shield", {})
-            MiscCtrl:Input("Roulette Terakhir", "RouletteResultDisplay", "-", "-")
-            MiscCtrl:Input("Status Follow", "FollowStatusDisplay", "Idle", Misc.State.followStatus or "Idle")
-            MiscCtrl:Toggle("Auto Collect Sekitar", "MiscAutoCollectToggle", Misc.State.autoCollect, function(on)
-                Misc.SetAutoCollect(on, Misc.State.autoCollectRadius, Misc.State.autoCollectStep)
-            end)
-            MiscCtrl:Button("Collect Drops Sekarang", "COLLECT", "Bolt", function()
-                local res = Packets.Collect({ radius = 4, stepMoveIfFar = true, collectDelay = 0 })
-                UI:SetValue("FollowStatusDisplay", string.format("Diambil: %d items", res.itemsTaken))
-            end)
-
-            -- ULTIMAX Status
-            local UltCard = r:Card("ULTIMAX Protection", "Guard", "Shield", {
-                Subtitle = "Anti-kick, firewall paket, anti-back"
-            })
-            UltCard:Input("Status ULTIMAX", "UltimaxStatusDisplay", "Ready", GetcSkipper.GetUltimaxStatusText())
-            UltCard:Toggle("ULTIMAX Master ON", "UltimaxMaster", GetcSkipper.State.ultimaxEnabled ~= false, function(v)
-                GetcSkipper.SetBypassOption("ultimaxEnabled", v == true)
-            end)
-            UltCard:Toggle("Anti-Kick Shield", "GuardAntiKickShield", GetcSkipper.State.antiKickShield ~= false, function(v)
-                GetcSkipper.SetBypassOption("antiKickShield", v == true)
-            end)
-            UltCard:Button("Aktifkan ULTIMAX ALL SAFE", "ULTIMAX", "Shield", function()
-                local gOk, ncOk = GetcSkipper.EnableUltimaxAllSafe()
-                emitNotify("ULTIMAX", string.format("ALL SAFE | NC=%s GC=%s", tostring(ncOk), tostring(gOk)))
-            end)
-
-            -- Spam Controls
-            local SpamCtrl = r:Card("Spam Kontrol", "Chat", "Bolt", {
-                Subtitle = "Start/Stop spam chat"
-            })
-            SpamCtrl:Button("[SPAM] Start / Stop", "TOGGLE", "Bolt", function()
-                if not Spam.State.running then
-                    Spam.State.text = tostring(UI:GetValue("SpamTextInput") or ""):sub(1, 85)
-                end
-                Spam.Toggle()
-            end)
-            SpamCtrl:Input("Status Spam", "SpamStatusDisplay", "Idle", Spam.State.status or "Idle")
-
-            -- Discord Hook Controls
-            local DhCtrl = r:Card("Discord Hook Kontrol", "Discord", "Shield", {
-                Subtitle = "Toggle on/off hook"
-            })
-            DhCtrl:Toggle("Discord Hook ON/OFF", "DhEnabledToggle", DiscordHook.State.enabled, function(v)
-                DiscordHook.State.url = UI:GetValue("SysDiscordUrlInput") or ""
-                if v then DiscordHook.Start() else DiscordHook.Stop() end
-            end)
-            DhCtrl:Input("Message ID Tersimpan", "DhMessageIdDisplay", "-", DiscordHook.State.messageId or "-")
-
-            -- Proxy Commands Info
-            local ProxyCard = r:Card("Proxy Commands (/cmd)", "Proxy", "Player", {
-                Subtitle = "Ketik di chat game: /reme /clothes /cal /info /get /cn /news"
-            })
-            ProxyCard:Input("Commands Tersedia", "ProxyCmdList", "-", "/reme /cal /info /get /cn /news /clothes")
-            ProxyCard:Button("Re-Install Hook Command", "HOOK", "Shield", function()
-                pcall(ProxyCommands.Install)
-                emitNotify("Proxy", "Chat command hook dipasang ulang")
-            end)
-        end)
-    })
-
-    if type(buildMountedCanvasesFn) == "function" then
-        buildMountedCanvasesFn()
-    end
-    if UI and type(UI.SyncNavCanvas) == "function" then
-        pcall(UI.SyncNavCanvas)
-    end
+    if type(UIHooks.buildMountedCanvasesFn) == "function" then UIHooks.buildMountedCanvasesFn() end
+    if UI and type(UI.SyncNavCanvas) == "function" then pcall(UI.SyncNavCanvas) end
 end
 
+UIHooks.buttonMap = {}
 
--- ═══════════════════════════════════════════════════════════════════════════
--- 8. EMBEDDED CANVAS MOUNTING + SIDEBAR IN-GAME ACCOUNT SYNC
--- ═══════════════════════════════════════════════════════════════════════════
-local buttonMap = {}
-
-local function findAllTextBoxesWithKey(key)
-    local found = {}
-    local function scanRoot(root)
-        if typeof(root) ~= "Instance" then return end
-        local okD, desc = pcall(root.GetDescendants, root)
-        if not okD or type(desc) ~= "table" then return end
-        for _, d in ipairs(desc) do
-            if d:IsA("TextBox") then
-                local okT, txt = pcall(function() return d.Text end)
-                if okT and txt == key then
-                    found[#found + 1] = d
-                end
-            end
-        end
-    end
-    local ownSg = getActiveMenuGui()
-    if ownSg then
-        scanRoot(ownSg)
-        if #found > 0 then return found end
-    end
-    for _, root in ipairs(getAllGuiRoots()) do
-        if root ~= ownSg then
-            scanRoot(root)
-            if #found > 0 then return found end
-        end
-    end
-    return found
-end
-
-local function mountEmbeddedCanvas(anchorKey, heightPx, buildFn)
-    local function tryMountNow()
-        local hits = findAllTextBoxesWithKey(anchorKey)
-        if #hits == 0 then return false end
-        local anchorBox = hits[1]
-        if not anchorBox or not anchorBox.Parent then return false end
-        local rowContainer = anchorBox.Parent
-        for _, ch in ipairs(rowContainer:GetChildren()) do
-            if not ch:IsA("UICorner") and not ch:IsA("UIStroke") then
-                ch:Destroy()
-            end
-        end
-        rowContainer.Size = UDim2.new(1, 0, 0, heightPx)
-        rowContainer.BackgroundColor3 = Color3.fromRGB(11, 14, 20)
-        rowContainer.ClipsDescendants = true
-        local okB, bErr = xpcall(buildFn, debug.traceback, rowContainer)
-        if not okB then
-            warn("[SYT Canvas Error " .. tostring(anchorKey) .. "]: " .. tostring(bErr))
-        end
-        return true
-    end
-    if tryMountNow() then return end
-    task.spawn(function()
-        for _ = 1, 80 do
-            if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
-            if tryMountNow() then return end
-            task.wait(0.05)
-        end
-    end)
-end
-
--- Responsive Button Binder: sinkronkan teks & warna tombol Start/Stop otomatis
-local function scanResponsiveButtons()
+function UIHooks.scanResponsiveButtons()
+    local buttonMap = UIHooks.buttonMap
     local specs = {
-        { prefix = "[PNB]",    getState = function() return PNB.State.running,      "STOP PNB",    "START PNB",    "[PNB] AKTIF (Klik untuk STOP)",    "[PNB] Start / Stop Engine" end },
-        { prefix = "[PABRIK]", getState = function() return Pabrik.State.running,   "STOP PABRIK", "START PABRIK", "[PABRIK] AKTIF (Klik untuk STOP)", "[PABRIK] Start / Stop Auto" end },
-        { prefix = "[DF]",     getState = function() return DirtFarm.State.running, "STOP DF",     "START DF",     "[DF] AKTIF (Klik untuk STOP)",     "[DF] Start / Stop Dirt Farm" end },
-        { prefix = "[SPAM]",   getState = function() return Spam.State.running,     "STOP SPAM",   "START SPAM",   "[SPAM] AKTIF (Klik untuk STOP)",   "[SPAM] Start / Stop Chat" end },
-        { prefix = "[GAP TP]", getState = function() return tpState.patrolOn,       "STOP TP",     "START TP",     "[GAP TP] AKTIF (Klik untuk STOP)", "[GAP TP] Start / Stop Random Teleport" end },
+        { prefix = "[PNB]",    getState = function() return PNB.State.running,          "STOP", "START", "[PNB] AKTIF (Klik STOP)",    "[PNB] Start / Stop" end },
+        { prefix = "[PABRIK]", getState = function() return Pabrik.State.running,       "STOP", "START", "[PABRIK] AKTIF (Klik STOP)", "[PABRIK] Start / Stop" end },
+        { prefix = "[DF]",     getState = function() return DirtFarm.State.running,     "STOP", "START", "[DF] AKTIF (Klik STOP)",     "[DF] Start / Stop" end },
+        { prefix = "[CW]",     getState = function() return ClearWorld.State.running,   "STOP", "START", "[CW] AKTIF (Klik STOP)",     "[CW] Start / Stop" end },
+        { prefix = "[MOVE]",   getState = function() return MoveBlock.State.running,    "STOP", "START", "[MOVE] AKTIF (Klik STOP)",   "[MOVE] Start / Stop" end },
+        { prefix = "[SPAM]",   getState = function() return Spam.State.running,         "STOP", "START", "[SPAM] AKTIF (Klik STOP)",   "[SPAM] Start / Stop" end },
     }
     local scanRoots = {}
-    local ownSg = getActiveMenuGui()
-    if ownSg then
-        scanRoots[1] = ownSg
-    else
-        scanRoots = getAllGuiRoots()
-    end
+    local ownSg = UIHooks.getActiveMenuGui()
+    if ownSg then scanRoots[1] = ownSg else scanRoots = getAllGuiRoots() end
     for _, root in ipairs(scanRoots) do
         if typeof(root) == "Instance" then
             local okD, desc = pcall(root.GetDescendants, root)
@@ -10786,16 +12478,12 @@ local function scanResponsiveButtons()
                                         local badgeTxt, badgePill = nil, nil
                                         for _, ch in ipairs(btn:GetDescendants()) do
                                             if ch:IsA("TextLabel") and ch ~= d and ch.Text == "TOGGLE" then
-                                                badgeTxt = ch
-                                                badgePill = ch.Parent
-                                                break
+                                                badgeTxt = ch; badgePill = ch.Parent; break
                                             end
                                         end
                                         buttonMap[sp.prefix] = { lbl = d, badgeTxt = badgeTxt, badgePill = badgePill, getState = sp.getState }
                                         btn.MouseButton1Click:Connect(function()
-                                            task.delay(0.15, function()
-                                                if UIHooks.updateButtons then UIHooks.updateButtons() end
-                                            end)
+                                            task.delay(0.15, function() if UIHooks.updateButtons then UIHooks.updateButtons() end end)
                                         end)
                                     end
                                 end
@@ -10806,8 +12494,7 @@ local function scanResponsiveButtons()
                                 if cardParent then
                                     for _, sib in ipairs(cardParent:GetDescendants()) do
                                         if sib:IsA("TextLabel") and sib ~= d and (sib.Text == (LP and LP.DisplayName) or sib.Text == (LP and LP.Name) or sib.Text == "Operator") then
-                                            UIHooks.sidebarNameLbl = sib
-                                            break
+                                            UIHooks.sidebarNameLbl = sib; break
                                         end
                                     end
                                 end
@@ -10821,13 +12508,11 @@ local function scanResponsiveButtons()
 end
 
 UIHooks.updateButtons = function()
-    for _, item in pairs(buttonMap) do
+    for _, item in pairs(UIHooks.buttonMap) do
         if item.lbl and item.lbl.Parent then
             local active, onBadge, offBadge, onLbl, offLbl = item.getState()
             item.lbl.Text = active and onLbl or offLbl
-            if item.badgeTxt and item.badgeTxt.Parent then
-                item.badgeTxt.Text = active and onBadge or offBadge
-            end
+            if item.badgeTxt and item.badgeTxt.Parent then item.badgeTxt.Text = active and onBadge or offBadge end
             if item.badgePill and item.badgePill.Parent and item.badgePill:IsA("Frame") then
                 item.badgePill.BackgroundColor3 = active and Color3.fromRGB(220, 38, 38) or Color3.fromRGB(16, 185, 129)
                 item.badgePill.BackgroundTransparency = 0
@@ -10836,765 +12521,171 @@ UIHooks.updateButtons = function()
     end
 end
 
-buildMountedCanvasesFn = function()
-    table.clear(buttonMap)
+UIHooks.buildMountedCanvasesFn = function()
+    table.clear(UIHooks.buttonMap)
 
-    -- A. MOUNT 1: EMBEDDED 2D WORLD MAP RENDERER (__WORLD_MAP_ANCHOR_KEY__)
-    mountEmbeddedCanvas("__WORLD_MAP_ANCHOR_KEY__", 285, function(rowContainer)
-        local scroller = rowContainer:FindFirstAncestorOfClass("ScrollingFrame")
-
-        local topBar = Instance.new("Frame")
-        topBar.Size = UDim2.new(1, -12, 0, 22)
-        topBar.Position = UDim2.fromOffset(6, 5)
-        topBar.BackgroundTransparency = 1
-        topBar.Parent = rowContainer
-
-        local modes = {
-            { id = "TP",          label = "Mode: TP" },
-            { id = "PABRIK_TILE", label = "Pabrik Tile" },
-            { id = "PABRIK_LINE", label = "Pabrik Line" },
-            { id = "BREAK_POS",   label = "Break Pos" },
-        }
-        local modeBtns = {}
-        local function refreshModeBtns()
-            for id, b in pairs(modeBtns) do
-                local on = (tpState.mapClickMode == id)
-                b.BackgroundColor3 = on and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(31, 35, 44)
-                b.TextColor3 = on and Color3.new(0, 0, 0) or Color3.fromRGB(226, 232, 240)
+    local function findAllTextBoxesWithKey(key)
+        local found = {}
+        local function scanRoot(root)
+            if typeof(root) ~= "Instance" then return end
+            local okD, desc = pcall(root.GetDescendants, root)
+            if not okD or type(desc) ~= "table" then return end
+            for _, d in ipairs(desc) do
+                if d:IsA("TextBox") then
+                    local okT, txt = pcall(function() return d.Text end)
+                    if okT and txt == key then found[#found + 1] = d end
+                end
             end
         end
-        for i, m in ipairs(modes) do
-            local b = Instance.new("TextButton")
-            b.Size = UDim2.new(0.24, -3, 1, 0)
-            b.Position = UDim2.new((i - 1) * 0.25, 0, 0, 0)
-            b.BorderSizePixel = 0
-            b.Font = Enum.Font.GothamBold
-            b.TextSize = 10
-            b.Text = m.label
-            b.Parent = topBar
-            Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
-            b.MouseButton1Click:Connect(function()
-                tpState.mapClickMode = m.id
-                refreshModeBtns()
-            end)
-            modeBtns[m.id] = b
+        local ownSg = UIHooks.getActiveMenuGui()
+        if ownSg then scanRoot(ownSg); if #found > 0 then return found end end
+        for _, root in ipairs(getAllGuiRoots()) do
+            if root ~= ownSg then scanRoot(root); if #found > 0 then return found end end
         end
-        refreshModeBtns()
-
-        local mapView = Instance.new("Frame")
-        mapView.Size = UDim2.new(1, -12, 1, -62)
-        mapView.Position = UDim2.fromOffset(6, 31)
-        mapView.BackgroundColor3 = Color3.fromRGB(24, 52, 92)
-        mapView.BorderSizePixel = 0
-        mapView.ClipsDescendants = true
-        mapView.Active = true
-        mapView.Parent = rowContainer
-
-        local mapCanvas = Instance.new("Frame")
-        mapCanvas.BackgroundColor3 = Color3.new(1, 1, 1)
-        mapCanvas.BorderSizePixel = 0
-        mapCanvas.ZIndex = (mapView.ZIndex or 1) + 1
-        mapCanvas.Parent = mapView
-        Instance.new("UIStroke", mapCanvas).Color = Color3.fromRGB(70, 86, 114)
-
-        -- Lapisan Sky + Underground halus (BackgroundColor3 putih agar UIGradient tampil murni tanpa gelap)
-        local skyGrad = Instance.new("UIGradient", mapCanvas)
-        skyGrad.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(64, 148, 214)),
-            ColorSequenceKeypoint.new(0.45, Color3.fromRGB(118, 190, 236)),
-            ColorSequenceKeypoint.new(0.46, Color3.fromRGB(54, 40, 32)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(30, 23, 20)),
-        })
-        skyGrad.Rotation = 90
-
-        -- Penanda top-layer permanen: Crosshair & Beacon Player ("YOU"), Tile Terpilih & BreakPos
-        local mZ = (mapCanvas.ZIndex or 2)
-        local crossH = Instance.new("Frame")
-        crossH.Size = UDim2.new(1, 0, 0, 1)
-        crossH.AnchorPoint = Vector2.new(0, 0.5)
-        crossH.BackgroundColor3 = Color3.fromRGB(250, 204, 21)
-        crossH.BackgroundTransparency = 0.55
-        crossH.BorderSizePixel = 0
-        crossH.ZIndex = mZ + 20
-        crossH.Parent = mapCanvas
-
-        local crossV = Instance.new("Frame")
-        crossV.Size = UDim2.new(0, 1, 1, 0)
-        crossV.AnchorPoint = Vector2.new(0.5, 0)
-        crossV.BackgroundColor3 = Color3.fromRGB(250, 204, 21)
-        crossV.BackgroundTransparency = 0.55
-        crossV.BorderSizePixel = 0
-        crossV.ZIndex = mZ + 20
-        crossV.Parent = mapCanvas
-
-        local selBox = Instance.new("Frame")
-        selBox.BackgroundColor3 = Color3.fromRGB(56, 189, 248)
-        selBox.BackgroundTransparency = 0.55
-        selBox.BorderSizePixel = 0
-        selBox.Visible = false
-        selBox.ZIndex = mZ + 21
-        selBox.Parent = mapCanvas
-        local selStroke = Instance.new("UIStroke", selBox)
-        selStroke.Color = Color3.new(1, 1, 1)
-        selStroke.Thickness = 1.6
-
-        local breakBox = Instance.new("Frame")
-        breakBox.BackgroundColor3 = Color3.fromRGB(249, 115, 22)
-        breakBox.BackgroundTransparency = 0.45
-        breakBox.BorderSizePixel = 0
-        breakBox.Visible = false
-        breakBox.ZIndex = mZ + 21
-        breakBox.Parent = mapCanvas
-        local breakStroke = Instance.new("UIStroke", breakBox)
-        breakStroke.Color = Color3.fromRGB(255, 237, 213)
-        breakStroke.Thickness = 1.4
-
-        local playerDot = Instance.new("Frame")
-        playerDot.AnchorPoint = Vector2.new(0.5, 0.5)
-        playerDot.Size = UDim2.fromOffset(10, 10)
-        playerDot.BackgroundColor3 = Color3.fromRGB(250, 204, 21)
-        playerDot.BorderSizePixel = 0
-        playerDot.ZIndex = mZ + 24
-        playerDot.Parent = mapCanvas
-        Instance.new("UICorner", playerDot).CornerRadius = UDim.new(1, 0)
-        local playerStroke = Instance.new("UIStroke", playerDot)
-        playerStroke.Color = Color3.new(1, 1, 1)
-        playerStroke.Thickness = 1.8
-
-        local youTag = Instance.new("TextLabel")
-        youTag.Size = UDim2.fromOffset(28, 12)
-        youTag.AnchorPoint = Vector2.new(0.5, 1)
-        youTag.BackgroundColor3 = Color3.fromRGB(15, 23, 42)
-        youTag.BackgroundTransparency = 0.12
-        youTag.BorderSizePixel = 0
-        youTag.Font = Enum.Font.Code
-        youTag.TextSize = 9
-        youTag.TextColor3 = Color3.fromRGB(250, 204, 21)
-        youTag.Text = "YOU"
-        youTag.ZIndex = mZ + 25
-        youTag.Parent = mapCanvas
-        Instance.new("UICorner", youTag).CornerRadius = UDim.new(0, 3)
-
-        local mapHitOverlay = Instance.new("TextButton")
-        mapHitOverlay.Size = UDim2.fromScale(1, 1)
-        mapHitOverlay.BackgroundTransparency = 1
-        mapHitOverlay.BorderSizePixel = 0
-        mapHitOverlay.Text = ""
-        mapHitOverlay.AutoButtonColor = false
-        mapHitOverlay.ZIndex = mZ + 28
-        mapHitOverlay.Parent = mapCanvas
-
-        local worldHud = Instance.new("TextLabel")
-        worldHud.Size = UDim2.new(0, 230, 0, 18)
-        worldHud.Position = UDim2.fromOffset(6, 4)
-        worldHud.BackgroundColor3 = Color3.fromRGB(10, 14, 22)
-        worldHud.BackgroundTransparency = 0.25
-        worldHud.BorderSizePixel = 0
-        worldHud.Font = Enum.Font.Code
-        worldHud.TextSize = 10
-        worldHud.TextColor3 = Color3.fromRGB(248, 250, 252)
-        worldHud.Text = " WORLD: - | POS: (-, -) "
-        worldHud.ZIndex = mZ + 32
-        worldHud.Parent = mapView
-        Instance.new("UICorner", worldHud).CornerRadius = UDim.new(0, 4)
-
-    local bar = Instance.new("Frame")
-    bar.Size = UDim2.new(1, -12, 0, 24)
-    bar.Position = UDim2.new(0, 6, 1, -27)
-    bar.BackgroundTransparency = 1
-    bar.Parent = rowContainer
-
-    local infoLbl = Instance.new("TextLabel")
-    infoLbl.Size = UDim2.new(1, -160, 1, 0)
-    infoLbl.BackgroundTransparency = 1
-    infoLbl.Font = Enum.Font.Code
-    infoLbl.TextSize = 10
-    infoLbl.TextColor3 = Color3.fromRGB(203, 213, 225)
-    infoLbl.TextXAlignment = Enum.TextXAlignment.Left
-    infoLbl.TextTruncate = Enum.TextTruncate.AtEnd
-    infoLbl.Text = "Ketuk tile pada peta sesuai mode..."
-    infoLbl.Parent = bar
-
-    local function makeBtn(txt, xo, w)
-        local b = Instance.new("TextButton")
-        b.Size = UDim2.fromOffset(w or 26, 22)
-        b.Position = UDim2.new(1, xo, 0, 1)
-        b.BackgroundColor3 = Color3.fromRGB(31, 35, 44)
-        b.Font = Enum.Font.GothamBold
-        b.TextSize = 11
-        b.TextColor3 = Color3.fromRGB(240, 244, 250)
-        b.Text = txt
-        b.BorderSizePixel = 0
-        b.Parent = bar
-        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
-        return b
-    end
-    local fitBtn     = makeBtn("FIT", -154, 32)
-    local zoomInBtn  = makeBtn("+",   -118, 26)
-    local zoomOutBtn = makeBtn("-",    -88, 26)
-    local tpBtn      = makeBtn("TP",   -58, 54)
-    tpBtn.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
-    tpBtn.TextColor3 = Color3.new(0, 0, 0)
-
-    local mapTilePx, mapPanX, mapPanY = 3.2, 6, 6
-    local didFit, fittedW, fittedH, lastDraw, userPanned = false, nil, nil, 0, false
-    local mapPool = {}
-
-    local function getScale()
-        local h = rowContainer.AbsoluteSize.Y
-        return (h > 10) and clamp(h / 285, 0.25, 4) or 1
+        return found
     end
 
-    local function updatePlayerOverlay(selfPos, w, h)
-        selfPos = selfPos or Core.ReadPos()
-        w = w or ((H.gt and H.gt.w) or 100)
-        h = h or ((H.gt and H.gt.h) or 60)
-        local fx = (selfPos.tx + 0.5) / w
-        local fy = (selfPos.ty + 0.5) / h
-        local dsz = clamp(mapTilePx + 4, 9, 14)
-        crossH.Position = UDim2.fromScale(0, fy)
-        crossV.Position = UDim2.fromScale(fx, 0)
-        playerDot.Size = UDim2.fromOffset(dsz, dsz)
-        playerDot.Position = UDim2.fromScale(fx, fy)
-        if selfPos.ty < 4 then
-            youTag.AnchorPoint = Vector2.new(0.5, 0)
-            youTag.Position = UDim2.new(fx, 0, fy, dsz * 0.5 + 3)
-        else
-            youTag.AnchorPoint = Vector2.new(0.5, 1)
-            youTag.Position = UDim2.new(fx, 0, fy, -(dsz * 0.5 + 3))
-        end
-    end
-
-    local function updateTransform()
-        local w, h = (H.gt and H.gt.w) or 100, (H.gt and H.gt.h) or 60
-        local s = getScale()
-        local vw, vh = math.max(100, mapView.AbsoluteSize.X / s), math.max(80, mapView.AbsoluteSize.Y / s)
-        local cw, ch = w * mapTilePx, h * mapTilePx
-        mapPanX = (cw <= vw) and math.floor((vw - cw) * 0.5) or clamp(mapPanX, vw - cw - 8, 8)
-        mapPanY = (ch <= vh) and math.floor((vh - ch) * 0.5) or clamp(mapPanY, vh - ch - 8, 8)
-        mapCanvas.Size = UDim2.fromOffset(cw, ch)
-        mapCanvas.Position = UDim2.fromOffset(mapPanX, mapPanY)
-        updatePlayerOverlay(nil, w, h)
-    end
-
-    local function fitMap()
-        local w, h = (H.gt and H.gt.w) or 100, (H.gt and H.gt.h) or 60
-        local s = getScale()
-        local vw, vh = math.max(120, mapView.AbsoluteSize.X / s), math.max(80, mapView.AbsoluteSize.Y / s)
-        mapTilePx = clamp(math.min((vw - 10) / w, (vh - 10) / h), 2, 18)
-        mapPanX = math.floor((vw - w * mapTilePx) * 0.5)
-        mapPanY = math.floor((vh - h * mapTilePx) * 0.5)
-        didFit, fittedW, fittedH, userPanned = true, w, h, false
-        updateTransform()
-    end
-
-    local function applyZoom(newPx)
-        local w, h = (H.gt and H.gt.w) or 100, (H.gt and H.gt.h) or 60
-        local s = getScale()
-        local vw, vh = math.max(100, mapView.AbsoluteSize.X / s), math.max(80, mapView.AbsoluteSize.Y / s)
-        local oldPx = mapTilePx
-        local clamped = clamp(newPx, 2, 18)
-        if math.abs(clamped - oldPx) < 0.01 then return end
-        local cx, cy
-        if not userPanned or (w * oldPx <= vw + 4 and h * oldPx <= vh + 4) then
-            -- Zoom otomatis mengunci posisi player agar posisi & HUD bar tetap presisi tanpa bergeser
-            local sp = Core.ReadPos()
-            cx, cy = sp.tx + 0.5, sp.ty + 0.5
-        else
-            cx, cy = (vw * 0.5 - mapPanX) / oldPx, (vh * 0.5 - mapPanY) / oldPx
-        end
-        mapTilePx = clamped
-        mapPanX = vw * 0.5 - cx * clamped
-        mapPanY = vh * 0.5 - cy * clamped
-        updateTransform()
-    end
-
-    local function getBox(idx, z, col, trans, round)
-        local f = mapPool[idx]
-        if not f then
-            f = Instance.new("Frame")
-            f.BorderSizePixel = 0
-            f.Parent = mapCanvas
-            Instance.new("UICorner", f)
-            mapPool[idx] = f
-        end
-        f.Visible = true
-        f.ZIndex = (mapCanvas.ZIndex or 1) + z
-        f.BackgroundColor3 = col
-        f.BackgroundTransparency = trans or 0
-        local uc = f:FindFirstChildOfClass("UICorner")
-        if uc then uc.CornerRadius = UDim.new(round and 1 or 0, 0) end
-        return f
-    end
-
-    local function classifyMapColor(id, info)
-        if id == 8 then return Color3.fromRGB(48, 54, 66), "bed" end
-        if info then
-            if info.hurts then return Color3.fromRGB(239, 68, 34), "lava" end
-            if info.deadly then return Color3.fromRGB(220, 38, 38), "dead" end
-            if info.swim then return Color3.fromRGB(56, 165, 240), "water" end
-            if info.lock or info.worldKey or info.area then return Color3.fromRGB(250, 204, 21), "lock" end
-            if info.door or info.entrance or id == 6 then return Color3.fromRGB(56, 189, 248), "door" end
-            local ln = string.lower(info.name or "")
-            if string.find(ln, "grass", 1, true) or string.find(ln, "leaf", 1, true) then
-                return Color3.fromRGB(76, 175, 80), "grass"
-            elseif string.find(ln, "lava", 1, true) or string.find(ln, "magma", 1, true) then
-                return Color3.fromRGB(239, 68, 34), "lava"
-            elseif string.find(ln, "rock", 1, true) or string.find(ln, "stone", 1, true) or string.find(ln, "marble", 1, true) or string.find(ln, "obsidian", 1, true) then
-                return Color3.fromRGB(130, 140, 155), "rock"
-            elseif string.find(ln, "sand", 1, true) or string.find(ln, "desert", 1, true) then
-                return Color3.fromRGB(224, 198, 128), "sand"
-            elseif info.platform or string.find(ln, "wood", 1, true) or string.find(ln, "plank", 1, true) then
-                return Color3.fromRGB(168, 114, 62), "wood"
-            elseif id == 2 or string.find(ln, "dirt", 1, true) or string.find(ln, "mud", 1, true) then
-                return Color3.fromRGB(122, 82, 48), "dirt"
-            elseif info.tint and info.tint ~= Color3.new(1, 1, 1) and info.tint ~= Color3.new(0, 0, 0) then
-                return info.tint, "id_" .. tostring(id)
+    local function mountEmbeddedCanvas(anchorKey, heightPx, buildFn)
+        local function tryMountNow()
+            local hits = findAllTextBoxesWithKey(anchorKey)
+            if #hits == 0 then return false end
+            local anchorBox = hits[1]
+            if not anchorBox or not anchorBox.Parent then return false end
+            local rowContainer = anchorBox.Parent
+            for _, ch in ipairs(rowContainer:GetChildren()) do
+                if not ch:IsA("UICorner") and not ch:IsA("UIStroke") then ch:Destroy() end
             end
+            rowContainer.Size = UDim2.new(1, 0, 0, heightPx)
+            rowContainer.BackgroundColor3 = Color3.fromRGB(11, 14, 20)
+            rowContainer.ClipsDescendants = true
+            local okB, bErr = xpcall(buildFn, debug.traceback, rowContainer)
+            if not okB then warn("[SYT Canvas Error " .. tostring(anchorKey) .. "]: " .. tostring(bErr)) end
+            return true
         end
-        return Color3.fromRGB(115, 130, 155), "sol"
+        if tryMountNow() then return end
+        task.spawn(function()
+            for _ = 1, 80 do
+                if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+                if tryMountNow() then return end
+                task.wait(0.05)
+            end
+        end)
     end
 
-    local function renderMap(force)
-        if not rowContainer or not rowContainer.Parent or not mapView.Visible then return end
-        if mapView.AbsoluteSize.X <= 10 or mapView.AbsoluteSize.Y <= 10 then return end
-        local now = os.clock()
-        if not force and (now - lastDraw) < 0.25 then return end
-        lastDraw = now
-
-        Core.EnsureInit()
-        local gt = H.gt
-        local selfPos = Core.ReadPos()
-        worldHud.Text = string.format(" %s | POS (%d, %d) ", (gt and gt.name ~= "" and gt.name) or "-", selfPos.sx, selfPos.sy)
-
-        local w, h = (gt and gt.w) or 100, (gt and gt.h) or 60
-        if not didFit or fittedW ~= w or fittedH ~= h then fitMap() else updateTransform() end
-        if not gt or not gt.fg then return end
-
-        local px, used = mapTilePx, 0
-        -- Gunakan koordinat normalized UDim2.fromScale agar semua objek 100% terkunci pada grid saat di-zoom!
-        -- 1. Background cave walls
-        if type(gt.bg) == "table" then
-            for y = 0, h - 1 do
-                local fgRow, bgRow = gt.fg[y], gt.bg[y]
-                if bgRow then
-                    local x = 0
-                    while x < w do
-                        if (bgRow[x] or 0) ~= 0 and (not fgRow or (fgRow[x] or 0) == 0) then
-                            local sx = x
-                            while x < w and (bgRow[x] or 0) ~= 0 and (not fgRow or (fgRow[x] or 0) == 0) do x += 1 end
-                            used += 1
-                            local f = getBox(used, 1, Color3.fromRGB(68, 52, 42), 0.15, false)
-                            f.AnchorPoint = Vector2.zero
-                            f.Position = UDim2.fromScale(sx / w, y / h)
-                            f.Size = UDim2.fromScale((x - sx) / w, 1 / h)
+    -- 1. PNB 5x5 TILE SELECTOR PAD (__PAD_5X5_ANCHOR_KEY__)
+    mountEmbeddedCanvas("__PAD_5X5_ANCHOR_KEY__", 210, function(rowContainer)
+        local padFrame = Instance.new("Frame", rowContainer)
+        padFrame.Size = UDim2.new(1, -12, 1, -12)
+        padFrame.Position = UDim2.fromOffset(6, 6)
+        padFrame.BackgroundTransparency = 1
+        local cellMap = {}
+        local function refresh5x5()
+            local pos = Core.ReadPos()
+            local myGameName = Core.GetInGameName(LP, true)
+            for dy = -2, 2 do
+                for dx = -2, 2 do
+                    local cell = cellMap[tileKey(dx, dy)]
+                    if cell then
+                        if dx == 0 and dy == 0 then
+                            cell.BackgroundColor3 = Color3.fromRGB(161, 98, 7)
+                            cell.TextColor3 = Color3.fromRGB(254, 240, 138)
+                            cell.Text = string.format("%s\n(%d,%d)", string.sub(myGameName, 1, 6), pos.tx, pos.ty)
                         else
-                            x += 1
+                            local on = PNB.State.grid5x5[tileKey(dx, dy)] == true
+                            cell.BackgroundColor3 = on and Color3.fromRGB(14, 116, 144) or Color3.fromRGB(23, 29, 41)
+                            cell.TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(148, 163, 184)
+                            cell.Text = string.format("%+d,%+d", dx, dy)
                         end
                     end
                 end
             end
         end
-
-        -- 2. Terrain, Lava, Water, Locks, Seeds, Doors
-        for y = 0, h - 1 do
-            local row = gt.fg[y]
-            if row then
-                local x = 0
-                while x < w do
-                    local id = row[x] or 0
-                    local info = Core.GetItemInfo(id)
-                    if id ~= 0 and ((info and (info.solid or info.platform or info.hurts or info.deadly or info.swim)) or not info) then
-                        local col, keyTag = classifyMapColor(id, info)
-                        local sx = x
-                        while x < w do
-                            local nid = row[x] or 0
-                            local ninfo = Core.GetItemInfo(nid)
-                            local isTile = (nid ~= 0) and ((ninfo and (ninfo.solid or ninfo.platform or ninfo.hurts or ninfo.deadly or ninfo.swim)) or not ninfo)
-                            if not isTile then break end
-                            local _, nk = classifyMapColor(nid, ninfo)
-                            if nk ~= keyTag then break end
-                            x += 1
-                        end
-                        used += 1
-                        local f = getBox(used, 2, col, 0, false)
-                        f.AnchorPoint = Vector2.zero
-                        f.Position = UDim2.fromScale(sx / w, y / h)
-                        f.Size = UDim2.fromScale((x - sx) / w, 1 / h)
-                    else
-                        if info and (info.kind == "seed" or info.door or info.entrance or info.lock or id == 6) then
-                            used += 1
-                            local col
-                            if info.kind == "seed" then
-                                col = Core.IsTreeRipe(x, y) and Color3.fromRGB(250, 204, 21) or Color3.fromRGB(34, 197, 94)
-                            else
-                                col = select(1, classifyMapColor(id, info))
-                            end
-                            local f = getBox(used, 3, col, 0, false)
-                            f.AnchorPoint = Vector2.zero
-                            f.Position = UDim2.fromScale(x / w, y / h)
-                            f.Size = UDim2.fromScale(1 / w, 1 / h)
-                        end
-                        x += 1
-                    end
+        for r = 0, 4 do
+            local dy = r - 2
+            for c = 0, 4 do
+                local dx = c - 2
+                local btn = Instance.new("TextButton", padFrame)
+                btn.Size = UDim2.new(0.2, -4, 0.2, -4)
+                btn.Position = UDim2.new(c * 0.2, 2, r * 0.2, 2)
+                btn.BorderSizePixel = 0
+                btn.Font = Enum.Font.Code
+                btn.TextSize = 10
+                btn.TextWrapped = true
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+                if dx ~= 0 or dy ~= 0 then
+                    btn.MouseButton1Click:Connect(function() PNB.ToggleTile5x5(dx, dy) end)
                 end
+                cellMap[tileKey(dx, dy)] = btn
             end
         end
-
-        -- 3. Drops (Cyan = Gems, Amber = Items)
-        if type(gt.dropList) == "function" then
-            local okD, drops = pcall(gt.dropList)
-            if okD and type(drops) == "table" then
-                for _, d in ipairs(drops) do
-                    if type(d) == "table" and d.x and d.y and (d.n or 0) > 0 then
-                        used += 1
-                        local f = getBox(used, 3, (d.id == 112) and Color3.fromRGB(103, 232, 249) or Color3.fromRGB(251, 191, 36), 0, true)
-                        f.AnchorPoint = Vector2.new(0.5, 0.5)
-                        f.Position = UDim2.fromScale(d.x / w, (d.y - 0.5) / h)
-                        local ds = clamp(px * 0.65, 4, 9)
-                        f.Size = UDim2.fromOffset(ds, ds)
-                    end
-                end
-            end
-        end
-
-        -- 4. Auto Pabrik connected horizontal lines (-----) (Purple) & breakPos (Orange)
-        for _, seg in ipairs(Pabrik.GetConnectedLines()) do
-            used += 1
-            local f = getBox(used, 4, Color3.fromRGB(168, 85, 247), 0.12, false)
-            f.AnchorPoint = Vector2.zero
-            local hRatio = (seg.len > 1) and 0.72 or 1
-            local yOff = (seg.len > 1) and 0.14 or 0
-            f.Position = UDim2.fromScale(seg.x1 / w, (seg.y + yOff) / h)
-            f.Size = UDim2.fromScale(seg.len / w, hRatio / h)
-        end
-        if Pabrik.State.breakPos then
-            breakBox.Visible = true
-            breakBox.Position = UDim2.fromScale(Pabrik.State.breakPos.x / w, Pabrik.State.breakPos.y / h)
-            breakBox.Size = UDim2.fromScale(1 / w, 1 / h)
-        else
-            breakBox.Visible = false
-        end
-
-        -- 5. Selected TP tile (Cyan/Red)
-        if tpState.selectedX and tpState.selectedY then
-            local ok = Core.ValidateTile(tpState.selectedX, tpState.selectedY)
-            local col = ok and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(239, 68, 68)
-            selBox.Visible = true
-            selBox.BackgroundColor3 = col
-            selBox.AnchorPoint = Vector2.new(0.5, 0.5)
-            selBox.Position = UDim2.fromScale((tpState.selectedX + 0.5) / w, (tpState.selectedY + 0.5) / h)
-            local minFracW = math.max(1 / w, 7 / math.max(w * px, 1))
-            local minFracH = math.max(1 / h, 7 / math.max(h * px, 1))
-            selBox.Size = UDim2.fromScale(minFracW, minFracH)
-        else
-            selBox.Visible = false
-        end
-
-        -- 6. Other in-world players (Red dot) + Self (Crosshair + Bright Yellow Pin "YOU")
-        for _, op in ipairs(Core.GetInWorldPlayers(false)) do
-            if op.tx and op.ty then
-                used += 1
-                local f = getBox(used, 6, Color3.fromRGB(244, 63, 94), 0, true)
-                f.AnchorPoint = Vector2.new(0.5, 0.5)
-                f.Position = UDim2.fromScale((op.tx + 0.5) / w, (op.ty + 0.5) / h)
-                local dsz = clamp(px + 2, 6, 12)
-                f.Size = UDim2.fromOffset(dsz, dsz)
-            end
-        end
-
-        updatePlayerOverlay(selfPos, w, h)
-
-        for i = used + 1, #mapPool do mapPool[i].Visible = false end
-    end
-    UIHooks.refreshMap = renderMap
-    mapView:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-        didFit = false
-        renderMap(true)
-    end)
-    local function onTabShow()
-        if (not scroller or scroller.Visible) and rowContainer.Visible then
-            fitMap()
-            renderMap(true)
-        end
-    end
-    rowContainer:GetPropertyChangedSignal("Visible"):Connect(onTabShow)
-    if scroller then scroller:GetPropertyChangedSignal("Visible"):Connect(onTabShow) end
-
-    -- Kalibrasi otomatis koordinat pointer (Mouse / Touch / Android Cutout / gethui) dari tombol kecil UI
-    local calib = { Mouse = {}, Touch = {} }
-    local function learnCalibFromBtn(btn, inp)
-        if not inp or not btn then return end
-        local okIn, tl = pcall(function() return GuiService:GetGuiInset() end)
-        if not okIn or not tl then return end
-        local key = (inp.UserInputType == Enum.UserInputType.Touch) and "Touch" or "Mouse"
-        local bp, bs = btn.AbsolutePosition, btn.AbsoluteSize
-        local px, py = inp.Position.X, inp.Position.Y
-        if tl.Y > bs.Y + 4 then
-            local rawIn = (py >= bp.Y - 3 and py <= bp.Y + bs.Y + 3)
-            local insIn = (py + tl.Y >= bp.Y - 3 and py + tl.Y <= bp.Y + bs.Y + 3)
-            if rawIn and not insIn then calib[key].dy = 0
-            elseif insIn and not rawIn then calib[key].dy = tl.Y end
-        end
-        if tl.X > bs.X + 4 then
-            local rawIn = (px >= bp.X - 3 and px <= bp.X + bs.X + 3)
-            local insIn = (px + tl.X >= bp.X - 3 and px + tl.X <= bp.X + bs.X + 3)
-            if rawIn and not insIn then calib[key].dx = 0
-            elseif insIn and not rawIn then calib[key].dx = tl.X end
-        end
-    end
-    local function attachCalib(b)
-        b.InputBegan:Connect(function(inp)
-            if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-                learnCalibFromBtn(b, inp)
-            end
-        end)
-    end
-    for _, mb in pairs(modeBtns) do attachCalib(mb) end
-    attachCalib(fitBtn); attachCalib(zoomInBtn); attachCalib(zoomOutBtn); attachCalib(tpBtn)
-    task.defer(function()
-        local sg = mapView:FindFirstAncestorOfClass("ScreenGui")
-        if sg then
-            for _, d in ipairs(sg:GetDescendants()) do
-                if d:IsA("TextButton") and d ~= mapHitOverlay and d.AbsoluteSize.Y > 4 and d.AbsoluteSize.Y <= 52 then
-                    attachCalib(d)
-                end
-            end
-        end
+        UIHooks.refreshPad5x5 = refresh5x5
+        refresh5x5()
     end)
 
-    local function resolvePointerScreenPos(inp)
-        local inpType = inp.UserInputType
-        local key = (inpType == Enum.UserInputType.Touch) and "Touch" or "Mouse"
-        local okIn, tl = pcall(function() return GuiService:GetGuiInset() end)
-        tl = (okIn and tl) or Vector2.zero
-        local sg = mapView:FindFirstAncestorOfClass("ScreenGui")
-        local sgPos = (sg and sg.AbsolutePosition) or Vector2.zero
+    -- 2. BACKPACK CARD GRID (3-column Flex Grid: __BP_ITEM_ANCHOR_KEY__)
+    mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 220, function(rowContainer)
+        local scroller = rowContainer:FindFirstAncestorOfClass("ScrollingFrame")
+        local topBar = Instance.new("Frame", rowContainer)
+        topBar.Size = UDim2.new(1, -12, 0, 22)
+        topBar.Position = UDim2.fromOffset(6, 4)
+        topBar.BackgroundTransparency = 1
+        local infoLbl = Instance.new("TextLabel", topBar)
+        infoLbl.Size = UDim2.fromScale(1, 1)
+        infoLbl.BackgroundTransparency = 1
+        infoLbl.Font = Enum.Font.Code
+        infoLbl.TextSize = 10
+        infoLbl.TextXAlignment = Enum.TextXAlignment.Left
+        infoLbl.TextColor3 = Color3.fromRGB(148, 163, 184)
+        infoLbl.Text = "Block Selector (Tap pilih / tap lagi batal)"
 
-        local cx, cy = inp.Position.X, inp.Position.Y
-        if calib[key].dx ~= nil or calib[key].dy ~= nil then
-            local dx = (calib[key].dx ~= nil) and calib[key].dx or ((sg and sg.IgnoreGuiInset and sgPos.Magnitude < 2) and tl.X or 0)
-            local dy = (calib[key].dy ~= nil) and calib[key].dy or ((sg and sg.IgnoreGuiInset and sgPos.Magnitude < 2) and tl.Y or 0)
-            return cx + dx, cy + dy
-        end
-        if inpType == Enum.UserInputType.MouseButton1 then
-            local okMl, ml = pcall(function() return UserInputService:GetMouseLocation() end)
-            if okMl and ml then
-                local vp, vs = mapView.AbsolutePosition, mapView.AbsoluteSize
-                if ml.X >= vp.X - 6 and ml.X <= vp.X + vs.X + 6 and ml.Y >= vp.Y - 6 and ml.Y <= vp.Y + vs.Y + 6 then
-                    return ml.X, ml.Y
-                end
+        local scroll = Instance.new("ScrollingFrame", rowContainer)
+        scroll.Size = UDim2.new(1, -12, 1, -32)
+        scroll.Position = UDim2.fromOffset(6, 28)
+        scroll.BackgroundColor3 = Color3.fromRGB(8, 10, 15)
+        scroll.BorderSizePixel = 0
+        scroll.ScrollBarThickness = 4
+        scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        scroll.CanvasSize = UDim2.new()
+        local grid = Instance.new("UIGridLayout", scroll)
+        grid.CellSize = UDim2.new(0.32, 0, 0, 74)
+        grid.CellPadding = UDim2.fromOffset(4, 5)
+
+        local function rebuildBP()
+            for _, ch in ipairs(scroll:GetChildren()) do
+                if ch:IsA("TextButton") then ch:Destroy() end
             end
-        end
-        if sg and sg.IgnoreGuiInset and sgPos.Magnitude < 2 then
-            return cx + tl.X, cy + tl.Y
-        end
-        return cx, cy
-    end
-
-    local function handleMapTap(cx, cy)
-        local vp, vs = mapView.AbsolutePosition, mapView.AbsoluteSize
-        if cx < vp.X or cy < vp.Y or cx > vp.X + vs.X or cy > vp.Y + vs.Y then return end
-        local absPos, absSize = mapCanvas.AbsolutePosition, mapCanvas.AbsoluteSize
-        local maxW, maxH = (H.gt and H.gt.w) or 100, (H.gt and H.gt.h) or 60
-        local rx, ry = cx - absPos.X, cy - absPos.Y
-        if absSize.X <= 1 or absSize.Y <= 1 then return end
-        if rx < -6 or ry < -6 or rx > absSize.X + 6 or ry > absSize.Y + 6 then return end
-        local tx = clamp(math.floor((clamp(rx, 0, absSize.X - 0.01) / absSize.X) * maxW), 0, maxW - 1)
-        local ty = clamp(math.floor((clamp(ry, 0, absSize.Y - 0.01) / absSize.Y) * maxH), 0, maxH - 1)
-
-        if tpState.mapClickMode == "PABRIK_TILE" then
-            local added = Pabrik.ToggleTile(tx, ty)
-            infoLbl.Text = string.format("Pabrik Tile (%d, %d): %s", tx, ty, added and "ON" or "OFF")
-        elseif tpState.mapClickMode == "PABRIK_LINE" then
-            local added = Pabrik.ToggleLine(ty, tx)
-            infoLbl.Text = string.format("Pabrik Line Y=%d: %s", ty, added and "1 LINE CONNECTED" or "UNSELECTED")
-        elseif tpState.mapClickMode == "BREAK_POS" then
-            Pabrik.SetBreakPos(tx, ty)
-            infoLbl.Text = string.format("BreakPos diset -> (%d, %d)", tx, ty)
-        else
-            local ok, msg = Core.ValidateTile(tx, ty)
-            tpState.selectedX, tpState.selectedY = tx, ty
-            UI:SetValue("TpManualX", tostring(tx))
-            UI:SetValue("TpManualY", tostring(ty))
-            UI:SetValue("ValidStatusDisplay", msg)
-            infoLbl.Text = msg
-            infoLbl.TextColor3 = ok and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(239, 68, 68)
-        end
-        renderMap(true)
-    end
-
-    local activeInput, moved, startScr, startPan, savedScroll = nil, false, nil, nil, nil
-    local function onMapDown(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            activeInput, moved, startScr, startPan = inp, false, inp.Position, Vector2.new(mapPanX, mapPanY)
-            scroller = scroller or rowContainer:FindFirstAncestorOfClass("ScrollingFrame")
-            if scroller and savedScroll == nil then
-                savedScroll = scroller.ScrollingEnabled
-                scroller.ScrollingEnabled = false
-            end
-        end
-    end
-    mapHitOverlay.InputBegan:Connect(onMapDown)
-    mapView.InputBegan:Connect(onMapDown)
-
-    local function onMapWheel(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseWheel then
-            applyZoom(mapTilePx * (inp.Position.Z > 0 and 1.18 or (1 / 1.18)))
-        end
-    end
-    mapHitOverlay.InputChanged:Connect(onMapWheel)
-    mapView.InputChanged:Connect(onMapWheel)
-
-    UserInputService.InputChanged:Connect(function(inp)
-        if not activeInput then return end
-        local same = (activeInput.UserInputType == Enum.UserInputType.Touch and inp == activeInput)
-            or (activeInput.UserInputType == Enum.UserInputType.MouseButton1 and inp.UserInputType == Enum.UserInputType.MouseMovement)
-        if same and startScr and startPan then
-            local d = inp.Position - startScr
-            if d.Magnitude > 14 then
-                moved = true
-                userPanned = true
-                local s = getScale()
-                mapPanX, mapPanY = startPan.X + d.X / s, startPan.Y + d.Y / s
-                updateTransform()
-            end
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(inp)
-        if not activeInput then return end
-        if inp ~= activeInput and not (activeInput.UserInputType == Enum.UserInputType.MouseButton1 and inp.UserInputType == Enum.UserInputType.MouseButton1) then return end
-        local wasMoved = moved
-        activeInput = nil
-        if scroller and savedScroll ~= nil then scroller.ScrollingEnabled = savedScroll; savedScroll = nil end
-        if not wasMoved and (not scroller or scroller.Visible) and rowContainer.Visible and mapView.AbsoluteSize.X > 10 then
-            local cx, cy = resolvePointerScreenPos(inp)
-            handleMapTap(cx, cy)
-        end
-    end)
-
-    fitBtn.MouseButton1Click:Connect(function() fitMap(); renderMap(true) end)
-    zoomInBtn.MouseButton1Click:Connect(function() applyZoom(mapTilePx + 1.5); renderMap(true) end)
-    zoomOutBtn.MouseButton1Click:Connect(function() applyZoom(mapTilePx - 1.5); renderMap(true) end)
-    tpBtn.MouseButton1Click:Connect(function()
-        if tpState.selectedX and tpState.selectedY then
-            local ok, msg = Packets.WalkTeleport({ tx = tpState.selectedX, ty = tpState.selectedY, mode = "step", stepSize = 3 })
-            UI:SetValue("ValidStatusDisplay", (ok and "[OK] " or "[STOP/NO-SEND] ") .. tostring(msg))
-            infoLbl.Text = tostring(msg)
-            renderMap(true)
-        end
-    end)
-end)
-
--- B. MOUNT 2: VISUAL BACKPACK ITEM SELECTOR WITH REAL ITEM SPRITES (__BP_ITEM_ANCHOR_KEY__)
-mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
-    local scroller = rowContainer:FindFirstAncestorOfClass("ScrollingFrame")
-    local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1, -12, 0, 24)
-    topBar.Position = UDim2.fromOffset(6, 5)
-    topBar.BackgroundTransparency = 1
-    topBar.Parent = rowContainer
-
-    local filterMode = "BLOCK" -- "BLOCK" | "SEED" | "ALL"
-    local filterBtns = {}
-    local rebuildBP
-    for i, m in ipairs({ "BLOCK", "SEED", "ALL" }) do
-        local b = Instance.new("TextButton")
-        b.Size = UDim2.new(0.24, -3, 1, 0)
-        b.Position = UDim2.new((i - 1) * 0.25, 0, 0, 0)
-        b.BorderSizePixel = 0
-        b.Font = Enum.Font.GothamBold
-        b.TextSize = 10
-        b.Parent = topBar
-        b.Text = m
-        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
-        b.MouseButton1Click:Connect(function()
-            filterMode = m
-            if rebuildBP then rebuildBP() end
-        end)
-        filterBtns[m] = b
-    end
-
-    local bpCountLbl = Instance.new("TextLabel")
-    bpCountLbl.Size = UDim2.new(0.25, 0, 1, 0)
-    bpCountLbl.Position = UDim2.new(0.75, 0, 0, 0)
-    bpCountLbl.BackgroundTransparency = 1
-    bpCountLbl.Font = Enum.Font.Code
-    bpCountLbl.TextSize = 10
-    bpCountLbl.TextXAlignment = Enum.TextXAlignment.Right
-    bpCountLbl.TextColor3 = Color3.fromRGB(148, 163, 184)
-    bpCountLbl.Text = "0 item"
-    bpCountLbl.Parent = topBar
-
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.new(1, -12, 1, -36)
-    scroll.Position = UDim2.fromOffset(6, 32)
-    scroll.BackgroundColor3 = Color3.fromRGB(8, 10, 15)
-    scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 4
-    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scroll.ZIndex = (rowContainer.ZIndex or 1) + 2
-    scroll.Parent = rowContainer
-    Instance.new("UIStroke", scroll).Color = Color3.fromRGB(45, 55, 72)
-
-    local grid = Instance.new("UIGridLayout")
-    grid.CellSize = UDim2.fromOffset(74, 74)
-    grid.CellPadding = UDim2.fromOffset(5, 5)
-    grid.Parent = scroll
-    local pad = Instance.new("UIPadding", scroll)
-    pad.PaddingLeft, pad.PaddingTop, pad.PaddingRight, pad.PaddingBottom = UDim.new(0, 5), UDim.new(0, 5), UDim.new(0, 5), UDim.new(0, 5)
-
-    rebuildBP = function()
-        for m, b in pairs(filterBtns) do
-            local on = (filterMode == m)
-            b.BackgroundColor3 = on and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(31, 35, 44)
-            b.TextColor3 = on and Color3.new(0, 0, 0) or Color3.fromRGB(226, 232, 240)
-        end
-        for _, ch in ipairs(scroll:GetChildren()) do
-            if ch:IsA("TextButton") then ch:Destroy() end
-        end
-        local items = PNB.GetBackpackBlocks(filterMode ~= "BLOCK")
-        local shownCount = 0
-        for _, it in ipairs(items) do
-            local show = (filterMode == "ALL") or (filterMode == "SEED" and it.kind == "seed") or (filterMode == "BLOCK" and it.kind ~= "seed")
-            if show then
-                shownCount += 1
-                local isSel = (PNB.State.selectedBlockId == it.id) or (Pabrik.State.blockId == it.id) or (Pabrik.State.seedId == it.id)
-                local cell = Instance.new("TextButton")
+            -- Hanya block (seed tidak masuk per README PNB spec)
+            local items = PNB.GetBackpackBlocks(false)
+            for _, it in ipairs(items) do
+                local isSel = (PNB.State.selectedBlockId == it.id)
+                local cell = Instance.new("TextButton", scroll)
                 cell.Text = ""
                 cell.AutoButtonColor = false
                 cell.BackgroundColor3 = isSel and Color3.fromRGB(22, 48, 68) or Color3.fromRGB(19, 24, 34)
                 cell.BorderSizePixel = 0
-                cell.ZIndex = (scroll.ZIndex or 3) + 1
-                cell.Parent = scroll
                 Instance.new("UICorner", cell).CornerRadius = UDim.new(0, 6)
                 local st = Instance.new("UIStroke", cell)
                 st.Color = isSel and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(48, 58, 76)
                 st.Thickness = isSel and 1.8 or 1
 
-                local iconHolder = Instance.new("Frame")
-                iconHolder.Size = UDim2.fromOffset(36, 36)
+                local iconHolder = Instance.new("Frame", cell)
+                iconHolder.Size = UDim2.fromOffset(32, 32)
                 iconHolder.AnchorPoint = Vector2.new(0.5, 0)
-                iconHolder.Position = UDim2.new(0.5, 0, 0, 6)
+                iconHolder.Position = UDim2.new(0.5, 0, 0, 5)
                 iconHolder.BackgroundTransparency = 1
-                iconHolder.ZIndex = cell.ZIndex + 1
-                iconHolder.Parent = cell
-                Core.AttachItemSprite(iconHolder, it.id, 34)
+                Core.AttachItemSprite(iconHolder, it.id, 30)
 
-                local cntLbl = Instance.new("TextLabel")
-                cntLbl.Size = UDim2.fromOffset(34, 14)
-                cntLbl.Position = UDim2.new(1, -36, 0, 2)
+                local cntLbl = Instance.new("TextLabel", cell)
+                cntLbl.Size = UDim2.fromOffset(32, 14)
+                cntLbl.Position = UDim2.new(1, -34, 0, 2)
                 cntLbl.BackgroundTransparency = 1
                 cntLbl.Font = Enum.Font.Code
-                cntLbl.TextSize = 10
+                cntLbl.TextSize = 9
                 cntLbl.TextXAlignment = Enum.TextXAlignment.Right
                 cntLbl.TextColor3 = Color3.fromRGB(250, 204, 21)
                 cntLbl.Text = "x" .. tostring(it.count)
-                cntLbl.ZIndex = cell.ZIndex + 4
-                cntLbl.Parent = cell
 
-                local nameLbl = Instance.new("TextLabel")
+                local nameLbl = Instance.new("TextLabel", cell)
                 nameLbl.Size = UDim2.new(1, -6, 0, 24)
                 nameLbl.Position = UDim2.new(0, 3, 1, -26)
                 nameLbl.BackgroundTransparency = 1
@@ -11604,200 +12695,364 @@ mountEmbeddedCanvas("__BP_ITEM_ANCHOR_KEY__", 225, function(rowContainer)
                 nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
                 nameLbl.TextColor3 = Color3.fromRGB(226, 232, 240)
                 nameLbl.Text = string.format("%s [%d]", it.name, it.id)
-                nameLbl.ZIndex = cell.ZIndex + 4
-                nameLbl.Parent = cell
 
                 cell.MouseButton1Click:Connect(function()
-                    if it.kind ~= "seed" then
+                    if PNB.State.selectedBlockId == it.id then
+                        PNB.State.selectedBlockId = nil
+                        UI:SetValue("PnbSelectedDisplay", "None")
+                    else
                         PNB.State.selectedBlockId = it.id
                         UI:SetValue("PnbSelectedDisplay", string.format("%s (ID:%d | x%d)", it.name, it.id, it.count))
+                        Pabrik.SetItem(it.id)
+                        UI:SetValue("PabrikItemInput", tostring(it.id))
+                        if UIHooks.refreshPabBP then pcall(UIHooks.refreshPabBP) end
                     end
-                    Pabrik.SetItem(it.id)
-                    UI:SetValue("PabrikItemInput", tostring(it.id))
                     rebuildBP()
-                    if UIHooks.refreshPad5x5 then UIHooks.refreshPad5x5() end
+                end)
+            end
+            infoLbl.Text = string.format("Blocks di Backpack: %d (Hanya Block, Seed exclude)", #items)
+        end
+        UIHooks.refreshBP = rebuildBP
+        if scroller then
+            scroller:GetPropertyChangedSignal("Visible"):Connect(function() if scroller.Visible then rebuildBP() end end)
+        end
+        task.delay(0.3, rebuildBP)
+    end)
+
+    -- 2B. PABRIK BLOCK / SEED CARD GRID (__PAB_BP_ANCHOR_KEY__)
+    mountEmbeddedCanvas("__PAB_BP_ANCHOR_KEY__", 185, function(rowContainer)
+        local scroller = rowContainer:FindFirstAncestorOfClass("ScrollingFrame")
+        local scroll = Instance.new("ScrollingFrame", rowContainer)
+        scroll.Size = UDim2.new(1, -12, 1, -12)
+        scroll.Position = UDim2.fromOffset(6, 6)
+        scroll.BackgroundColor3 = Color3.fromRGB(8, 10, 15)
+        scroll.BorderSizePixel = 0
+        scroll.ScrollBarThickness = 4
+        scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        scroll.CanvasSize = UDim2.new()
+        local grid = Instance.new("UIGridLayout", scroll)
+        grid.CellSize = UDim2.new(0.32, 0, 0, 72)
+        grid.CellPadding = UDim2.fromOffset(4, 5)
+
+        local function rebuildPabBP()
+            for _, ch in ipairs(scroll:GetChildren()) do
+                if ch:IsA("TextButton") then ch:Destroy() end
+            end
+            local items = PNB.GetBackpackBlocks(true)
+            for _, it in ipairs(items) do
+                local isSel = (Pabrik.State.blockId == it.id) or (Pabrik.State.seedId == it.id)
+                local cell = Instance.new("TextButton", scroll)
+                cell.Text = ""
+                cell.AutoButtonColor = false
+                cell.BackgroundColor3 = isSel and Color3.fromRGB(46, 28, 72) or Color3.fromRGB(19, 24, 34)
+                cell.BorderSizePixel = 0
+                Instance.new("UICorner", cell).CornerRadius = UDim.new(0, 6)
+                local st = Instance.new("UIStroke", cell)
+                st.Color = isSel and Color3.fromRGB(168, 85, 247) or Color3.fromRGB(48, 58, 76)
+                st.Thickness = isSel and 1.8 or 1
+
+                local iconHolder = Instance.new("Frame", cell)
+                iconHolder.Size = UDim2.fromOffset(30, 30)
+                iconHolder.AnchorPoint = Vector2.new(0.5, 0)
+                iconHolder.Position = UDim2.new(0.5, 0, 0, 4)
+                iconHolder.BackgroundTransparency = 1
+                Core.AttachItemSprite(iconHolder, it.id, 28)
+
+                local cntLbl = Instance.new("TextLabel", cell)
+                cntLbl.Size = UDim2.fromOffset(32, 14)
+                cntLbl.Position = UDim2.new(1, -34, 0, 2)
+                cntLbl.BackgroundTransparency = 1
+                cntLbl.Font = Enum.Font.Code
+                cntLbl.TextSize = 9
+                cntLbl.TextXAlignment = Enum.TextXAlignment.Right
+                cntLbl.TextColor3 = Color3.fromRGB(250, 204, 21)
+                cntLbl.Text = "x" .. tostring(it.count)
+
+                local nameLbl = Instance.new("TextLabel", cell)
+                nameLbl.Size = UDim2.new(1, -6, 0, 24)
+                nameLbl.Position = UDim2.new(0, 3, 1, -26)
+                nameLbl.BackgroundTransparency = 1
+                nameLbl.Font = Enum.Font.Gotham
+                nameLbl.TextSize = 9
+                nameLbl.TextWrapped = true
+                nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+                nameLbl.TextColor3 = Color3.fromRGB(226, 232, 240)
+                nameLbl.Text = string.format("%s [%d]", it.name, it.id)
+
+                cell.MouseButton1Click:Connect(function()
+                    if isSel then
+                        Pabrik.State.blockId, Pabrik.State.seedId, Pabrik.State.itemName = nil, nil, ""
+                        UI:SetValue("PabrikPairDisplay", "Unset")
+                    else
+                        Pabrik.SetItem(it.id)
+                        UI:SetValue("PabrikItemInput", tostring(it.id))
+                    end
+                    rebuildPabBP()
                 end)
             end
         end
-        bpCountLbl.Text = shownCount > 0 and (tostring(shownCount) .. " item") or "Kosong"
-    end
-    UIHooks.refreshBP = rebuildBP
-    if scroller then
-        scroller:GetPropertyChangedSignal("Visible"):Connect(function()
-            if scroller.Visible then rebuildBP() end
-        end)
-    end
-    task.delay(0.4, rebuildBP)
-    task.delay(1.5, function()
-        local inv = Core.GetLiveInventory()
-        if inv and typeof(inv.changed) == "Instance" and inv.changed:IsA("BindableEvent") then
-            inv.changed.Event:Connect(function()
-                task.defer(rebuildBP)
-            end)
+        UIHooks.refreshPabBP = rebuildPabBP
+        if scroller then
+            scroller:GetPropertyChangedSignal("Visible"):Connect(function() if scroller.Visible then rebuildPabBP() end end)
         end
-        rebuildBP()
+        task.delay(0.35, rebuildPabBP)
     end)
-end)
 
--- C. MOUNT 3: 5x5 CENTER-PLAYER TILE SELECTOR PAD (__PAD_5X5_ANCHOR_KEY__)
-mountEmbeddedCanvas("__PAD_5X5_ANCHOR_KEY__", 230, function(rowContainer)
-    local padFrame = Instance.new("Frame")
-    padFrame.Size = UDim2.new(1, -12, 1, -38)
-    padFrame.Position = UDim2.fromOffset(6, 6)
-    padFrame.BackgroundTransparency = 1
-    padFrame.Parent = rowContainer
+    -- 3. PABRIK RENDERED PLANTABLE DIRT SELECTOR (__WORLD_MAP_ANCHOR_KEY__)
+    mountEmbeddedCanvas("__WORLD_MAP_ANCHOR_KEY__", 220, function(rowContainer)
+        local hudLbl = Instance.new("TextLabel", rowContainer)
+        hudLbl.Size = UDim2.new(1, -12, 0, 18)
+        hudLbl.Position = UDim2.fromOffset(6, 4)
+        hudLbl.BackgroundTransparency = 1
+        hudLbl.Font = Enum.Font.Code
+        hudLbl.TextSize = 10
+        hudLbl.TextXAlignment = Enum.TextXAlignment.Left
+        hudLbl.TextColor3 = Color3.fromRGB(167, 243, 208)
+        hudLbl.Text = "Ketuk tile kosong di atas Dirt/Solid untuk Plantable Tile"
 
-    local cellMap = {}
-    local function refresh5x5()
-        local pos = Core.ReadPos()
-        local myGameName = Core.GetInGameName(LP, true)
-        for dy = -2, 2 do
-            for dx = -2, 2 do
-                local cell = cellMap[tileKey(dx, dy)]
-                if cell then
-                    if dx == 0 and dy == 0 then
-                        cell.BackgroundColor3 = Color3.fromRGB(161, 98, 7)
-                        cell.TextColor3 = Color3.fromRGB(254, 240, 138)
-                        cell.Text = string.format("%s\n(%d,%d)", string.sub(myGameName, 1, 7), pos.tx, pos.ty)
-                    else
-                        local on = PNB.State.grid5x5[tileKey(dx, dy)] == true
-                        cell.BackgroundColor3 = on and Color3.fromRGB(14, 116, 144) or Color3.fromRGB(23, 29, 41)
-                        cell.TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(148, 163, 184)
-                        cell.Text = string.format("%+d,%+d", dx, dy)
+        local mapView = Instance.new("Frame", rowContainer)
+        mapView.Size = UDim2.new(1, -12, 1, -28)
+        mapView.Position = UDim2.fromOffset(6, 24)
+        mapView.BackgroundColor3 = Color3.fromRGB(18, 34, 58)
+        mapView.ClipsDescendants = true
+
+        local hitBtn = Instance.new("TextButton", mapView)
+        hitBtn.Size = UDim2.fromScale(1, 1)
+        hitBtn.BackgroundTransparency = 1
+        hitBtn.Text = ""
+        hitBtn.ZIndex = 15
+
+        local pool = {}
+        local lastDraw = 0
+        local function getBox(i, col)
+            local f = pool[i]
+            if not f then
+                f = Instance.new("Frame", mapView)
+                f.BorderSizePixel = 0
+                pool[i] = f
+            end
+            f.Visible = true
+            f.BackgroundColor3 = col
+            return f
+        end
+
+        local function renderDirtSelector(force)
+            if not rowContainer.Parent then return end
+            local now = os.clock()
+            if not force and (now - lastDraw) < 0.35 then return end
+            lastDraw = now
+            Core.EnsureInit()
+            local gt = H.gt
+            if not gt or not gt.fg then return end
+            local w, h = gt.w or 100, gt.h or 60
+            local used = 0
+            for y = 0, h - 1 do
+                local x = 0
+                while x < w do
+                    local id = Core.GetFG(x, y)
+                    local isSelected = Pabrik.State.selectedTiles[tileKey(x, y)] ~= nil
+                    local plantable = Core.IsPlantable(x, y)
+                    if isSelected or plantable or id ~= 0 then
+                        local col
+                        if isSelected then
+                            col = Color3.fromRGB(168, 85, 247)
+                        elseif plantable then
+                            col = Color3.fromRGB(52, 211, 153)
+                        else
+                            local info = Core.GetItemInfo(id)
+                            if id == 8 then col = Color3.fromRGB(48, 54, 66)
+                            elseif info and info.lock then col = Color3.fromRGB(250, 204, 21)
+                            elseif info and info.kind == "seed" then col = Color3.fromRGB(34, 197, 94)
+                            else col = Color3.fromRGB(110, 80, 52) end
+                        end
+                        used += 1
+                        local f = getBox(used, col)
+                        f.Position = UDim2.fromScale(x / w, y / h)
+                        f.Size = UDim2.fromScale(1 / w, 1 / h)
+                        f.ZIndex = isSelected and 6 or (plantable and 4 or 2)
                     end
+                    x += 1
                 end
             end
+            for i = used + 1, #pool do pool[i].Visible = false end
         end
-    end
+        UIHooks.refreshMap = renderDirtSelector
 
-    for r = 0, 4 do
-        local dy = r - 2
-        for c = 0, 4 do
-            local dx = c - 2
-            local btn = Instance.new("TextButton")
-            btn.Size = UDim2.new(0.2, -4, 0.2, -4)
-            btn.Position = UDim2.new(c * 0.2, 2, r * 0.2, 2)
-            btn.BorderSizePixel = 0
-            btn.Font = Enum.Font.Code
-            btn.TextSize = 10
-            btn.TextWrapped = true
-            btn.Parent = padFrame
-            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
-            if dx ~= 0 or dy ~= 0 then
-                btn.MouseButton1Click:Connect(function() PNB.ToggleTile5x5(dx, dy) end)
+        hitBtn.InputEnded:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+                local gt = H.gt
+                if not gt then return end
+                local ap, as = mapView.AbsolutePosition, mapView.AbsoluteSize
+                if as.X <= 1 or as.Y <= 1 then return end
+                local rx = clamp((inp.Position.X - ap.X) / as.X, 0, 0.999)
+                local ry = clamp((inp.Position.Y - ap.Y) / as.Y, 0, 0.999)
+                local tx = math.floor(rx * gt.w)
+                local ty = math.floor(ry * gt.h)
+                if Core.IsPlantable(tx, ty) or Pabrik.State.selectedTiles[tileKey(tx, ty)] then
+                    Pabrik.ToggleTile(tx, ty)
+                    renderDirtSelector(true)
+                end
             end
-            cellMap[tileKey(dx, dy)] = btn
-        end
+        end)
+        task.delay(0.4, function() renderDirtSelector(true) end)
+    end)
+
+    -- 4 & 5. FIFO WORLD QUEUE LISTS (DF: __DF_LIST_ANCHOR_KEY__ | CW: __CW_LIST_ANCHOR_KEY__)
+    local function mountWorldQueueList(anchorKey, getListFn, removeFn, hookName)
+        mountEmbeddedCanvas(anchorKey, 96, function(rowContainer)
+            local scroll = Instance.new("ScrollingFrame", rowContainer)
+            scroll.Size = UDim2.new(1, -8, 1, -8)
+            scroll.Position = UDim2.fromOffset(4, 4)
+            scroll.BackgroundColor3 = Color3.fromRGB(15, 20, 30)
+            scroll.BorderSizePixel = 0
+            scroll.ScrollBarThickness = 4
+            scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+            scroll.CanvasSize = UDim2.new()
+            Instance.new("UIListLayout", scroll).Padding = UDim.new(0, 3)
+
+            local function refresh()
+                for _, ch in ipairs(scroll:GetChildren()) do
+                    if ch:IsA("Frame") then ch:Destroy() end
+                end
+                local list = getListFn() or {}
+                for i, wName in ipairs(list) do
+                    local row = Instance.new("Frame", scroll)
+                    row.Size = UDim2.new(1, -6, 0, 22)
+                    row.BackgroundColor3 = Color3.fromRGB(26, 34, 48)
+                    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+                    local lbl = Instance.new("TextLabel", row)
+                    lbl.Size = UDim2.new(1, -30, 1, 0)
+                    lbl.Position = UDim2.fromOffset(6, 0)
+                    lbl.BackgroundTransparency = 1
+                    lbl.Font = Enum.Font.Code
+                    lbl.TextSize = 11
+                    lbl.TextXAlignment = Enum.TextXAlignment.Left
+                    lbl.TextColor3 = Color3.new(1, 1, 1)
+                    lbl.Text = string.format("%d. %s", i, tostring(wName))
+                    local del = Instance.new("TextButton", row)
+                    del.Size = UDim2.fromOffset(22, 18)
+                    del.Position = UDim2.new(1, -24, 0, 2)
+                    del.BackgroundColor3 = Color3.fromRGB(185, 28, 28)
+                    del.Font = Enum.Font.GothamBold
+                    del.TextSize = 10
+                    del.TextColor3 = Color3.new(1, 1, 1)
+                    del.Text = "X"
+                    Instance.new("UICorner", del).CornerRadius = UDim.new(0, 3)
+                    del.MouseButton1Click:Connect(function() removeFn(i) end)
+                end
+            end
+            UIHooks[hookName] = refresh
+            refresh()
+        end)
     end
 
-    local presetBar = Instance.new("Frame")
-    presetBar.Size = UDim2.new(1, -12, 0, 24)
-    presetBar.Position = UDim2.new(0, 6, 1, -28)
-    presetBar.BackgroundTransparency = 1
-    presetBar.Parent = rowContainer
+    mountWorldQueueList("__DF_LIST_ANCHOR_KEY__",
+        function() return DirtFarm.State.rotationWorlds end,
+        function(i)
+            table.remove(DirtFarm.State.rotationWorlds, i)
+            DirtFarm.State.rotationText = table.concat(DirtFarm.State.rotationWorlds, ", ")
+            if UIHooks.refreshDfList then UIHooks.refreshDfList() end
+        end,
+        "refreshDfList"
+    )
+    mountWorldQueueList("__CW_LIST_ANCHOR_KEY__",
+        function() return ClearWorld.State.worldList end,
+        function(i) ClearWorld.RemoveWorldAt(i) end,
+        "refreshCwList"
+    )
 
-    local presets = {
-        { label = "1 Atas",  apply = function() PNB.State.grid5x5 = { ["0,-1"] = true } end },
-        { label = "3 Atas",  apply = function() PNB.State.grid5x5 = { ["-1,-1"] = true, ["0,-1"] = true, ["1,-1"] = true } end },
-        { label = "Ring 8",  apply = function()
-            PNB.State.grid5x5 = {}
-            for yy = -1, 1 do for xx = -1, 1 do if xx ~= 0 or yy ~= 0 then PNB.State.grid5x5[tileKey(xx, yy)] = true end end end
-        end },
-        { label = "Clear",   apply = function() PNB.State.grid5x5 = {} end },
-    }
-    for i, pr in ipairs(presets) do
-        local pb = Instance.new("TextButton")
-        pb.Size = UDim2.new(0.24, -2, 1, 0)
-        pb.Position = UDim2.new((i - 1) * 0.25, 0, 0, 0)
-        pb.BackgroundColor3 = Color3.fromRGB(31, 35, 44)
-        pb.BorderSizePixel = 0
-        pb.Font = Enum.Font.GothamBold
-        pb.TextSize = 10
-        pb.TextColor3 = Color3.fromRGB(226, 232, 240)
-        pb.Text = pr.label
-        pb.Parent = presetBar
-        Instance.new("UICorner", pb).CornerRadius = UDim.new(0, 4)
-        pb.MouseButton1Click:Connect(function() pr.apply(); refresh5x5() end)
-    end
-    UIHooks.refreshPad5x5 = refresh5x5
-    refresh5x5()
-end)
+    -- 6. SCROLLABLE SYSTEM JOIN & MOD LOG (__SYS_LOG_ANCHOR_KEY__)
+    mountEmbeddedCanvas("__SYS_LOG_ANCHOR_KEY__", 120, function(rowContainer)
+        local scroll = Instance.new("ScrollingFrame", rowContainer)
+        scroll.Size = UDim2.new(1, -8, 1, -8)
+        scroll.Position = UDim2.fromOffset(4, 4)
+        scroll.BackgroundColor3 = Color3.fromRGB(12, 16, 24)
+        scroll.BorderSizePixel = 0
+        scroll.ScrollBarThickness = 4
+        scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        scroll.CanvasSize = UDim2.new()
+        Instance.new("UIListLayout", scroll).Padding = UDim.new(0, 3)
 
--- D. MOUNT 4: AUTO PABRIK HEAD BREAK PAD (__PAD_PABRIK_ANCHOR_KEY__)
-mountEmbeddedCanvas("__PAD_PABRIK_ANCHOR_KEY__", 112, function(rowContainer)
-    local cells = {}
-    local function refreshPabrikPad()
-        local offs = {}
-        for _, o in ipairs(computePabrikBreakOffsets(Pabrik.State.breakTileCount)) do
-            offs[tileKey(o.dx, o.dy)] = true
-        end
-        local bp = Pabrik.State.breakPos or Core.ReadPos()
-        local bx, by = bp.x or bp.tx or 0, bp.y or bp.ty or 0
-        for dx = -1, 1 do
-            local top = cells[tileKey(dx, -1)]
-            if top then
-                local active = offs[tileKey(dx, -1)] == true
-                top.BackgroundColor3 = active and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(23, 29, 41)
-                top.TextColor3 = active and Color3.new(0, 0, 0) or Color3.fromRGB(148, 163, 184)
-                top.Text = string.format("Break (%d,%d)\n%s", bx + dx, by - 1, active and "[ON]" or "[OFF]")
+        local function refreshSysLog()
+            for _, ch in ipairs(scroll:GetChildren()) do
+                if ch:IsA("TextLabel") then ch:Destroy() end
+            end
+            for _, item in ipairs(SystemModule.State.joinLogs) do
+                local lbl = Instance.new("TextLabel", scroll)
+                lbl.Size = UDim2.new(1, -6, 0, 18)
+                lbl.BackgroundTransparency = 1
+                lbl.Font = Enum.Font.Code
+                lbl.TextSize = 10
+                lbl.TextXAlignment = Enum.TextXAlignment.Left
+                lbl.TextColor3 = item.isStaff and Color3.fromRGB(248, 113, 113) or Color3.fromRGB(148, 163, 184)
+                lbl.Text = item.text
             end
         end
-        local mid = cells["0,0"]
-        if mid then
-            mid.BackgroundColor3 = Color3.fromRGB(161, 98, 7)
-            mid.TextColor3 = Color3.fromRGB(254, 240, 138)
-            mid.Text = string.format("%s\n(%d, %d)", string.sub(Core.GetInGameName(LP, true), 1, 10), bx, by)
-        end
-    end
+        UIHooks.refreshSysLog = refreshSysLog
+        refreshSysLog()
+    end)
 
-    for row = 0, 1 do
-        local dy = (row == 0) and -1 or 0
-        for col = 0, 2 do
-            local dx = col - 1
-            local b = Instance.new("TextButton")
-            b.Size = UDim2.new(0.333, -6, 0.5, -6)
-            b.Position = UDim2.new(col * 0.333, 3, row * 0.5, 3)
-            b.BorderSizePixel = 0
-            b.Font = Enum.Font.Code
-            b.TextSize = 10
-            b.TextWrapped = true
-            b.Parent = rowContainer
-            Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
-            if dy == 0 and dx ~= 0 then
-                b.BackgroundColor3 = Color3.fromRGB(15, 20, 30)
-                b.TextColor3 = Color3.fromRGB(100, 116, 139)
-                b.Text = (dx == -1) and "Set: 3 Tile" or "Set: 2 Tile"
-                b.MouseButton1Click:Connect(function() Pabrik.SetBreakCount((dx == -1) and 3 or 2) end)
-            elseif dy == -1 then
+    -- 7 & 8. RADIO GROUPS (SPAM 3-7s | DISCORD HOOK 1-5m)
+    local function mountRadioGroup(anchorKey, values, labels, getCurrent, onPick)
+        mountEmbeddedCanvas(anchorKey, 34, function(rowContainer)
+            local btns = {}
+            local function syncVis()
+                local cur = getCurrent()
+                for val, b in pairs(btns) do
+                    local on = (val == cur)
+                    b.BackgroundColor3 = on and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(31, 35, 44)
+                    b.TextColor3 = on and Color3.new(0, 0, 0) or Color3.new(1, 1, 1)
+                end
+            end
+            local n = #values
+            for i, val in ipairs(values) do
+                local b = Instance.new("TextButton", rowContainer)
+                b.Size = UDim2.new(1 / n, -4, 1, -6)
+                b.Position = UDim2.new((i - 1) / n, 2, 0, 3)
+                b.BorderSizePixel = 0
+                b.Font = Enum.Font.GothamBold
+                b.TextSize = 10
+                b.Text = labels[i]
+                Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+                btns[val] = b
                 b.MouseButton1Click:Connect(function()
-                    local nxt = (dx == -1 and 3) or (dx == 1 and 2) or 1
-                    Pabrik.SetBreakCount(nxt)
+                    onPick(val)
+                    syncVis()
                 end)
             end
-            cells[tileKey(dx, dy)] = b
-        end
+            syncVis()
+        end)
     end
-    UIHooks.refreshPadPab = refreshPabrikPad
-    refreshPabrikPad()
-end)
+
+    mountRadioGroup("__SPAM_RADIO_ANCHOR_KEY__", { 3, 4, 5, 6, 7 }, { "3s", "4s", "5s", "6s", "7s" },
+        function() return math.floor(Spam.State.delay or 5) end,
+        function(v) Spam.State.delay = v end
+    )
+    mountRadioGroup("__DH_RADIO_ANCHOR_KEY__", { 60, 120, 180, 240, 300 }, { "1m", "2m", "3m", "4m", "5m" },
+        function() return math.floor(DiscordHook.State.delay or 120) end,
+        function(v) DiscordHook.State.delay = v end
+    )
 
     task.defer(function()
         if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
         pcall(SYT_Logic.Init, false)
-        pcall(scanResponsiveButtons)
+        pcall(UIHooks.scanResponsiveButtons)
         pcall(UIHooks.updateButtons)
         if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
+        if UIHooks.refreshPabBP then pcall(UIHooks.refreshPabBP) end
         if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end
     end)
 end
 
--- Instant Boot: Hubungkan engine non-blocking + pasang ULTIMAX Guard -> Buka UI langsung utuh
+-- Boot UI & Runtime Watcher wrapped in do-block to free root-chunk locals
+do
 cleanupSYTGuiContainers(nil)
 ensureSharedModulesReady(2.0)
 LP = LP or Players.LocalPlayer
 pcall(SYT_Logic.Init, false)
 pcall(Core.InstallUltimaxNamecallGuard)
 pcall(ProxyCommands.Install)
+pcall(function() DiscordHook.generateChineseAuthToken(Core.GetInGameName(LP, true)) end)
 
 do
     local okInit, initErr = safeInitSYTWindow(UIHooks.theme or "Minimalist Monochrome", UIHooks.scale or 1.0, false)
@@ -11809,30 +13064,24 @@ do
             warn("[SYT] Build UI Error: " .. tostring(buildErr))
             emitNotify("SYT Menu Error", tostring(buildErr))
         end
-        enforceSingleActiveFeatureTab()
-        local sg = getActiveMenuGui()
+        UIHooks.enforceSingleActiveFeatureTab()
+        local sg = UIHooks.getActiveMenuGui()
         if sg and sg.Parent then
             sg.Enabled = true
-            task.defer(function()
-                if UI and type(UI.SyncNavCanvas) == "function" then
-                    pcall(UI.SyncNavCanvas)
-                end
-            end)
-            pcall(scanResponsiveButtons)
+            task.defer(function() if UI and type(UI.SyncNavCanvas) == "function" then pcall(UI.SyncNavCanvas) end end)
+            pcall(UIHooks.scanResponsiveButtons)
             pcall(UIHooks.updateButtons)
             if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
+            if UIHooks.refreshPabBP then pcall(UIHooks.refreshPabBP) end
             if UIHooks.refreshPad5x5 then pcall(UIHooks.refreshPad5x5) end
-            if UIHooks.refreshPadPab then pcall(UIHooks.refreshPadPab) end
             if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end
         else
-            warn("[SYT] ScreenGui menu belum terpasang: " .. tostring(menuIsReady()))
+            warn("[SYT] ScreenGui menu belum terpasang: " .. tostring(UIHooks.menuIsReady()))
         end
     end
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
--- 9. RUNTIME WATCHER: LIVE POS, IN-GAME NAME SYNC, LOCK NAMES
--- ═══════════════════════════════════════════════════════════════════════════
+-- Runtime Watcher: Live Sync, World Change, Player/Mod Detection, P2P & Fast Roulette
 local function computeInvHash()
     local slots = Core.GetBackpackSlots()
     if #slots == 0 then return "" end
@@ -11844,7 +13093,7 @@ local function computeInvHash()
     return tostring(cnt) .. ":" .. tostring(sum)
 end
 
-local lastFastTick, lastSlowTick, lastLivePos, lastInvHash = 0, 0, "", ""
+local lastFastTick, lastSlowTick, lastInvHash = 0, 0, ""
 if H.watcherConn then H.watcherConn:Disconnect() end
 H.watcherConn = RunService.Heartbeat:Connect(function()
     if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then
@@ -11858,29 +13107,28 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
 
     local gt = H.gt
     local curWorld = gt and cleanWorldName(gt.name) or ""
+    local intentionalWorldSwitch = DirtFarm.State.switchingWorld
+        or PNB.State.switchingWorld
+        or ClearWorld.State.switchingWorld
+        or AutoLeveling.State.switchingWorld
 
-    -- Sinkronkan perubahan world cepat tanpa rebuild ulang GUI yang sudah terbuka
     if curWorld ~= Visual.State.lastWorldName then
         local prev = Visual.State.lastWorldName
         Visual.State.lastWorldName = curWorld
-        if prev ~= "" and not DirtFarm.State.switchingWorld then
+        if prev ~= "" and not intentionalWorldSwitch then
             stopAllAutomationImpl("Pindah world -> Otomasi OFF")
         end
         if curWorld ~= "" then
-            task.delay(0.08, function()
+            task.delay(0.1, function()
                 if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
                 pcall(SYT_Logic.Init, true)
                 pcall(Core.InstallAntiBackGuard)
                 pcall(hookIncomingNetGuard)
-                if Visual.State.lockNames or Visual.HasActiveSpoof() then
-                    pcall(Visual.OnWorldChanged)
-                end
-                if UI and UI._DropRefresh and UI._DropRefresh.SpoofWearPick and H.ItemDB then
-                    pcall(function()
-                        UI._DropRefresh.SpoofWearPick(Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot or "back", Visual.State.wearSearch))
-                    end)
-                end
+                pcall(ProxyCommands.Install)
+                if Visual.State.lockNames or Visual.HasActiveSpoof() then pcall(Visual.OnWorldChanged) end
+                if Misc.State.zoom25x then pcall(Misc.SetZoom25x, true) end
                 if UIHooks.refreshBP then pcall(UIHooks.refreshBP) end
+                if UIHooks.refreshPabBP then pcall(UIHooks.refreshPabBP) end
                 if UIHooks.refreshMap then pcall(UIHooks.refreshMap, true) end
                 if UIHooks.refreshPad5x5 then pcall(UIHooks.refreshPad5x5) end
             end)
@@ -11888,66 +13136,37 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
     end
 
     if gt and (gt.name or "") ~= "" then
+        ProxyCommands.State.p2pLive = (ProxyCommands.State.p2pEnabled and #Core.GetInWorldPlayers(false) > 0) == true
+        pcall(SystemModule.CheckWorldEntrants)
         local pos = Core.ReadPos()
-        local okHere = Core.ValidateTile(pos.tx, pos.ty)
-        local liveStr = string.format("Stats (%d, %d) | Tile (%d, %d) | %s [%s]", pos.sx, pos.sy, pos.tx, pos.ty, tostring(gt.name), okHere and "VALID" or "SOLID")
-        if liveStr ~= lastLivePos then
-            lastLivePos = liveStr
-            if UI then UI:SetValue("LivePosDisplay", liveStr) end
-            if Visual.State.tilesName then Visual.Apply() end
-            if UIHooks.refreshPad5x5 then UIHooks.refreshPad5x5() end
-            if UIHooks.refreshMap then UIHooks.refreshMap(true) end
-        end
         if UIHooks.sidebarNameLbl and UIHooks.sidebarNameLbl.Parent then
             UIHooks.sidebarNameLbl.Text = Core.GetInGameName(LP, true)
         end
         if UIHooks.sidebarSubLbl and UIHooks.sidebarSubLbl.Parent then
             UIHooks.sidebarSubLbl.Text = string.format("%s (%d,%d)", tostring(gt.name), pos.sx, pos.sy)
         end
-        if Misc.State.seems then evaluateSeems() end
+    else
+        ProxyCommands.State.p2pLive = false
     end
 
     if (now - lastSlowTick) >= 1.2 then
         lastSlowTick = now
         if not H.gt or not H.ItemDB or not H.Net or not H.inv then pcall(SYT_Logic.Init) end
-        if not Visual._wearInitSynced and H.ItemDB and UI and UI._DropRefresh and UI._DropRefresh.SpoofWearPick then
-            Visual._wearInitSynced = true
-            pcall(function()
-                UI._DropRefresh.SpoofWearPick(Visual.GetWearableOptionsForSlot(Visual.State.selectedSlot or "back", Visual.State.wearSearch))
-            end)
-        end
-        if not buttonMap["[PNB]"] or not buttonMap["[PABRIK]"] or not buttonMap["[DF]"] or not buttonMap["[SPAM]"] or not buttonMap["[GAP TP]"] or not UIHooks.sidebarNameLbl then
-            pcall(scanResponsiveButtons)
+        local bMap = UIHooks.buttonMap
+        if not bMap["[PNB]"] or not bMap["[PABRIK]"] or not bMap["[DF]"] or not bMap["[CW]"] or not bMap["[MOVE]"] or not bMap["[SPAM]"] then
+            pcall(UIHooks.scanResponsiveButtons)
             pcall(UIHooks.updateButtons)
         end
         local invHash = computeInvHash()
         if invHash ~= lastInvHash then
             lastInvHash = invHash
             if UIHooks.refreshBP then UIHooks.refreshBP() end
+            if UIHooks.refreshPabBP then UIHooks.refreshPabBP() end
         end
         if UIHooks.refreshMap then UIHooks.refreshMap(false) end
-        if UI then
-            UI:SetValue("UltimaxStatusDisplay", GetcSkipper.GetUltimaxStatusText())
-        end
-        if gt and gt.name ~= "" and UI then
-            local plrs = Core.GetInWorldPlayers(true)
-            local nms = {}
-            for _, p in ipairs(plrs) do nms[#nms + 1] = p.gameName .. (p.isStaff and "[MOD]" or "") end
-            UI:SetValue("LiveInGameAccount", string.format("%s | World: %s", Core.GetInGameName(LP, true), tostring(gt.name)))
-            UI:SetValue("LiveWorldPlayers", #nms > 0 and table.concat(nms, ", ") or "-")
-
-            local fCands = Misc.GetFollowCandidates()
-            local fHash = table.concat(fCands, "|")
-            if fHash ~= Misc.State.lastFollowHash then
-                Misc.State.lastFollowHash = fHash
-                if UI._DropRefresh and UI._DropRefresh.MiscFollowTarget then
-                    UI._DropRefresh.MiscFollowTarget(fCands)
-                end
-            end
-        end
     end
 end)
 getEnv().__SYT_WATCHER_CONN = H.watcherConn
-
+end
 getEnv().SYT_Logic = SYT_Logic
 return SYT_Logic

@@ -253,6 +253,11 @@ local function patchR8FrameworkSource(raw)
         'NameLbl%.Position = UDim2%.new%(0, 44, 0, 0%)%s*\n(%s*)NameLbl%.Size = UDim2%.new%(1, %-52, 1, 0%)',
         'NameLbl.Position = UDim2.new(0, 36, 0, 0)\n%1NameLbl.Size = UDim2.new(1, -44, 1, 0)'
     )
+    patched = string.gsub(
+        patched,
+        'if BadgeTxt and BadgeTxt%.Parent and clickToken == myToken and defaultBadgeText ~= "" then',
+        'if BadgeTxt and BadgeTxt.Parent and clickToken == myToken and defaultBadgeText ~= "" and BadgeTxt.Text == "CLICKED" then'
+    )
     return patched
 end
 
@@ -267,20 +272,22 @@ local function loadR8Framework(forceReload)
         env.__SYT_R8_SOURCE_V3 = nil
         env.__SYT_R8_LOADER_V4 = nil
         env.__SYT_R8_SOURCE_V4 = nil
+        env.__SYT_R8_LOADER_V5 = nil
+        env.__SYT_R8_SOURCE_V5 = nil
     end
     if not forceReload and type(cachedR8Loader) == "function" then
         return cachedR8Loader()
     end
     if not forceReload and type(env) == "table" then
-        if type(env.__SYT_R8_LOADER_V5) == "function" then
-            cachedR8Loader = env.__SYT_R8_LOADER_V5
-            if type(env.__SYT_R8_SOURCE_V5) == "string" then
-                cachedR8Source = env.__SYT_R8_SOURCE_V5
+        if type(env.__SYT_R8_LOADER_V6) == "function" then
+            cachedR8Loader = env.__SYT_R8_LOADER_V6
+            if type(env.__SYT_R8_SOURCE_V6) == "string" then
+                cachedR8Source = env.__SYT_R8_SOURCE_V6
             end
             return cachedR8Loader()
         end
-        if type(env.__SYT_R8_SOURCE_V5) == "string" and #env.__SYT_R8_SOURCE_V5 > 128 then
-            cachedR8Source = env.__SYT_R8_SOURCE_V5
+        if type(env.__SYT_R8_SOURCE_V6) == "string" and #env.__SYT_R8_SOURCE_V6 > 128 then
+            cachedR8Source = env.__SYT_R8_SOURCE_V6
         end
     end
     if not cachedR8Source or #cachedR8Source < 128 or forceReload then
@@ -299,14 +306,14 @@ local function loadR8Framework(forceReload)
         assert(okFetch and type(rawScript) == "string" and #rawScript > 128, "[SYT] Gagal mengunduh r&8_dv.lua: " .. tostring(fetchErr or "timeout/kosong"))
         cachedR8Source = patchR8FrameworkSource(rawScript)
         if type(env) == "table" then
-            env.__SYT_R8_SOURCE_V5 = cachedR8Source
+            env.__SYT_R8_SOURCE_V6 = cachedR8Source
         end
     end
     local loader, loadErr = loadstring(cachedR8Source)
     assert(type(loader) == "function", "[SYT] Compile error r&8_dv: " .. tostring(loadErr))
     cachedR8Loader = loader
     if type(env) == "table" then
-        env.__SYT_R8_LOADER_V5 = loader
+        env.__SYT_R8_LOADER_V6 = loader
     end
     return cachedR8Loader()
 end
@@ -455,8 +462,10 @@ local function safeInitSYTWindow(theme, scale, startHidden)
             env.__SYT_R8_SOURCE_V3 = nil
         env.__SYT_R8_LOADER_V4 = nil
         env.__SYT_R8_SOURCE_V4 = nil
-            env.__SYT_R8_LOADER_V5 = nil
-            env.__SYT_R8_SOURCE_V5 = nil
+        env.__SYT_R8_LOADER_V5 = nil
+        env.__SYT_R8_SOURCE_V5 = nil
+            env.__SYT_R8_LOADER_V6 = nil
+            env.__SYT_R8_SOURCE_V6 = nil
         end
         task.wait(0.1)
     end
@@ -1639,6 +1648,28 @@ function Core.EnsureMoveHook()
     end
 end
 
+function Core.ClearVisualCrack(tx, ty)
+    local gt = H.gt
+    if not gt or not gt.w or type(tx) ~= "number" or type(ty) ~= "number" then return end
+    local rh = rawget(gt, "remoteHit")
+    if type(rh) ~= "function" then return end
+    local cMap = uv(rh, 5)
+    local cPool = uv(rh, 6)
+    if type(cMap) ~= "table" then return end
+    local cIdx = ty * gt.w + tx
+    local entry = cMap[cIdx]
+    if type(entry) == "table" then
+        local img = entry.l
+        if typeof(img) == "Instance" then
+            pcall(function() img.Visible = false end)
+            if type(cPool) == "table" then
+                table.insert(cPool, img)
+            end
+        end
+        cMap[cIdx] = nil
+    end
+end
+
 function Core.EnsureTileHook()
     local gt = H.gt
     if not gt or type(gt.tileChanged) ~= "function" or H.tileHookedFor == gt then return end
@@ -1656,6 +1687,9 @@ function Core.EnsureTileHook()
             if selfAt and (nowT - selfAt) <= 1.25 then
                 H.serverTileEchoSeen = true
             end
+        end
+        if id == 0 and type(x) == "number" and type(y) == "number" then
+            pcall(Core.ClearVisualCrack, x, y)
         end
         return orig(layerName, x, y, id, flip)
     end
@@ -2106,6 +2140,27 @@ function Core.EnsureOutboundFirewall()
         net.wear.send = function(pkt)
             if shieldActive() and not allowWindow("wear", 3, 0.80) then
                 return blockPacket("wear_burst")
+            end
+            local curLogic = getEnv().SYT_Logic or SYT_Logic
+            local vs = curLogic and curLogic.Visual and curLogic.Visual.State
+            if vs and type(pkt) == "table" and type(vs.fakeWorn) == "table" and next(vs.fakeWorn) ~= nil then
+                local cleanPkt = {}
+                for sl, id in pairs(pkt) do
+                    if type(id) == "number" and id > 0 then
+                        local isSpoofSlot = (vs.fakeWorn[sl] ~= nil)
+                        if (not isSpoofSlot) and Core.CountItem(id) > 0 then
+                            cleanPkt[sl] = id
+                        elseif type(vs.origWorn) == "table" and type(vs.origWorn[sl]) == "number" and vs.origWorn[sl] > 0 and Core.CountItem(vs.origWorn[sl]) > 0 then
+                            cleanPkt[sl] = vs.origWorn[sl]
+                        end
+                    end
+                end
+                for sl, origId in pairs(vs.origWorn or {}) do
+                    if vs.fakeWorn[sl] == 0 and type(origId) == "number" and origId > 0 and Core.CountItem(origId) > 0 then
+                        cleanPkt[sl] = origId
+                    end
+                end
+                return origWear(cleanPkt)
             end
             return origWear(pkt)
         end
@@ -4602,9 +4657,10 @@ function Packets.HitDamage(arg1, ty, oneHit, customHits, hitDelay, layer, showHa
     local info = Core.GetItemInfo(curId)
     local effHits = computeEffectiveHits(info, curId)
     local key = ((targetLayer == 2) and "bg" or "fg") .. ":" .. (py * (gt.w or 100) + tx)
+    local minPunchGap = (opts.oneHit == true) and 0.08 or 0.192
     local delay = tonumber(opts.hitDelay)
-    if delay == nil then delay = 0.165 end
-    delay = clamp(delay, 0.08, 0.45)
+    if delay == nil then delay = 0.194 end
+    delay = clamp(delay, minPunchGap, 0.45)
 
     -- Mode 1-Hit terverifikasi: uji 1 pukulan nyata dulu; jika server tidak 1-hit, langsung sambung sisa hit tanpa ghost-break
     if opts.oneHit == true and not opts.forceMultiHit and not toInt(opts.customHits, nil) then
@@ -4668,6 +4724,12 @@ function Packets.HitDamage(arg1, ty, oneHit, customHits, hitDelay, layer, showHa
         if not Core.IsInActionReach(tx, py, "break") and Core.GetStopOrNoSendMode() ~= "off" then
             return false, "moved_out_of_range_no_send"
         end
+        if opts.oneHit ~= true then
+            local cdLeft = math.max(tonumber(gt.actAt) or 0, (H.lastPunchAt or 0) + 0.192) - os.clock()
+            if cdLeft > 0.004 then
+                if not waitPacketInterval(math.min(cdLeft, 0.25), true, "act", cont) then return false, "cancelled" end
+            end
+        end
         local sentAt = os.clock()
         Packets.PunchBreak({
             tx = tx, ty = py, layer = targetLayer,
@@ -4681,7 +4743,7 @@ function Packets.HitDamage(arg1, ty, oneHit, customHits, hitDelay, layer, showHa
         if opts.verifyBreak == false then
             return (opts.noLocalMirror ~= true) or (Core.GetLayerTile(tx, py, targetLayer) == 0), "sent"
         end
-        local waitEnd = os.clock() + (tonumber(opts.verifyTimeout) or 0.115)
+        local waitEnd = os.clock() + (tonumber(opts.verifyTimeout) or 0.24)
         local reverted = false
         while os.clock() < waitEnd do
             if type(cont) == "function" and not cont() then return false, "cancelled" end
@@ -4694,16 +4756,21 @@ function Packets.HitDamage(arg1, ty, oneHit, customHits, hitDelay, layer, showHa
                 reverted = true
                 break
             end
-            task.wait(0.02)
+            if Core.GetLayerTile(tx, py, targetLayer) == 0 and (not H.serverTileEchoSeen or (ack and ack.t >= (sentAt - 0.02) and ack.id == 0)) then
+                pcall(Core.ClearVisualCrack, tx, py)
+                return true, "verified_broken"
+            end
+            task.wait(0.015)
         end
         if not reverted and Core.GetLayerTile(tx, py, targetLayer) == 0 then
+            pcall(Core.ClearVisualCrack, tx, py)
             return true, "verified_broken"
         end
-        -- Blok belum hancur penuh di server: terus punch lagi sampai hancur
-        local retryDelay = math.max(delay, 0.145)
+        local retryDelay = math.max(delay, 0.194)
         if not waitPacketInterval(retryDelay, true, "act", cont) then return false, "cancelled" end
     end
     local okEnd = Core.GetLayerTile(tx, py, targetLayer) == 0
+    if okEnd then pcall(Core.ClearVisualCrack, tx, py) end
     return okEnd, okEnd and "broken" or "verify_failed"
 end
 
@@ -7308,6 +7375,15 @@ local function setDfStatus(msg)
     if UIHooks.updateButtons then UIHooks.updateButtons() end
 end
 
+function DirtFarm._syncEnvQueue(worlds)
+    local ed = getEnv().__SYT_ENV_DATA or {}
+    getEnv().__SYT_ENV_DATA = ed
+    local copy = {}
+    for i, w in ipairs(worlds or DirtFarm.State.rotationWorlds or {}) do copy[i] = w end
+    ed.dfQueue = copy
+    return copy
+end
+
 function DirtFarm.SetRotationWorlds(rawText)
     DirtFarm.State.rotationText = tostring(rawText or "")
     local list = {}
@@ -7319,6 +7395,7 @@ function DirtFarm.SetRotationWorlds(rawText)
     end
     DirtFarm.State.rotationWorlds = list
     DirtFarm.State.worldIdx = 1
+    DirtFarm._syncEnvQueue(list)
     if UI then UI:SetValue("DfRotInput", table.concat(list, ", ")) end
     return list
 end
@@ -7562,23 +7639,23 @@ do
 
     local function dfSettleStillForPunch(aliveFn)
         Core.ClearManualInput()
-        local dl = os.clock() + 0.10
+        local dl = os.clock() + 0.18
         while os.clock() < dl do
             if type(aliveFn) == "function" and not aliveFn() then return false end
             local p = Core.ReadPos()
-            if math.abs(p.vx or 0) <= 0.35 then return true end
+            if math.abs(p.vx or 0) <= 0.15 and math.abs(p.vy or 0) <= 0.15 then return true end
             task.wait(0.016)
         end
         return true
     end
 
-    -- Break FG (layer=1) terlebih dahulu lalu Cave BG (layer=2) dengan hit asli server, anti-kick & verifikasi 0
+    -- Break FG (layer=1) terlebih dahulu lalu Cave BG (layer=2) dengan hit asli server (>= 0.192s), anti-kick & verifikasi 0 + bersih crack
     local function dfBreakBatchLayers(coords, aliveFn)
         local S = DirtFarm.State
         local gt = H.gt
         if not gt or type(coords) ~= "table" or #coords == 0 then return true end
 
-        local dfHitGap = math.max(0.158, tonumber(S.breakDelay) or 0.165)
+        local dfHitGap = math.max(0.194, tonumber(S.breakDelay) or 0.194)
         local items = {}
         local seen = {}
         for _, c in ipairs(coords) do
@@ -7608,8 +7685,8 @@ do
             end
         end
 
-        -- Stage 1: Break FG (layer 1)
-        for pass = 1, 5 do
+        -- Stage 1: Break FG (layer 1) sampai benar-benar 0 di server
+        for _ = 1, 5 do
             if type(aliveFn) == "function" and not aliveFn() then return false end
             coolIfBlocked()
             local pos = Core.ReadPos()
@@ -7628,16 +7705,17 @@ do
                 if type(aliveFn) == "function" and not aliveFn() then return false end
                 Packets.BreakVerified({ t }, {
                     threads = 1, layer = 1, oneHit = false, customHits = nil,
-                    hitDelay = dfHitGap, verifyTimeout = 0.24, showHand = S.showHand,
+                    hitDelay = dfHitGap, verifyTimeout = 0.28, showHand = S.showHand,
                     showVisual = true, noLocalMirror = true, autoRange = false,
                     shouldContinue = aliveFn,
                 })
+                if Core.GetFG(t.tx, t.ty) == 0 then pcall(Core.ClearVisualCrack, t.tx, t.ty) end
                 task.wait(0.025)
             end
         end
 
         -- Stage 2: Break Cave BG (layer 2) pada semua target yang sudah bebas FG
-        for pass = 1, 5 do
+        for _ = 1, 5 do
             if type(aliveFn) == "function" and not aliveFn() then return false end
             coolIfBlocked()
             local pos = Core.ReadPos()
@@ -7656,10 +7734,11 @@ do
                 if type(aliveFn) == "function" and not aliveFn() then return false end
                 Packets.BreakVerified({ t }, {
                     threads = 1, layer = 2, oneHit = false, customHits = nil,
-                    hitDelay = dfHitGap, verifyTimeout = 0.24, showHand = S.showHand,
+                    hitDelay = dfHitGap, verifyTimeout = 0.28, showHand = S.showHand,
                     showVisual = true, noLocalMirror = true, autoRange = false,
                     shouldContinue = aliveFn,
                 })
+                if Core.GetBG(t.tx, t.ty) == 0 then pcall(Core.ClearVisualCrack, t.tx, t.ty) end
                 task.wait(0.025)
             end
         end
@@ -7677,6 +7756,7 @@ do
                     return false
                 end
             end
+            pcall(Core.ClearVisualCrack, it.tx, it.ty)
         end
         return true
     end
@@ -7713,19 +7793,26 @@ do
                 return true, "reached"
             end
             local dir = (dx > 0) and 1 or -1
-            if math.abs(p.x - lastX) > 0.04 then
+            local w = H.gt and H.gt.w or 100
+            local checkTx = clamp(math.floor(p.x + dir * 0.62), 0, w - 1)
+            local checkTy = expectedFloorY and (expectedFloorY - 1) or math.floor(p.y - 0.01)
+            local blkNow, brkNow = dfIsBreakableBlocking(checkTx, checkTy)
+            if blkNow and brkNow and ((not bp) or bp.desiredAt(checkTx, checkTy) == 0) and checkTx ~= p.tx then
+                Core.ClearManualInput()
+                dfBreakBatchLayers({ { tx = checkTx, ty = checkTy, wantFg = true, wantBg = false } }, aliveFn)
+                lastProgT = os.clock()
+                deadline = deadline + 0.70
+            elseif math.abs(p.x - lastX) > 0.04 then
                 lastX = p.x
                 lastProgT = os.clock()
-            elseif (os.clock() - lastProgT) > 0.40 then
-                local w = H.gt and H.gt.w or 100
+            elseif (os.clock() - lastProgT) > 0.36 then
                 local frontTx = clamp(math.floor(p.x + dir * 0.72), 0, w - 1)
-                local frontTy = expectedFloorY and (expectedFloorY - 1) or math.floor(p.y - 0.01)
-                local blk, brk = dfIsBreakableBlocking(frontTx, frontTy)
-                local allowedByBp = (not bp) or (bp.desiredAt(frontTx, frontTy) == 0)
+                local blk, brk = dfIsBreakableBlocking(frontTx, checkTy)
+                local allowedByBp = (not bp) or (bp.desiredAt(frontTx, checkTy) == 0)
                 if blk and brk and allowedByBp and stallBreaks < 4 then
                     stallBreaks += 1
                     Core.ClearManualInput()
-                    dfBreakBatchLayers({ { tx = frontTx, ty = frontTy, wantFg = true, wantBg = false } }, aliveFn)
+                    dfBreakBatchLayers({ { tx = frontTx, ty = checkTy, wantFg = true, wantBg = false } }, aliveFn)
                     lastProgT = os.clock()
                     deadline = deadline + 0.75
                 elseif (os.clock() - lastProgT) > 0.65 then
@@ -8259,36 +8346,38 @@ do
                         end
                     end
 
-                    -- 1) Bersihkan FG + Cave BG di (tx, corY) & opsional (tx, corY-1) dan verifikasi sampai bersih sebelum maju
+                    -- 1) Bersihkan batch kolom dalam reach (tx + lookahead 1-2 tile depan) & verifikasi 100% clear di server sebelum maju
                     for cleanTry = 1, 3 do
                         local clearList = {}
-                        if bp.desiredAt(tx, corY) == 0 then
-                            local cfg = Core.GetFG(tx, corY)
-                            if (cfg ~= 0 and not Core.IsProtectedTile(cfg) and Core.CanEditTile(tx, corY)) or bp.wantBgZeroAt(tx, corY) then
-                                clearList[#clearList + 1] = { tx, corY }
-                            end
-                        end
-                        if alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(tx, corY - 1) == 0 then
-                            local afg = Core.GetFG(tx, corY - 1)
-                            if (afg ~= 0 and not Core.IsProtectedTile(afg) and Core.CanEditTile(tx, corY - 1)) or bp.wantBgZeroAt(tx, corY - 1) then
-                                clearList[#clearList + 1] = { tx, corY - 1 }
-                            end
-                        end
-                        local nextTx = tx + pDir
-                        if cleanTry == 1 and nextTx >= 2 and nextTx <= bp.w - 3 and dfSafeReachDist(nextTx, corY, Core.ReadPos(), "break") then
-                            if bp.desiredAt(nextTx, corY) == 0 then
-                                clearList[#clearList + 1] = { nextTx, corY }
-                            end
-                            if alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(nextTx, corY - 1) == 0 then
-                                clearList[#clearList + 1] = { nextTx, corY - 1 }
+                        local minB, maxB = math.min(pFrom, pTo), math.max(pFrom, pTo)
+                        local posNow = Core.ReadPos()
+                        for stepAhead = 0, 1 do
+                            local lx = tx + (stepAhead * pDir)
+                            if lx < minB or lx > maxB then break end
+                            if stepAhead == 0 or dfSafeReachDist(lx, corY, posNow, "break") then
+                                if bp.desiredAt(lx, corY) == 0 then
+                                    local lfg = Core.GetFG(lx, corY)
+                                    if (lfg ~= 0 and not Core.IsProtectedTile(lfg) and Core.CanEditTile(lx, corY)) or bp.wantBgZeroAt(lx, corY) then
+                                        clearList[#clearList + 1] = { lx, corY }
+                                    elseif stepAhead > 0 and lfg ~= 0 then
+                                        break
+                                    end
+                                end
+                                if alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(lx, corY - 1) == 0 then
+                                    local afg = Core.GetFG(lx, corY - 1)
+                                    if (afg ~= 0 and not Core.IsProtectedTile(afg) and Core.CanEditTile(lx, corY - 1)) or bp.wantBgZeroAt(lx, corY - 1) then
+                                        clearList[#clearList + 1] = { lx, corY - 1 }
+                                    end
+                                end
                             end
                         end
                         if #clearList == 0 then break end
                         local okC = dfCleanAirTilesInReach(bp, clearList, aliveFn)
+                        local txStillFg = (bp.desiredAt(tx, corY) == 0 and Core.GetFG(tx, corY) ~= 0 and not Core.IsProtectedTile(Core.GetFG(tx, corY)) and Core.CanEditTile(tx, corY))
                         local stillBg = (bp.desiredAt(tx, corY) == 0 and bp.wantBgZeroAt(tx, corY))
                             or (alsoClearAbove and corY - 1 >= bp.topY and bp.desiredAt(tx, corY - 1) == 0 and bp.wantBgZeroAt(tx, corY - 1))
-                        if okC and not stillBg then break end
-                        task.wait(0.05)
+                        if okC and (not txStillFg) and (not stillBg) then break end
+                        task.wait(0.04)
                     end
 
                     -- Jika lorong tx masih terblokir solid yang tidak bisa di-break (mis. Lock), coba lompati ke tx + pDir bila atas terbuka
@@ -8299,12 +8388,20 @@ do
                         end
                     end
 
-                    -- 2) Lantai bawah Lava/Batu/Kosong -> Hancurkan dulu & collect dropnya SEBELUM place Dirt
-                    if needFloor and Core.GetFG(tx, floorY) ~= dirtId then
-                        local okF, errF = dfFixFloorSafe(tx, floorY, dirtId, aliveFn)
-                        if not okF and errF == "no_dirt" and (Core.GetFG(tx, floorY) == 0 or not dfIsStandable(tx, floorY)) then
-                            Core.ClearManualInput()
-                            return false, "no_dirt"
+                    -- 2) Lantai bawah Lava/Batu/Kosong -> Hancurkan dulu & collect dropnya SEBELUM place Dirt (batch lookahead lantai jangkauan!)
+                    local floorMaxAhead = (tx ~= pTo and floorY <= bp.maxWorkY) and 1 or 0
+                    for fAhead = 0, floorMaxAhead do
+                        local fx = tx + (fAhead * pDir)
+                        local inBounds = (pDir > 0 and fx <= pTo) or (pDir < 0 and fx >= pTo)
+                        if inBounds and bp.desiredAt(fx, floorY) == dirtId and Core.GetFG(fx, floorY) ~= dirtId
+                            and not Core.IsProtectedTile(Core.GetFG(fx, floorY)) and Core.CanEditTile(fx, floorY) then
+                            if fAhead == 0 or (dfSafeReachDist(fx, floorY, Core.ReadPos(), "build") and Core.GetFG(fx, corY) == 0) then
+                                local okF, errF = dfFixFloorSafe(fx, floorY, dirtId, aliveFn)
+                                if fAhead == 0 and not okF and errF == "no_dirt" and (Core.GetFG(fx, floorY) == 0 or not dfIsStandable(fx, floorY)) then
+                                    Core.ClearManualInput()
+                                    return false, "no_dirt"
+                                end
+                            end
                         end
                     end
                 end
@@ -8325,7 +8422,13 @@ do
                         dfCleanEdgeShaftAround(bp, atLeftEdge and 1 or (bp.w - 2), atLeftEdge and 0 or (bp.w - 1), edgeYs, aliveFn)
                     end
                 else
-                    local nxClean = (tx + pDir >= 2 and tx + pDir <= bp.w - 3) and not tileNeedsWork(tx + pDir)
+                    local curStillBlocked = (bp.desiredAt(tx, corY) == 0 and Core.GetFG(tx, corY) ~= 0 and not Core.IsProtectedTile(Core.GetFG(tx, corY)) and Core.CanEditTile(tx, corY))
+                    if curStillBlocked then
+                        dfBreakBatchLayers({ { tx = tx, ty = corY, wantFg = true, wantBg = true } }, aliveFn)
+                    end
+                    local nextX = tx + pDir
+                    local nextTileAirClear = (nextX >= 2 and nextX <= bp.w - 3) and (Core.GetFG(nextX, corY) == 0)
+                    local nxClean = nextTileAirClear and not tileNeedsWork(nextX)
                     local okWalk = dfStepWalkToX(tx + 0.5, floorY, 1.15, aliveFn, nxClean and function(p)
                         return (pDir > 0 and p.x >= tx + 0.35) or (pDir < 0 and p.x <= tx + 0.65), "passed"
                     end or nil, nxClean, bp)
@@ -8679,7 +8782,7 @@ function DirtFarm.Start()
                     if Core.GetFG(pt.x, pt.y) == seedId then
                         Packets.BreakVerified({ { tx = pt.x, ty = pt.y, layer = 1 } }, {
                             threads = 1, layer = 1, oneHit = false, customHits = nil,
-                            hitDelay = 0.165, verifyTimeout = 0.24, showHand = DirtFarm.State.showHand,
+                            hitDelay = 0.194, verifyTimeout = 0.28, showHand = DirtFarm.State.showHand,
                             showVisual = true, noLocalMirror = true, autoRange = false, shouldContinue = alive,
                         })
                     end
@@ -8707,10 +8810,56 @@ function DirtFarm.Start()
                     lowerSweptForWorld, upperSweptForWorld = false, false
                 end
 
+                local rotQ = DirtFarm.State.rotationWorlds or {}
+                local readyToFarm = true
+                if #rotQ > 0 then
+                    local inQueue = false
+                    for _, wn in ipairs(rotQ) do
+                        if wn == curW then inQueue = true; break end
+                    end
+                    if not inQueue then
+                        local firstW = rotQ[1]
+                        if firstW and firstW ~= "" and firstW ~= curW then
+                            readyToFarm = false
+                            local ed = getEnv().__SYT_ENV_DATA or {}
+                            getEnv().__SYT_ENV_DATA = ed
+                            ed.rotSession = {
+                                mode = "DirtFarm",
+                                targetWorld = firstW,
+                                worlds = DirtFarm._syncEnvQueue(rotQ),
+                                active = true,
+                                updatedAt = os.clock(),
+                            }
+                            DirtFarm.State.switchingWorld = true
+                            setDfStatus("[DF] Masuk antrian world: " .. firstW)
+                            local okWarp = Packets.EnterWorldDoor(firstW, alive)
+                            DirtFarm.State.switchingWorld = false
+                            if not alive() then break end
+                            if not okWarp then
+                                setDfStatus("[DF] Gagal masuk " .. firstW .. ", tunggu...")
+                                task.wait(1.6)
+                            else
+                                lowerSweptForWorld, upperSweptForWorld = false, false
+                            end
+                        end
+                    else
+                        local ed = getEnv().__SYT_ENV_DATA or {}
+                        getEnv().__SYT_ENV_DATA = ed
+                        ed.rotSession = {
+                            mode = "DirtFarm",
+                            targetWorld = curW,
+                            worlds = DirtFarm._syncEnvQueue(rotQ),
+                            active = true,
+                            updatedAt = os.clock(),
+                        }
+                    end
+                end
+
+                if readyToFarm then
                 local bp = buildDfBlueprint(gt)
                 local dirtId = bp.dirtId
 
-                -- Stage 1A: Zigzag Bagian Bawah (doorY -> maxWorkY), selalu mulai dari ujung terdekat lalu bolak-balik konsisten via 2 kolom ujung
+                -- Stage 1A: Zigzag optimal kiri<->kanan (mulai bersih ke kiri dulu bila di tengah/kanan agar tidak lari kosong ke pojok kanan, lalu zigzag rapat turun kebawah)
                 if not lowerSweptForWorld then
                     local lowerCors = {}
                     local cy = bp.doorY
@@ -8725,14 +8874,20 @@ function DirtFarm.Start()
                         end
                     end
 
-                    -- Pilih ujung terdekat saat mulai di baris White Door / posisi awal
+                    -- Sweep baris awal optimal: bila di tengah/agak kanan, sapu kiri dulu (pos0.tx->2) baru lurus kanan (2->w-3) supaya zero jalan mundur/lambat 1-1!
                     local pos0 = Core.ReadPos()
-                    local firstEdgeLeft = (pos0.tx < bp.midX)
-                    local firstEdgeX = firstEdgeLeft and 2 or (bp.w - 3)
                     local firstCurFloor = math.floor(pos0.y + 0.5)
-                    if math.abs(pos0.x - (firstEdgeX + 0.5)) > 1.2 and firstCurFloor >= 2 and firstCurFloor <= bp.maxWorkY + 1 then
-                        setDfStatus(string.format("[DF] Menuju ujung terdekat x=%d...", firstEdgeX))
-                        impl.dfWalkCorridorLower(bp, firstCurFloor - 1, pos0.tx, firstEdgeX, false, alive, false, true)
+                    if firstCurFloor >= 2 and firstCurFloor <= bp.maxWorkY + 1 then
+                        if pos0.tx > 8 and pos0.tx < bp.w - 10 then
+                            setDfStatus(string.format("[DF] Sapu Cepat Kiri (%d->2)...", pos0.tx))
+                            impl.dfWalkCorridorLower(bp, firstCurFloor - 1, pos0.tx, 2, false, alive, false, true)
+                        elseif pos0.tx > 2 and pos0.tx <= 8 then
+                            setDfStatus("[DF] Masuk ujung kiri x=2...")
+                            impl.dfWalkCorridorLower(bp, firstCurFloor - 1, pos0.tx, 2, false, alive, false, true)
+                        elseif pos0.tx < bp.w - 3 and pos0.tx >= bp.w - 10 then
+                            setDfStatus(string.format("[DF] Masuk ujung kanan x=%d...", bp.w - 3))
+                            impl.dfWalkCorridorLower(bp, firstCurFloor - 1, pos0.tx, bp.w - 3, false, alive, false, true)
+                        end
                     end
 
                     local sweptAllLower = true
@@ -8871,6 +9026,7 @@ function DirtFarm.Start()
                         if rot[ri] == curW then table.remove(rot, ri) end
                     end
                     DirtFarm.State.rotationText = table.concat(rot, ", ")
+                    local savedRot = DirtFarm._syncEnvQueue(rot)
                     if UIHooks.refreshDfList then UIHooks.refreshDfList() end
 
                     local nextWorld = nil
@@ -8878,14 +9034,27 @@ function DirtFarm.Start()
                         if wn ~= curW then nextWorld = wn; break end
                     end
 
+                    local ed = getEnv().__SYT_ENV_DATA or {}
+                    getEnv().__SYT_ENV_DATA = ed
                     if nextWorld and nextWorld ~= "" then
-                        setDfStatus(string.format("[%s] SELESAI -> Rotation ke %s", curW, nextWorld))
+                        ed.rotSession = {
+                            mode = "DirtFarm",
+                            targetWorld = nextWorld,
+                            worlds = savedRot,
+                            active = true,
+                            updatedAt = os.clock(),
+                        }
+                        setDfStatus(string.format("[%s] BERSIH -> Pindah ke %s", curW, nextWorld))
                         emitNotify("SYT Dirt Farm", string.format("DF %s selesai! Pindah ke %s...", curW, nextWorld))
                         DirtFarm.State.switchingWorld = true
-                        Packets.EnterWorldDoor(nextWorld, alive)
+                        local okNext = Packets.EnterWorldDoor(nextWorld, alive)
                         DirtFarm.State.switchingWorld = false
                         lowerSweptForWorld, upperSweptForWorld = false, false
+                        if not okNext and alive() then
+                            task.wait(1.6)
+                        end
                     else
+                        ed.rotSession = nil
                         setDfStatus(string.format("Selesai! World %s Dirt Farm Selesai", curW))
                         emitNotify("SYT Dirt Farm", "Dirt Farm selesai di world " .. curW)
                         DirtFarm.State.running = false
@@ -8893,6 +9062,8 @@ function DirtFarm.Start()
                     end
                 else
                     if noDirtRetries >= 3 then
+                        local ed = getEnv().__SYT_ENV_DATA
+                        if type(ed) == "table" then ed.rotSession = nil end
                         setDfStatus("Dirt habis! Siapkan Dirt di inventory.")
                         DirtFarm.State.running = false
                         break
@@ -8901,6 +9072,7 @@ function DirtFarm.Start()
                     lowerSweptForWorld = false
                     upperSweptForWorld = false
                     task.wait(0.25)
+                end
                 end
             end
             task.wait(0.05)
@@ -8921,7 +9093,7 @@ function DirtFarm.Start()
     return true
 end
 
-function DirtFarm.Stop()
+function DirtFarm.Stop(keepSaved)
     DirtFarm.State.running = false
     DirtFarm.State.switchingWorld = false
     H.dfSpeedForceUntil = 0
@@ -8930,6 +9102,12 @@ function DirtFarm.Stop()
     if DirtFarm.State.thread then
         pcall(task.cancel, DirtFarm.State.thread)
         DirtFarm.State.thread = nil
+    end
+    if not keepSaved then
+        local ed = getEnv().__SYT_ENV_DATA
+        if type(ed) == "table" and ed.rotSession and ed.rotSession.mode == "DirtFarm" then
+            ed.rotSession = nil
+        end
     end
     setDfStatus("Stopped")
 end
@@ -8966,7 +9144,7 @@ local Visual = {
             ["Pure White"]     = Color3.fromRGB(255, 255, 255),
         },
         boosterColorNames = { "Default (Real)", "Magenta Glow", "Gold Emperor", "Cyan Neon", "Crimson Red", "Emerald", "Pure White" },
-        wearSlots = { "back", "hand", "hat", "hair", "shirt", "pants", "feet", "face", "neck" },
+        wearSlots = { "back", "hand", "hat", "hair", "shirt", "pants", "feet", "face", "neck", "chest", "ances", "mask", "ring", "pet" },
         outfitPresets = {
             "Real (Server Outfit)",
             "Legend Gold Mix",
@@ -9112,15 +9290,24 @@ local function saveOrigVisual()
 end
 
 local function wrapVisualEffect(text, effectName, colorPrefix)
-    if effectName == "Rainbow Wave" then return "{rainbow}" .. text .. "}"
-    elseif effectName == "Sponsor Sparkle" then return "{sponsor}" .. text .. "}"
-    elseif effectName == "Supporter Wave" then return "{supporter}" .. text .. "}"
-    elseif effectName == "Legend Gold" then return "{legend}" .. text .. "}"
-    elseif effectName == "Royal Pulse" then return "{royal}" .. text .. "}"
-    elseif effectName == "Creator Tag" then return "{cc}" .. text .. "}"
-    elseif effectName == "Color Prefix" and colorPrefix ~= "" then return colorPrefix .. text
+    local spanMap = {
+        ["Rainbow Wave"] = "rainbow",
+        ["Sponsor Sparkle"] = "sponsor",
+        ["Supporter Wave"] = "supporter",
+        ["Patron Aura"] = "patron",
+        ["Benefactor Neon"] = "benefactor",
+        ["Super Sponsor"] = "supersponsor",
+        ["Legend Gold"] = "legend",
+        ["Royal Pulse"] = "royal",
+        ["Creator Tag"] = "cc",
+    }
+    local sp = spanMap[tostring(effectName or "")]
+    if sp then
+        return "`{" .. sp .. "}" .. text .. "`}"
+    elseif effectName == "Color Prefix" and colorPrefix ~= "" then
+        return colorPrefix .. text .. "``"
     end
-    return (colorPrefix ~= "") and (colorPrefix .. text) or text
+    return (colorPrefix ~= "") and (colorPrefix .. text .. "``") or text
 end
 
 function Visual.HasActiveSpoof()
@@ -9864,24 +10051,47 @@ function Packets.EnterWorldDoor(spec, aliveFn)
     if not gt or type(gt.enter) ~= "function" then return false, "enter_nil" end
     local wName, doorId = sanitizeWorldSpec(spec, true)
     if wName == "" then return false, "empty_world" end
+    while H._warpInFlight do
+        if type(aliveFn) == "function" and not aliveFn() then return false, "cancelled" end
+        task.wait(0.15)
+    end
+    H._warpInFlight = true
+    local function finishWarp(ok, rsn)
+        H._warpInFlight = false
+        return ok, rsn
+    end
     if cleanWorldName(gt.name) ~= wName then
-        H.intentionalSwitchUntil = os.clock() + 15.0
-        pcall(gt.enter, wName)
-        local dl = os.clock() + 12
-        while os.clock() < dl do
-            if type(aliveFn) == "function" and not aliveFn() then return false, "cancelled" end
-            if H.gt and cleanWorldName(H.gt.name) == wName then break end
-            task.wait(0.25)
+        local sinceLast = os.clock() - (H._lastWarpAt or 0)
+        if sinceLast < 2.4 then
+            local waitRem = 2.4 - sinceLast
+            local wEnd = os.clock() + waitRem
+            while os.clock() < wEnd do
+                if type(aliveFn) == "function" and not aliveFn() then return finishWarp(false, "cancelled") end
+                if H.gt and cleanWorldName(H.gt.name) == wName then break end
+                task.wait(0.10)
+            end
         end
-        task.wait(0.85)
-        pcall(SYT_Logic.Init, true)
-        if H.gt and cleanWorldName(H.gt.name) == wName and Visual and Visual.State then
-            Visual.State.lastWorldName = wName
+        if H.gt and cleanWorldName(H.gt.name) ~= wName then
+            H._lastWarpAt = os.clock()
+            H._lastWarpTarget = wName
+            H.intentionalSwitchUntil = os.clock() + 15.0
+            pcall(gt.enter, wName)
+            local dl = os.clock() + 12
+            while os.clock() < dl do
+                if type(aliveFn) == "function" and not aliveFn() then return finishWarp(false, "cancelled") end
+                if H.gt and cleanWorldName(H.gt.name) == wName then break end
+                task.wait(0.25)
+            end
+            task.wait(0.85)
+            pcall(SYT_Logic.Init, true)
+            if H.gt and cleanWorldName(H.gt.name) == wName and Visual and Visual.State then
+                Visual.State.lastWorldName = wName
+            end
+            H.intentionalSwitchUntil = os.clock() + 3.5
         end
-        H.intentionalSwitchUntil = os.clock() + 3.5
     end
     if cleanWorldName(H.gt and H.gt.name or "") ~= wName then
-        return false, "enter_timeout"
+        return finishWarp(false, "enter_timeout")
     end
     if doorId ~= "" and H.Net and type(H.Net.call) == "function" then
         gt = H.gt
@@ -9900,7 +10110,7 @@ function Packets.EnterWorldDoor(spec, aliveFn)
         pcall(H.Net.call, "UseDoor", doorId)
         task.wait(0.45)
     end
-    return true, wName
+    return finishWarp(true, wName)
 end
 
 function Packets.BuyStoreOffer(offerKey)
@@ -10088,6 +10298,15 @@ local function setCwStatus(msg)
     if UIHooks.updateButtons then UIHooks.updateButtons() end
 end
 
+function ClearWorld._syncEnvQueue(worlds)
+    local ed = getEnv().__SYT_ENV_DATA or {}
+    getEnv().__SYT_ENV_DATA = ed
+    local copy = {}
+    for i, w in ipairs(worlds or ClearWorld.State.worldList or {}) do copy[i] = w end
+    ed.cwQueue = copy
+    return copy
+end
+
 function ClearWorld.AddWorld(raw)
     local w = sanitizeWorldSpec(raw, false)
     if w == "" then return false, ClearWorld.State.worldList end
@@ -10095,6 +10314,7 @@ function ClearWorld.AddWorld(raw)
         if existing == w then return false, ClearWorld.State.worldList end
     end
     table.insert(ClearWorld.State.worldList, w)
+    ClearWorld._syncEnvQueue(ClearWorld.State.worldList)
     if UIHooks.refreshCwList then UIHooks.refreshCwList() end
     return true, ClearWorld.State.worldList
 end
@@ -10102,11 +10322,12 @@ end
 function ClearWorld.RemoveWorldAt(idx)
     if idx >= 1 and idx <= #ClearWorld.State.worldList then
         table.remove(ClearWorld.State.worldList, idx)
+        ClearWorld._syncEnvQueue(ClearWorld.State.worldList)
         if UIHooks.refreshCwList then UIHooks.refreshCwList() end
     end
 end
 
-function ClearWorld.Stop()
+function ClearWorld.Stop(keepSaved)
     Core.ClearManualInput()
     ClearWorld.State.running = false
     ClearWorld.State.switchingWorld = false
@@ -10114,6 +10335,12 @@ function ClearWorld.Stop()
     if ClearWorld.State.thread then
         pcall(task.cancel, ClearWorld.State.thread)
         ClearWorld.State.thread = nil
+    end
+    if not keepSaved then
+        local ed = getEnv().__SYT_ENV_DATA
+        if type(ed) == "table" and ed.rotSession and ed.rotSession.mode == "ClearWorld" then
+            ed.rotSession = nil
+        end
     end
     setCwStatus("Stopped")
     return false
@@ -10144,22 +10371,65 @@ function ClearWorld.Start(opts)
                 task.wait(0.4)
             else
                 local curW = cleanWorldName(gt.name)
+                local readyCw = true
                 if not opts.fromAutoLevel and #S.worldList > 0 then
                     local inQueue = false
                     for _, w in ipairs(S.worldList) do
                         if w == curW then inQueue = true; break end
                     end
                     if not inQueue then
-                        S.switchingWorld = true
-                        setCwStatus("Masuk antrian world: " .. S.worldList[1])
-                        Packets.EnterWorldDoor(S.worldList[1], alive)
-                        S.switchingWorld = false
-                        if not alive() then break end
-                        gt = H.gt
-                        curW = cleanWorldName(gt and gt.name or "")
+                        local firstW = S.worldList[1]
+                        if firstW and firstW ~= "" and firstW ~= curW then
+                            readyCw = false
+                            local ed = getEnv().__SYT_ENV_DATA or {}
+                            getEnv().__SYT_ENV_DATA = ed
+                            ed.rotSession = {
+                                mode = "ClearWorld",
+                                targetWorld = firstW,
+                                worlds = ClearWorld._syncEnvQueue(S.worldList),
+                                halfWorld = S.halfWorldMode,
+                                noCollect = S.noCollect,
+                                active = true,
+                                updatedAt = os.clock(),
+                            }
+                            S.switchingWorld = true
+                            setCwStatus("Masuk antrian world: " .. firstW)
+                            local okWarp = Packets.EnterWorldDoor(firstW, alive)
+                            S.switchingWorld = false
+                            if not alive() then break end
+                            if not okWarp then
+                                setCwStatus("Gagal masuk " .. firstW .. ", tunggu...")
+                                task.wait(1.6)
+                            end
+                        end
+                    else
+                        local ed = getEnv().__SYT_ENV_DATA or {}
+                        getEnv().__SYT_ENV_DATA = ed
+                        ed.rotSession = {
+                            mode = "ClearWorld",
+                            targetWorld = curW,
+                            worlds = ClearWorld._syncEnvQueue(S.worldList),
+                            halfWorld = S.halfWorldMode,
+                            noCollect = S.noCollect,
+                            active = true,
+                            updatedAt = os.clock(),
+                        }
                     end
+                elseif not opts.fromAutoLevel then
+                    local ed = getEnv().__SYT_ENV_DATA or {}
+                    getEnv().__SYT_ENV_DATA = ed
+                    ed.rotSession = {
+                        mode = "ClearWorld",
+                        targetWorld = curW,
+                        worlds = {},
+                        halfWorld = S.halfWorldMode,
+                        noCollect = S.noCollect,
+                        active = true,
+                        updatedAt = os.clock(),
+                    }
                 end
 
+                if readyCw then
                 local w, h = gt.w or 100, gt.h or 60
                 local maxY = h - 1
                 -- Cari batas atas bedrock terbawah
@@ -10218,12 +10488,28 @@ function ClearWorld.Start(opts)
                         if UIHooks.refreshCwList then UIHooks.refreshCwList() end
                         nextW = S.worldList[1]
                     end
+                    local savedQ = ClearWorld._syncEnvQueue(S.worldList)
+                    local ed = getEnv().__SYT_ENV_DATA or {}
+                    getEnv().__SYT_ENV_DATA = ed
                     if nextW and nextW ~= curW then
+                        ed.rotSession = {
+                            mode = "ClearWorld",
+                            targetWorld = nextW,
+                            worlds = savedQ,
+                            halfWorld = S.halfWorldMode,
+                            noCollect = S.noCollect,
+                            active = true,
+                            updatedAt = os.clock(),
+                        }
                         S.switchingWorld = true
                         setCwStatus("World bersih -> Next: " .. nextW)
-                        Packets.EnterWorldDoor(nextW, alive)
+                        local okNext = Packets.EnterWorldDoor(nextW, alive)
                         S.switchingWorld = false
+                        if not okNext and alive() then
+                            task.wait(1.6)
+                        end
                     else
+                        ed.rotSession = nil
                         setCwStatus("Clear World Selesai: " .. curW)
                         emitNotify("Clear World", "World " .. curW .. " selesai dibersihkan!")
                         S.running = false
@@ -10240,9 +10526,10 @@ function ClearWorld.Start(opts)
                         end
                         S.progress = math.floor((idx / totalT) * 100)
                         setCwStatus(string.format("[%s] Clear %d/%d (%d%%) @(%d,%d)", curW, idx, totalT, S.progress, t.x, t.y))
-                        clearSingleTileWithLavaCheck(t.x, t.y, { 1, 2 }, 0.165, true, S.noCollect, alive)
+                        clearSingleTileWithLavaCheck(t.x, t.y, { 1, 2 }, 0.194, true, S.noCollect, alive)
                         task.wait(0.02)
                     end
+                end
                 end
             end
             task.wait(0.05)
@@ -10494,8 +10781,12 @@ function AutoLeveling.Stop(keepSaved)
     if not keepSaved then
         AutoLeveling.State.targetWorld = ""
         safeWriteStorage("syt_autolvl.dat", "")
+        local ed = getEnv().__SYT_ENV_DATA
+        if type(ed) == "table" and ed.rotSession and ed.rotSession.mode == "AutoLeveling" then
+            ed.rotSession = nil
+        end
     end
-    ClearWorld.Stop()
+    ClearWorld.Stop(true)
     AutoLeveling.State.status = "Stopped"
     if UI then
         pcall(UI.SetValue, UI, "AutoLvlStatus", AutoLeveling.State.status)
@@ -10528,6 +10819,17 @@ function AutoLeveling.Start()
     local initWorld = cleanWorldName(H.gt and H.gt.name or "")
     S.targetWorld = initWorld ~= "" and initWorld or (S.targetWorld or "")
     safeWriteStorage("syt_autolvl.dat", "ON|" .. tostring(S.targetWorld or ""))
+    do
+        local ed = getEnv().__SYT_ENV_DATA or {}
+        getEnv().__SYT_ENV_DATA = ed
+        ed.rotSession = {
+            mode = "AutoLeveling",
+            targetWorld = S.targetWorld,
+            completedWorlds = S.completedWorlds,
+            active = true,
+            updatedAt = os.clock(),
+        }
+    end
     if UIHooks.updateButtons then UIHooks.updateButtons() end
 
     S.thread = task.spawn(function()
@@ -10537,6 +10839,8 @@ function AutoLeveling.Start()
             if lv >= S.targetLevel then
                 S.status = string.format("Target L%d Tercapai!", lv)
                 safeWriteStorage("syt_autolvl.dat", "")
+                local ed = getEnv().__SYT_ENV_DATA
+                if type(ed) == "table" and ed.rotSession and ed.rotSession.mode == "AutoLeveling" then ed.rotSession = nil end
                 if UI then
                     pcall(UI.SetValue, UI, "AutoLvlStatus", S.status)
                     pcall(UI.SetValue, UI, "SysAutoLevelToggle", false, true)
@@ -10552,28 +10856,35 @@ function AutoLeveling.Start()
                 local rw = SystemModule._random78World()
                 S.targetWorld = rw
                 safeWriteStorage("syt_autolvl.dat", "ON|" .. rw)
+                local ed = getEnv().__SYT_ENV_DATA or {}
+                getEnv().__SYT_ENV_DATA = ed
+                ed.rotSession = { mode = "AutoLeveling", targetWorld = rw, completedWorlds = S.completedWorlds, active = true, updatedAt = os.clock() }
                 S.switchingWorld = true
                 H.intentionalSwitchUntil = os.clock() + 15.0
                 S.status = string.format("Lv%d/10 | Warp -> %s", lv, rw)
                 if UI then UI:SetValue("AutoLvlStatus", S.status) end
-                Packets.EnterWorldDoor(rw, alive)
+                local okRw = Packets.EnterWorldDoor(rw, alive)
                 S.switchingWorld = false
                 H.intentionalSwitchUntil = os.clock() + 3.5
+                if not okRw and alive() then task.wait(1.6) end
             else
                 -- Lanjut langsung di world saat ini tanpa mengulang pencarian random world
                 S.targetWorld = curW
                 safeWriteStorage("syt_autolvl.dat", "ON|" .. curW)
+                local ed = getEnv().__SYT_ENV_DATA or {}
+                getEnv().__SYT_ENV_DATA = ed
+                ed.rotSession = { mode = "AutoLeveling", targetWorld = curW, completedWorlds = S.completedWorlds, active = true, updatedAt = os.clock() }
                 S.status = string.format("Lv%d/10 | Half Clear %s", lv, curW)
                 if UI then UI:SetValue("AutoLvlStatus", S.status) end
                 ClearWorld.Start({ fromAutoLevel = true, halfWorld = true, noCollect = true })
                 while ClearWorld.State.running and alive() do
                     if AutoLeveling.GetLevel() >= S.targetLevel then
-                        ClearWorld.Stop()
+                        ClearWorld.Stop(true)
                         break
                     end
                     if #Core.GetInWorldPlayers(false) > 0 then
                         S.completedWorlds[curW] = true
-                        ClearWorld.Stop()
+                        ClearWorld.Stop(true)
                         break
                     end
                     S.status = string.format("Lv%d/10 | %s (%d%%)", AutoLeveling.GetLevel(), cleanWorldName(H.gt and H.gt.name or curW), ClearWorld.State.progress or 0)
@@ -10585,13 +10896,15 @@ function AutoLeveling.Start()
                     local rw = SystemModule._random78World()
                     S.targetWorld = rw
                     safeWriteStorage("syt_autolvl.dat", "ON|" .. rw)
+                    ed.rotSession = { mode = "AutoLeveling", targetWorld = rw, completedWorlds = S.completedWorlds, active = true, updatedAt = os.clock() }
                     S.switchingWorld = true
                     H.intentionalSwitchUntil = os.clock() + 15.0
                     S.status = string.format("Lv%d/10 | Next Random -> %s", AutoLeveling.GetLevel(), rw)
                     if UI then UI:SetValue("AutoLvlStatus", S.status) end
-                    Packets.EnterWorldDoor(rw, alive)
+                    local okRw2 = Packets.EnterWorldDoor(rw, alive)
                     S.switchingWorld = false
                     H.intentionalSwitchUntil = os.clock() + 3.5
+                    if not okRw2 and alive() then task.wait(1.6) end
                 end
             end
             task.wait(0.25)
@@ -10599,7 +10912,7 @@ function AutoLeveling.Start()
         if S.sessionToken == tok then
             S.running = false
             S.switchingWorld = false
-            ClearWorld.Stop()
+            ClearWorld.Stop(true)
             S.thread = nil
             if UIHooks.updateButtons then UIHooks.updateButtons() end
         end
@@ -11219,25 +11532,54 @@ PNB.State.speedPct = 60
 PNB.State.switchingWorld = false
 PNB.State.progress = 0
 
+H._origPnbStop = PNB.Stop
+function PNB.Stop()
+    PNB.State.running = false
+    PNB.State.switchingWorld = false
+    PNB.State.sessionToken += 1
+    if PNB.State.thread then
+        pcall(task.cancel, PNB.State.thread)
+        PNB.State.thread = nil
+    end
+    Core.ClearManualInput()
+    setPNBStatus("Stopped", "Idle", "Cycle: " .. tostring(PNB.State.cycles or 0))
+    if UIHooks.updateButtons then
+        pcall(UIHooks.updateButtons)
+        task.delay(0.62, function() if UIHooks.updateButtons then pcall(UIHooks.updateButtons) end end)
+    end
+    return false
+end
+
 H._origPnbStart = PNB.Start
 function PNB.Start()
     if PNB.State.running then return true end
     if not guardExclusiveStart("PNB") then return false end
     Core.EnsureInit()
     local S = PNB.State
-    if not S.selectedBlockId then setPNBStatus("Pilih block di Block Selector!", "Waiting Block", "-"); return false end
-    if #PNB.GetActiveOffsets() == 0 then setPNBStatus("Pilih minimal 1 tile pada Pad 5x5", "Waiting Pad", "-"); return false end
+    if not S.selectedBlockId then
+        setPNBStatus("Pilih block di Block Selector!", "Waiting Block", "-")
+        emitNotify("PNB", "Pilih block dulu di Block Selector!")
+        if UIHooks.updateButtons then pcall(UIHooks.updateButtons) end
+        return false
+    end
+    if #PNB.GetActiveOffsets() == 0 then
+        setPNBStatus("Pilih minimal 1 tile pada Pad 5x5", "Waiting Pad", "-")
+        emitNotify("PNB", "Pilih minimal 1 tile di Pad 5x5!")
+        if UIHooks.updateButtons then pcall(UIHooks.updateButtons) end
+        return false
+    end
     if Core.CountItem(S.selectedBlockId) <= 0 and S.storageBlock == "" then
         setPNBStatus("Block habis & World Storage Block kosong", "No Block", "-")
+        emitNotify("PNB", "Block habis di Backpack & Storage kosong!")
+        if UIHooks.updateButtons then pcall(UIHooks.updateButtons) end
         return false
     end
 
-    -- Speed 0-100% -> PNB.State.speed (1..10) + custom boosted damage
+    -- Speed 0-100% -> PNB.State.speed (1..10)
     local pct = clamp(tonumber(S.speedPct) or 60, 0, 100)
     S.speed = clamp(math.floor(1 + (pct / 100) * 9 + 0.5), 1, 10)
-    S.oneHit = false -- README: bukan 1-hit visual, hit damage diperbesar agar break cepat
+    S.oneHit = false
 
-    -- Wrapper loop dengan support Storage Block, Safe & Auto Buy
     S.running = true
     S.cycles = 0
     S.progress = 0
@@ -11248,6 +11590,10 @@ function PNB.Start()
     local pnbWorld = cleanWorldName(H.gt and H.gt.name or "")
     local function alive() return S.running and S.sessionToken == token end
     setPNBStatus("Running...", "Inspecting", "-")
+    if UIHooks.updateButtons then
+        pcall(UIHooks.updateButtons)
+        task.delay(0.62, function() if UIHooks.updateButtons then pcall(UIHooks.updateButtons) end end)
+    end
 
     local function warpToStorageAndBack(spec, taskKind, extraPayload)
         if not spec or spec == "" then return false end
@@ -11406,16 +11752,16 @@ function PNB.Start()
             if #targets == 0 then setPNBStatus("Pilih tile dalam jangkauan", "Idle", "-"); break end
 
             local placeGap = math.max(H.adaptivePlaceGap or 0.174, clamp(0.34 - (pct / 100) * 0.165, 0.174, 0.34))
-            local hitDelay = math.max(0.160, clamp(0.28 - (pct / 100) * 0.12, 0.160, 0.28))
+            local hitDelay = math.max(0.192, clamp(0.28 - (pct / 100) * 0.088, 0.192, 0.28))
             local nThreads = (pct >= 70 and #targets >= 2) and 2 or 1
             local cycleWait = clamp(0.08 - (pct / 100) * 0.05, 0.025, 0.08)
 
             local breakOpts = {
                 layer = layer, threads = nThreads,
                 oneHit = (S.oneHit == true), customHits = nil,
-                hitDelay = hitDelay, verifyTimeout = 0.24,
+                hitDelay = hitDelay, verifyTimeout = 0.26,
                 stable = 0.04, noLocalMirror = true,
-                autoRange = true, preferWalk = true, walkSpeed = 7.1,
+                autoRange = false, preferWalk = true, walkSpeed = 7.1,
                 showHand = S.showHand, showVisual = true, shouldContinue = alive,
             }
 
@@ -11427,7 +11773,7 @@ function PNB.Start()
                     coolIfFwBlocked()
                     local _, failedF = Packets.BreakVerified(snap.foreign, {
                         layer = layer, threads = 1, oneHit = false, customHits = nil,
-                        hitDelay = hitDelay, verifyTimeout = 0.24, noLocalMirror = true,
+                        hitDelay = hitDelay, verifyTimeout = 0.26, noLocalMirror = true,
                         autoRange = true, preferWalk = true, walkSpeed = 7.1,
                         showHand = S.showHand, showVisual = true, shouldContinue = alive,
                     })
@@ -11448,7 +11794,7 @@ function PNB.Start()
                         coolIfFwBlocked()
                         Packets.PlaceVerified(t.tx, t.ty, bid, layer, {
                             showHand = S.showHand, delay = 0, noLocalMirror = false,
-                            autoRange = true, preferWalk = true, walkSpeed = 7.1,
+                            autoRange = false, preferWalk = true, walkSpeed = 7.1,
                             placeGap = placeGap, verifyTimeout = 0.24, shouldContinue = alive,
                         })
                     end
@@ -11489,11 +11835,19 @@ function PNB.Start()
         if S.sessionToken == token then
             S.running = false
             S.thread = nil
+            Core.ClearManualInput()
             if UIHooks.refreshBP then UIHooks.refreshBP() end
             if UIHooks.updateButtons then UIHooks.updateButtons() end
         end
     end)
     return true
+end
+
+function PNB.Toggle()
+    if PNB.State.running then
+        return PNB.Stop()
+    end
+    return PNB.Start()
 end
 
 -- Enhance Pabrik with Speed 0-100%, strict README flow, and progress tracking
@@ -11736,18 +12090,35 @@ end
         return 1
     end
 
-    function Visual.FormatPreviewText(baseName, roleKey)
+    local function composeAffixedName(baseName, roleKey, opts)
+        opts = opts or {}
         local clean = stripColorTags(tostring(baseName or ""))
         if clean == "" then clean = Core.GetInGameName(LP, true) end
-        local rc = Visual.FindRoleEntry(roleKey)
-        return (rc.prefix or "") .. clean .. (rc.suffix or "")
-    end
-
-    function Visual.FormatSbMarkup(baseName, roleKey, effectName, colorCode)
-        local clean = stripColorTags(tostring(baseName or ""))
         if clean == "" then clean = "Player" end
         local rc = Visual.FindRoleEntry(roleKey)
-        local full = (rc.prefix or "") .. clean .. (rc.suffix or "")
+        local pre = rc.prefix or ""
+        local suf = rc.suffix or ""
+        local low = string.lower(clean)
+        if pre == "Dr. " and (string.find(low, "^dr%.") or string.find(low, "^dr ")) then pre = "" end
+        if pre == "Mighty. " and string.find(low, "^mighty%.") then pre = "" end
+        if pre == "@" and string.sub(clean, 1, 1) == "@" then pre = "" end
+        if opts.spoofDr and pre == "" and not string.find(low, "^dr%.") and not string.find(low, "^dr ") and rc.key ~= "developer" and rc.key ~= "moderator" then
+            pre = "Dr. "
+        end
+        if suf == " of Legend" and string.find(low, " of legend$") then suf = "" end
+        if opts.spoofLegend and suf == "" and not string.find(low, " of legend$") then
+            suf = " of Legend"
+        end
+        return pre .. clean .. suf
+    end
+
+    function Visual.FormatPreviewText(baseName, roleKey, opts)
+        return composeAffixedName(baseName, roleKey, opts)
+    end
+
+    function Visual.FormatSbMarkup(baseName, roleKey, effectName, colorCode, opts)
+        local full = composeAffixedName(baseName, roleKey, opts)
+        local rc = Visual.FindRoleEntry(roleKey)
         local sp = EFFECT_TO_SPAN[tostring(effectName or "")]
         if not sp then sp = rc.span end
         if sp and sp ~= "" then
@@ -11782,6 +12153,12 @@ end
             spoofDr = S.spoofDr == true,
             spoofLegend = S.spoofLegend == true,
             spoofStillTag = S.spoofStillTag == true,
+            spoofLevel = tonumber(S.spoofLevel) or 0,
+            guildMode = tostring(S.guildMode or "None (Real)"),
+            guildTag = tostring(S.guildTag or ""),
+            country = tostring(S.country or "Real (Unchanged)"),
+            booster = S.booster == true,
+            boosterColor = tostring(S.boosterColor or "Default (Real)"),
             tilesName = S.tilesName == true,
             hideName = S.hideName == true,
             lockNames = S.lockNames == true,
@@ -11793,6 +12170,14 @@ end
             tostring(S.effect or "None"),
             tostring(S.customTitle or "none"),
             table.concat(serWorn, ";"),
+            tostring(S.colorCode or ""):gsub("[|\n\r]", ""),
+            tostring(S.skinPreset or "Real (Server Skin)"):gsub("[|\n\r]", ""),
+            (S.ghostSkin and "1" or "0") .. (S.spoofDr and "1" or "0") .. (S.spoofLegend and "1" or "0") .. (S.spoofStillTag and "1" or "0") .. (S.hideName and "1" or "0") .. (S.tilesName and "1" or "0") .. (S.booster and "1" or "0"),
+            tostring(S.guildMode or "None (Real)"):gsub("[|\n\r]", ""),
+            tostring(S.guildTag or ""):gsub("[|\n\r]", ""),
+            tostring(S.country or "Real (Unchanged)"):gsub("[|\n\r]", ""),
+            tostring(S.boosterColor or "Default (Real)"):gsub("[|\n\r]", ""),
+            tostring(tonumber(S.spoofLevel) or 0),
         }, "|")
         safeWriteStorage("syt_visual_state.dat", raw)
     end
@@ -11812,6 +12197,12 @@ end
             S.spoofDr = ev.spoofDr == true
             S.spoofLegend = ev.spoofLegend == true
             S.spoofStillTag = ev.spoofStillTag == true
+            S.spoofLevel = tonumber(ev.spoofLevel) or S.spoofLevel or 0
+            S.guildMode = ev.guildMode or S.guildMode
+            S.guildTag = ev.guildTag or S.guildTag
+            S.country = ev.country or S.country
+            S.booster = ev.booster == true
+            S.boosterColor = ev.boosterColor or S.boosterColor
             S.tilesName = ev.tilesName == true
             S.hideName = ev.hideName == true
             S.lockNames = ev.lockNames == true
@@ -11834,6 +12225,22 @@ end
                     if sl and id then S.fakeWorn[sl] = tonumber(id) end
                 end
             end
+            if f[6] then S.colorCode = f[6] end
+            if f[7] and f[7] ~= "" then S.skinPreset = f[7] end
+            if f[8] and #f[8] >= 7 then
+                S.ghostSkin = f[8]:sub(1, 1) == "1"
+                S.spoofDr = f[8]:sub(2, 2) == "1"
+                S.spoofLegend = f[8]:sub(3, 3) == "1"
+                S.spoofStillTag = f[8]:sub(4, 4) == "1"
+                S.hideName = f[8]:sub(5, 5) == "1"
+                S.tilesName = f[8]:sub(6, 6) == "1"
+                S.booster = f[8]:sub(7, 7) == "1"
+            end
+            if f[9] and f[9] ~= "" then S.guildMode = f[9] end
+            if f[10] then S.guildTag = f[10] end
+            if f[11] and f[11] ~= "" then S.country = f[11] end
+            if f[12] and f[12] ~= "" then S.boosterColor = f[12] end
+            if f[13] then S.spoofLevel = tonumber(f[13]) or 0 end
             return true
         end
         return false
@@ -11856,6 +12263,12 @@ end
             HideLegendUntil = plr:GetAttribute("HideLegendUntil"),
             HideDrUntil = plr:GetAttribute("HideDrUntil"),
             StillTag = plr:GetAttribute("StillTag"),
+            GuildRank = plr:GetAttribute("GuildRank"),
+            Country = plr:GetAttribute("Country"),
+            DiscordBooster = plr:GetAttribute("DiscordBooster"),
+            DiscordColor = plr:GetAttribute("DiscordColor"),
+            Level = plr:GetAttribute("Level"),
+            PlayerLevel = plr:GetAttribute("PlayerLevel"),
             StaffRole = sr and sr:GetAttribute(k) or nil,
             TitleList = tl and tl:GetAttribute(k) or nil,
         }
@@ -11865,76 +12278,254 @@ end
     function Visual.ApplyIdentityToPlayer(plr, st, origAttrs)
         if not plr then return end
         origAttrs = origAttrs or {}
+        st = st or {}
         local uid = plr.UserId
         local k = "u" .. tostring(uid)
         local sr = ReplicatedStorage:FindFirstChild("StaffRoles")
         local tl = ReplicatedStorage:FindFirstChild("TitleList")
         local rLow = string.lower(tostring(st.role or "none"))
+        local rc = Visual.FindRoleEntry(rLow)
         local base = stripColorTags(tostring(st.customName or ""))
         if base == "" then
             base = (origAttrs.GameName and origAttrs.GameName ~= "" and tostring(origAttrs.GameName)) or plr.Name
         end
 
-        local nickVal = base
         local sp = EFFECT_TO_SPAN[tostring(st.effect or "")]
-        if sp and not TITLE_ROLE_KEYS[rLow] then
-            nickVal = "`{" .. sp .. "}" .. base .. "`}"
-        elseif rLow == "owner" then
-            nickVal = "`{rainbow}" .. base .. "`}"
-        elseif rLow == "vip" then
-            nickVal = "`^" .. base .. "``"
-        elseif rLow == "admin" then
-            nickVal = "`v" .. base .. "``"
-        elseif type(st.colorCode) == "string" and st.colorCode ~= "" and not TITLE_ROLE_KEYS[rLow] then
-            nickVal = st.colorCode .. base .. "``"
+        local explicitTitle = tostring(st.customTitle or "none")
+        local chosenTitle = explicitTitle
+        if chosenTitle == "" or chosenTitle == "none" then
+            if TITLE_ROLE_KEYS[rLow] then
+                chosenTitle = rLow
+            elseif sp then
+                chosenTitle = sp
+            end
         end
-        plr:SetAttribute("Nick", nickVal)
-        plr:SetAttribute("GameName", base)
+        local effTitle = (sp and chosenTitle ~= "none" and chosenTitle ~= "") and sp or ((chosenTitle ~= "none" and chosenTitle ~= "") and chosenTitle or nil)
+        if rLow == "owner" and not sp and not TITLE_ROLE_KEYS[explicitTitle] then
+            effTitle = "rainbow"
+        end
+        if sp and TITLE_ROLE_KEYS[rLow] and rLow ~= "dr" and rLow ~= "legend" then
+            effTitle = sp
+        elseif sp and explicitTitle == "none" then
+            effTitle = sp
+        end
 
-        local tagVal = (rLow == "developer" or rLow == "moderator") and rLow or origAttrs.Tag
-        plr:SetAttribute("Tag", tagVal)
+        local drActive = (st.spoofDr == true) or (chosenTitle == "dr") or (rLow == "dr")
+        local legendActive = (st.spoofLegend == true) or (chosenTitle == "legend") or (rLow == "legend")
+
+        local body = base
+        if st.tilesName and LP and plr == LP then
+            local pos = Core.ReadPos()
+            body = body .. string.format(" [%d,%d]", pos.tx, pos.ty)
+        end
+        if st.guildMode == "Custom Text Prefix" and type(st.guildTag) == "string" and st.guildTag ~= "" then
+            body = "[" .. stripColorTags(st.guildTag) .. "] " .. body
+        end
+        local lowBody = string.lower(body)
+        if rLow == "supersponsor" and not string.find(lowBody, "^mighty%.") then
+            body = "Mighty. " .. body
+            lowBody = string.lower(body)
+        end
+        if drActive and effTitle ~= "dr" and not string.find(lowBody, "^dr%.") and not string.find(lowBody, "^dr ") then
+            body = "Dr. " .. body
+        end
+
+        local nickVal = body
+        if sp then
+            nickVal = "`{" .. sp .. "}" .. body .. "`}"
+        elseif type(st.colorCode) == "string" and st.colorCode ~= "" then
+            nickVal = st.colorCode .. body .. "``"
+        elseif rLow == "owner" then
+            nickVal = "`{rainbow}" .. body .. "`}"
+        elseif rLow == "vip" then
+            nickVal = "`^" .. body .. "``"
+        elseif rLow == "admin" then
+            nickVal = "`v" .. body .. "``"
+        elseif rc.span then
+            nickVal = "`{" .. rc.span .. "}" .. body .. "`}"
+        elseif rLow == "dr" then
+            nickVal = "`4" .. body .. "``"
+        end
+
+        -- 1. Set atribut sekunder/title/server table terlebih dahulu (sebelum AttributeChanged drawName)
         if sr then
             local srVal = (rLow == "developer" or rLow == "moderator" or rLow == "vip") and rLow or origAttrs.StaffRole
             sr:SetAttribute(k, srVal)
         end
-
-        local chosenTitle = st.customTitle
-        if (not chosenTitle or chosenTitle == "" or chosenTitle == "none") and TITLE_ROLE_KEYS[rLow] then
-            chosenTitle = rLow
+        if tl then
+            tl:SetAttribute(k, (effTitle and effTitle ~= "") and effTitle or origAttrs.TitleList)
         end
-        if chosenTitle and chosenTitle ~= "" and chosenTitle ~= "none" then
-            plr:SetAttribute("OwnTitle", chosenTitle)
-            plr:SetAttribute("WornTitle", chosenTitle)
-            if tl then tl:SetAttribute(k, chosenTitle) end
+        if effTitle and effTitle ~= "" then
+            plr:SetAttribute("WornTitle", effTitle)
         else
-            plr:SetAttribute("OwnTitle", origAttrs.OwnTitle)
             plr:SetAttribute("WornTitle", origAttrs.WornTitle)
-            if tl then tl:SetAttribute(k, origAttrs.TitleList) end
         end
-
-        if st.spoofDr or chosenTitle == "dr" or rLow == "dr" then
+        if drActive then
             plr:SetAttribute("DrTitle", true)
             plr:SetAttribute("HideDrUntil", 0)
         else
             plr:SetAttribute("DrTitle", origAttrs.DrTitle)
             plr:SetAttribute("HideDrUntil", origAttrs.HideDrUntil)
         end
-        if st.spoofLegend or chosenTitle == "legend" or rLow == "legend" then
+        if legendActive then
             plr:SetAttribute("HasLegend", true)
             plr:SetAttribute("HideLegendUntil", 0)
         else
             plr:SetAttribute("HasLegend", origAttrs.HasLegend)
             plr:SetAttribute("HideLegendUntil", origAttrs.HideLegendUntil)
         end
-        plr:SetAttribute("StillTag", (st.spoofStillTag == true) and true or false)
+        plr:SetAttribute("StillTag", (st.spoofStillTag == true) and true or origAttrs.StillTag)
+
+        local bCol = Visual.Presets.boosterColors and Visual.Presets.boosterColors[st.boosterColor]
+        if typeof(bCol) == "Color3" then
+            plr:SetAttribute("DiscordColor", bCol)
+        elseif rLow == "owner" then
+            plr:SetAttribute("DiscordColor", Color3.fromRGB(255, 145, 235))
+        elseif rLow == "vip" then
+            plr:SetAttribute("DiscordColor", Color3.fromRGB(181, 255, 151))
+        elseif rLow == "admin" then
+            plr:SetAttribute("DiscordColor", Color3.fromRGB(125, 196, 124))
+        else
+            plr:SetAttribute("DiscordColor", origAttrs.DiscordColor)
+        end
+
+        local lvl = tonumber(st.spoofLevel) or 0
+        if lvl > 0 then
+            plr:SetAttribute("Level", math.floor(lvl))
+            plr:SetAttribute("PlayerLevel", math.floor(lvl))
+        else
+            plr:SetAttribute("Level", origAttrs.Level)
+            plr:SetAttribute("PlayerLevel", origAttrs.PlayerLevel)
+        end
+
+        -- 2. Set atribut yang diawasi AttributeChanged (Others.lua) di akhir agar drawName membaca state terbaru lengkap
+        if st.guildMode == "2: (GE) Member" then
+            plr:SetAttribute("GuildRank", 2)
+        elseif st.guildMode == "3: (GC) Officer" then
+            plr:SetAttribute("GuildRank", 3)
+        elseif st.guildMode == "4: (GL) Leader" then
+            plr:SetAttribute("GuildRank", 4)
+        else
+            plr:SetAttribute("GuildRank", origAttrs.GuildRank)
+        end
+        if st.country and st.country ~= "Real (Unchanged)" and st.country ~= "" then
+            plr:SetAttribute("Country", st.country)
+        else
+            plr:SetAttribute("Country", origAttrs.Country)
+        end
+        plr:SetAttribute("DiscordBooster", (st.booster == true) or origAttrs.DiscordBooster)
+        plr:SetAttribute("GameName", base)
+        if effTitle and effTitle ~= "" and (TITLE_ROLE_KEYS[rLow] or TITLE_ROLE_KEYS[explicitTitle]) then
+            plr:SetAttribute("OwnTitle", effTitle)
+        else
+            plr:SetAttribute("OwnTitle", origAttrs.OwnTitle)
+        end
+        plr:SetAttribute("Nick", nickVal)
+        local tagVal = (rLow == "developer" or rLow == "moderator") and rLow or origAttrs.Tag
+        plr:SetAttribute("Tag", tagVal)
     end
 
     local _origVisualApply = Visual.Apply
     local _origVisualOutfit = Visual.ApplyOutfit
     local _origVisualRestore = Visual.Restore
 
+    function Visual.ReapplyOutfitLocally()
+        ensureVisualRefs()
+        local S = Visual.State
+        local wt = H.wornTbl
+        if type(wt) ~= "table" then return false end
+        local slots = (Visual.Presets and Visual.Presets.wearSlots) or { "back", "hand", "hat", "hair", "shirt", "pants", "feet", "face", "neck", "chest", "ances", "mask", "ring", "pet" }
+        if S.origWornSavedFor ~= wt then
+            S.origWornSavedFor = wt
+            S.origWorn = {}
+            for _, sl in ipairs(slots) do
+                S.origWorn[sl] = rawget(wt, sl)
+            end
+        end
+        for _, sl in ipairs(slots) do
+            local spoofVal = S.fakeWorn[sl]
+            if spoofVal ~= nil then
+                wt[sl] = (spoofVal > 0) and spoofVal or nil
+            elseif S.origWorn then
+                wt[sl] = S.origWorn[sl]
+            end
+        end
+        local ps = H.playerSpriteObj
+        if type(ps) == "table" then
+            if S.origSkinSavedFor ~= ps then
+                S.origSkinSavedFor = ps
+                S.origSkin = rawget(ps, "SKIN")
+            end
+            local col = Visual.Presets.skins[S.skinPreset]
+            if typeof(col) == "Color3" then
+                ps.SKIN = col
+                if type(rawget(ps, "setSkin")) == "function" then pcall(ps.setSkin, ps, col) end
+            end
+        end
+        if H.skillsObj and type(H.skillsObj.applyWorn) == "function" then
+            pcall(H.skillsObj.applyWorn)
+            if type(ps) == "table" and type(ps.allRigs) == "table" then
+                local clk = os.clock()
+                for _, rig in ipairs(ps.allRigs) do
+                    if type(rig) == "table" and rig.portrait then
+                        pcall(H.skillsObj.applyWorn, rig, clk)
+                    end
+                end
+            end
+        end
+        if type(ps) == "table" and type(rawget(ps, "applyFeet")) == "function" then
+            pcall(ps.applyFeet, ps)
+        end
+        refreshNameTagObj()
+        return true
+    end
+
+    function Visual.EnsureOutfitPersistenceHooks()
+        if H.inv and H.inv.changed and typeof(H.inv.changed.Event) == "RBXScriptSignal" and H._invOutfitHookedFor ~= H.inv then
+            H._invOutfitHookedFor = H.inv
+            local boundInv = H.inv
+            boundInv.changed.Event:Connect(function()
+                local vs = Visual and Visual.State
+                if vs and type(vs.fakeWorn) == "table" and next(vs.fakeWorn) ~= nil then
+                    task.defer(function()
+                        if Visual and Visual.ReapplyOutfitLocally then
+                            pcall(Visual.ReapplyOutfitLocally)
+                        end
+                    end)
+                end
+            end)
+        end
+        if H.skillsObj and type(rawget(H.skillsObj, "refresh")) == "function" and H._skRefreshHookedFor ~= H.skillsObj then
+            local sk = H.skillsObj
+            local origRefresh = rawget(sk, "refresh")
+            H._skRefreshHookedFor = sk
+            sk.refresh = function(...)
+                local res = origRefresh(...)
+                local vs = Visual and Visual.State
+                if vs and type(vs.fakeWorn) == "table" and next(vs.fakeWorn) ~= nil then
+                    task.defer(function()
+                        if Visual and Visual.ReapplyOutfitLocally then
+                            pcall(Visual.ReapplyOutfitLocally)
+                        end
+                    end)
+                end
+                return res
+            end
+        end
+    end
+
     function Visual.ApplyOutfit()
         local okR = _origVisualOutfit()
+        Visual.EnsureOutfitPersistenceHooks()
+        local ps = H.playerSpriteObj
+        if type(ps) == "table" and type(ps.allRigs) == "table" and H.skillsObj and type(H.skillsObj.applyWorn) == "function" then
+            local clk = os.clock()
+            for _, rig in ipairs(ps.allRigs) do
+                if type(rig) == "table" and rig.portrait then
+                    pcall(H.skillsObj.applyWorn, rig, clk)
+                end
+            end
+        end
         pcall(Visual.SaveToEnv)
         if not Visual.State._batchP2P and ProxyCommands and ProxyCommands.P2P and ProxyCommands.P2P.BroadcastState then
             task.spawn(ProxyCommands.P2P.BroadcastState, false)
@@ -11947,13 +12538,17 @@ end
         S._batchP2P = true
         if _origVisualApply then _origVisualApply() end
         S._batchP2P = false
+        Visual.EnsureOutfitPersistenceHooks()
         if LP then
             Visual.ApplyIdentityToPlayer(LP, S, {
                 Nick = S.origNick, GameName = S.origGameName, Tag = S.origTag,
                 OwnTitle = S.origOwnTitle, WornTitle = S.origWornTitle,
                 DrTitle = S.origDrTitle, HasLegend = S.origHasLegend,
                 HideLegendUntil = S.origHideLegend, HideDrUntil = S.origHideDr,
-                StillTag = S.origStillTag, StaffRole = S.origRoleAttr, TitleList = S.origTitleAttr,
+                StillTag = S.origStillTag, GuildRank = S.origGuildRank,
+                Country = S.origCountry, DiscordBooster = S.origBooster,
+                DiscordColor = S.origBoosterColor, Level = S.origLevel,
+                PlayerLevel = S.origPlayerLevel, StaffRole = S.origRoleAttr, TitleList = S.origTitleAttr,
             })
         end
         if type(H.nameTagObj) == "table" then
@@ -12142,9 +12737,10 @@ local function showOverheadTagPopup(userId, tagText, borderColor)
     end)
 end
 
--- Zero-Server P2P Client Visual Sync + /sbv Virtual Super Broadcast (via silent RBXGeneral nibble channel)
+-- Zero-Server P2P Client Visual Sync + /sbv Virtual Super Broadcast (via Metadata-First RBXGeneral + Nibble Fallback + Rate Governor)
 ;(function()
     local P2P_PREFIX = "xwkp "
+    local P2P_META_TAG = "SYT2|"
     local P2P_CONS = "bcdfghjkmnpqrtvw"
     local REV_CONS = {}
     for i = 1, #P2P_CONS do REV_CONS[P2P_CONS:sub(i, i)] = i - 1 end
@@ -12162,11 +12758,19 @@ end
         queue = {},
         sending = false,
         nextSendAt = 0,
+        blockedUntil = 0,
+        sentTimes = {},
         lastSbvAt = 0,
         lastHelloAt = 0,
+        lastStateSentAt = 0,
+        lastSentSig = "",
         pendingBroadcast = false,
+        pendingBroadcastToken = 0,
         replyTimers = {},
         sfxSound = nil,
+        metaBroken = false,
+        lastMetaSentAt = 0,
+        lastMetaSentPayload = "",
     }
     ProxyCommands.P2P = P2P
 
@@ -12175,6 +12779,27 @@ end
         local o = {}
         for k, v in pairs(t) do o[k] = v end
         return o
+    end
+
+    local function strToHex(s)
+        s = tostring(s or "")
+        return (s:gsub(".", function(c)
+            return string.format("%02x", string.byte(c))
+        end))
+    end
+
+    local function hexToStr(h)
+        if type(h) ~= "string" or (#h % 2) ~= 0 then return "" end
+        local ok, res = pcall(function()
+            return (h:gsub("%x%x", function(pair)
+                return string.char(tonumber(pair, 16) or 32)
+            end))
+        end)
+        return ok and res or ""
+    end
+
+    local function cleanPipeVal(s)
+        return tostring(s or ""):gsub("[|\r\n]", "")
     end
 
     local function computeChecksum(bytes)
@@ -12278,7 +12903,21 @@ end
             st.reset and "R1" or "R0",
             tostring(st.role or "none"),
             tostring(st.effect or "None"),
+            tostring(st.colorCode or ""),
+            tostring(st.customTitle or "none"),
             tostring(st.customName or ""),
+            tostring(st.skinPreset or "Real (Server Skin)"),
+            st.ghostSkin and "G1" or "G0",
+            st.spoofDr and "D1" or "D0",
+            st.spoofLegend and "L1" or "L0",
+            st.spoofStillTag and "S1" or "S0",
+            st.hideName and "H1" or "H0",
+            tostring(st.guildMode or "None (Real)"),
+            tostring(st.guildTag or ""),
+            tostring(st.country or "Real (Unchanged)"),
+            st.booster and "B1" or "B0",
+            tostring(st.boosterColor or "Default (Real)"),
+            tostring(tonumber(st.spoofLevel) or 0),
             table.concat(wKeys, ",")
         }, "|")
     end
@@ -12326,7 +12965,21 @@ end
                 reset = peer.reset == true,
                 role = peer.role,
                 effect = peer.effect,
+                colorCode = peer.colorCode,
+                customTitle = peer.customTitle,
                 customName = peer.customName,
+                skinPreset = peer.skinPreset,
+                ghostSkin = peer.ghostSkin == true,
+                spoofDr = peer.spoofDr == true,
+                spoofLegend = peer.spoofLegend == true,
+                spoofStillTag = peer.spoofStillTag == true,
+                hideName = peer.hideName == true,
+                guildMode = peer.guildMode,
+                guildTag = peer.guildTag,
+                country = peer.country,
+                booster = peer.booster == true,
+                boosterColor = peer.boosterColor,
+                spoofLevel = peer.spoofLevel or 0,
                 worn = shallowCopyTbl(peer.worn) or {},
                 sig = peer.sig,
                 updatedAt = peer.updatedAt,
@@ -12341,17 +12994,32 @@ end
         if type(saved) ~= "table" then return end
         for uid, peer in pairs(saved) do
             if type(peer) == "table" and tonumber(uid) then
-                P2P.Peers[tonumber(uid)] = {
+                local obj = {
                     uid = tonumber(uid),
                     reset = peer.reset == true,
                     role = peer.role or "none",
                     effect = peer.effect or "None",
+                    colorCode = peer.colorCode or "",
+                    customTitle = peer.customTitle or "none",
                     customName = peer.customName or "",
+                    skinPreset = peer.skinPreset or "Real (Server Skin)",
+                    ghostSkin = peer.ghostSkin == true,
+                    spoofDr = peer.spoofDr == true,
+                    spoofLegend = peer.spoofLegend == true,
+                    spoofStillTag = peer.spoofStillTag == true,
+                    hideName = peer.hideName == true,
+                    guildMode = peer.guildMode or "None (Real)",
+                    guildTag = peer.guildTag or "",
+                    country = peer.country or "Real (Unchanged)",
+                    booster = peer.booster == true,
+                    boosterColor = peer.boosterColor or "Default (Real)",
+                    spoofLevel = tonumber(peer.spoofLevel) or 0,
                     worn = shallowCopyTbl(peer.worn) or {},
-                    sig = peer.sig or buildPeerSig(peer),
                     updatedAt = peer.updatedAt or os.clock(),
                     origAttrs = shallowCopyTbl(peer.origAttrs),
                 }
+                obj.sig = buildPeerSig(obj)
+                P2P.Peers[tonumber(uid)] = obj
             end
         end
     end
@@ -12393,6 +13061,40 @@ end
             end
         end
         return nil
+    end
+
+    local function paintPeerRigs(entry, skinCol, isSee)
+        if type(entry) ~= "table" or type(entry.rigs) ~= "table" then return end
+        local useCol = typeof(skinCol) == "Color3" and skinCol or nil
+        local mouthCol = useCol and Color3.new(useCol.R * 0.38, useCol.G * 0.35, useCol.B * 0.3) or nil
+        local skinT = isSee and 0.2 or 0
+        for _, rig in pairs(entry.rigs) do
+            if type(rig) == "table" then
+                rig.feetKey = nil
+                rig.heldKey = nil
+                rig.wornVer = nil
+                if not rig.shade then
+                    if useCol then
+                        for _, part in ipairs({
+                            rig.body, rig.head, rig.eyelids, rig.blink,
+                            rig.armBack and rig.armBack.Sprite or nil,
+                            rig.armFront and rig.armFront.Sprite or nil,
+                            rig.forearm, rig.fist
+                        }) do
+                            if typeof(part) == "Instance" and part:IsA("ImageLabel") then
+                                part.ImageColor3 = useCol
+                                if not entry.ghostShown then
+                                    part.ImageTransparency = skinT
+                                end
+                            end
+                        end
+                        if typeof(rig.face) == "Instance" and rig.face:IsA("ImageLabel") and mouthCol then
+                            rig.face.ImageColor3 = mouthCol
+                        end
+                    end
+                end
+            end
+        end
     end
 
     local function applyPeerToWorld(uid, peer)
@@ -12437,6 +13139,8 @@ end
                         entry._sytOrigPet = entry.pet
                         entry._sytOrigWings = entry.wings
                         entry._sytOrigWingIt = entry.wingIt
+                        entry._sytOrigSkin = entry.skin
+                        entry._sytOrigSee = entry.see
                         if entry._sytOrigName == nil then entry._sytOrigName = entry.name end
                         entry._sytAppliedSig = nil
                     end
@@ -12451,14 +13155,17 @@ end
                                 end
                             end
                             local newWorn = {}
-                            local newPet, newWings = nil, false
+                            local newPet, newWings, newWingIt = nil, false, nil
                             for _, id in pairs(newSlots) do
                                 if type(id) == "number" and id > 0 then
                                     newWorn[id] = true
                                     local info = H.ItemDB and H.ItemDB[id]
                                     if type(info) == "table" then
                                         if info.pet then newPet = info.pet end
-                                        if info.wingSheet then newWings = info.wingSheet end
+                                        if info.wingSheet then
+                                            newWings = info.wingSheet
+                                            newWingIt = info
+                                        end
                                     end
                                 end
                             end
@@ -12466,11 +13173,26 @@ end
                             entry.worn = newWorn
                             entry.pet = newPet
                             entry.wings = newWings
-                            if not newWings then entry.wingIt = nil end
-                            if (peer.customName or "") ~= "" or (peer.role or "none") ~= "none" then
+                            entry.wingIt = newWingIt
+
+                            local skinCol = entry._sytOrigSkin
+                            local spName = tostring(peer.skinPreset or "Real (Server Skin)")
+                            if spName ~= "Real (Server Skin)" and spName ~= "Ghost (See-Through)" then
+                                local c3 = Visual.Presets.skins and Visual.Presets.skins[spName]
+                                if typeof(c3) == "Color3" then skinCol = c3 end
+                            end
+                            local seeFlag = (peer.ghostSkin == true or spName == "Ghost (See-Through)") and true or (entry._sytOrigSee == true)
+                            entry.skin = skinCol
+                            entry.see = seeFlag
+                            paintPeerRigs(entry, skinCol, seeFlag)
+
+                            if (peer.customName or "") ~= "" or (peer.role or "none") ~= "none" or peer.spoofDr or peer.spoofLegend then
                                 local baseShow = (peer.customName ~= "" and peer.customName) or entry._sytOrigName or (plr and (plr:GetAttribute("GameName") or plr.Name)) or "Player"
                                 if type(entry.name) == "string" or entry._sytOrigName ~= nil then
-                                    entry.name = Visual.FormatPreviewText(baseShow, peer.role)
+                                    entry.name = Visual.FormatPreviewText(baseShow, peer.role, {
+                                        spoofDr = peer.spoofDr == true,
+                                        spoofLegend = peer.spoofLegend == true,
+                                    })
                                 end
                             end
                         else
@@ -12479,16 +13201,27 @@ end
                             entry.pet = entry._sytOrigPet
                             entry.wings = entry._sytOrigWings
                             entry.wingIt = entry._sytOrigWingIt
+                            entry.skin = entry._sytOrigSkin
+                            entry.see = entry._sytOrigSee
+                            paintPeerRigs(entry, entry._sytOrigSkin, entry._sytOrigSee == true)
                             if entry._sytOrigName ~= nil then entry.name = entry._sytOrigName end
                         end
                         entry._sytLastSlots = entry.slots
                         entry._sytAppliedSig = wantSig
+                        entry.shownKey = nil
                         entry.lookVer = (tonumber(entry.lookVer) or 0) + 1
+                        if typeof(entry.tag) == "Instance" and entry.tag:IsA("GuiObject") then
+                            entry.tag.Visible = not (active and peer.hideName == true)
+                        end
                         if type(entry.redraw) == "function" then pcall(entry.redraw) end
                     end
-                elseif type(entry.redraw) == "function" and entry._sytAppliedSig ~= wantSig then
+                elseif entry._sytAppliedSig ~= wantSig then
                     entry._sytAppliedSig = wantSig
-                    pcall(entry.redraw)
+                    entry.shownKey = nil
+                    if typeof(entry.tag) == "Instance" and entry.tag:IsA("GuiObject") then
+                        entry.tag.Visible = not (active and peer.hideName == true)
+                    end
+                    if type(entry.redraw) == "function" then pcall(entry.redraw) end
                 end
             end
         end
@@ -12562,20 +13295,37 @@ end
                     end
                     prof.worn = arr
                 else
-                    for _, id in pairs(wornSrc) do
-                        if type(id) == "number" and id > 0 then prof.worn[id] = true end
+                    for sl, id in pairs(wornSrc) do
+                        if type(id) == "number" and id > 0 then
+                            prof.worn[id] = true
+                        elseif id == 0 and type(prof.slots) == "table" and prof.slots[sl] then
+                            prof.worn[prof.slots[sl]] = nil
+                        end
                     end
                 end
             end
         end
-        if (src.customName or "") ~= "" and type(prof.name) == "string" then
-            prof.name = Visual.FormatPreviewText(src.customName, src.role)
-        elseif (src.role or "none") ~= "none" and type(prof.name) == "string" then
-            prof.name = Visual.FormatPreviewText(prof.name, src.role)
+        local spNm = tostring(src.skinPreset or "Real (Server Skin)")
+        if spNm ~= "Real (Server Skin)" and type(prof.skin) == "string" then
+            prof.skin = spNm
         end
-        if (src.role or "none") ~= "none" then
-            if prof.title ~= nil then prof.title = src.role end
-            if prof.wornTitle ~= nil then prof.wornTitle = src.role end
+        if ((src.customName or "") ~= "" or (src.role or "none") ~= "none" or src.spoofDr or src.spoofLegend) and type(prof.name) == "string" then
+            local nmBase = (src.customName ~= "" and src.customName) or prof.name
+            prof.name = Visual.FormatPreviewText(nmBase, src.role, {
+                spoofDr = src.spoofDr == true,
+                spoofLegend = src.spoofLegend == true,
+            })
+        end
+        local rLow = string.lower(tostring(src.role or "none"))
+        if rLow ~= "none" then
+            if prof.title ~= nil then prof.title = rLow end
+            if prof.wornTitle ~= nil then prof.wornTitle = rLow end
+        end
+        if src.spoofLegend or rLow == "legend" then
+            if prof.hasLegend ~= nil then prof.hasLegend = true end
+        end
+        if src.spoofDr or rLow == "dr" then
+            if prof.dr ~= nil then prof.dr = true end
         end
     end
 
@@ -12594,45 +13344,90 @@ end
         end)
     end
 
-    local function displaySbvLine(rawName, customName, roleKey, effName, colorCode, worldName, msgText)
+    local function displaySbvLine(rawName, customName, roleKey, effName, colorCode, worldName, msgText, opts)
         local cleanBase = stripColorTags(tostring(customName or ""))
         if cleanBase == "" then cleanBase = stripColorTags(tostring(rawName or "Player")) end
-        local senderMarkup = Visual.FormatSbMarkup(cleanBase, roleKey, effName, colorCode)
+        local senderMarkup = Visual.FormatSbMarkup(cleanBase, roleKey, effName, colorCode, opts)
         local wClean = string.upper(stripColorTags(tostring(worldName or "WORLD")))
         if wClean == "" then wClean = "WORLD" end
         local safeMsg = tostring(msgText or ""):gsub("[\r\n]", " ")
-        local sbLine = string.format("`6>> from (``%s`6) in [`4%s`6] > `$%s``", senderMarkup, wClean, safeMsg)
+        local sbLine = string.format("`5** from (%s`5) in [`$%s`5] ** :`` `$%s``", senderMarkup, wClean, safeMsg)
         playSbvSound()
-        proxyConsole(sbLine, "global", true)
+        proxyConsole(sbLine, nil, true)
     end
 
-    local function enqueueWire(kindTag, wireStr)
-        if not wireStr or #wireStr > 200 then return end
+    local function enqueueWire(kindTag, metaStr, fallbackWire, stateSig)
+        if #Players:GetPlayers() <= 1 then return end
         if kindTag == "SET" or kindTag == "HELLO" then
+            local now = os.clock()
+            if stateSig and stateSig == P2P.lastSentSig and (now - (P2P.lastStateSentAt or 0)) < 35.0 and kindTag == "SET" then
+                return
+            end
             for i = #P2P.queue, 1, -1 do
-                if P2P.queue[i].kind == kindTag then table.remove(P2P.queue, i) end
+                if P2P.queue[i].kind == "SET" or P2P.queue[i].kind == "HELLO" then
+                    table.remove(P2P.queue, i)
+                end
             end
         else
-            if #P2P.queue >= 6 then table.remove(P2P.queue, 1) end
+            if #P2P.queue >= 3 then table.remove(P2P.queue, 1) end
         end
-        P2P.queue[#P2P.queue + 1] = { kind = kindTag, wire = wireStr }
+
+        local item = { kind = kindTag, meta = metaStr, fallback = fallbackWire, sig = stateSig }
+        if kindTag == "SBV" then
+            table.insert(P2P.queue, 1, item)
+        else
+            P2P.queue[#P2P.queue + 1] = item
+        end
+
         if P2P.sending then return end
         P2P.sending = true
         task.spawn(function()
             while #P2P.queue > 0 do
                 if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then break end
+                if #Players:GetPlayers() <= 1 then
+                    table.clear(P2P.queue)
+                    break
+                end
                 local now = os.clock()
-                if now < P2P.nextSendAt then
-                    task.wait(math.min(0.35, P2P.nextSendAt - now))
+                for i = #P2P.sentTimes, 1, -1 do
+                    if (now - P2P.sentTimes[i]) > 14.0 then
+                        table.remove(P2P.sentTimes, i)
+                    end
+                end
+                local waitUntil = math.max(P2P.nextSendAt or 0, P2P.blockedUntil or 0)
+                if #P2P.sentTimes >= 3 then
+                    waitUntil = math.max(waitUntil, P2P.sentTimes[1] + 14.2)
+                end
+                if now < waitUntil then
+                    task.wait(math.min(0.4, waitUntil - now))
                 else
                     local ch = getP2PChannel()
                     local ts = ch and LP and ch:FindFirstChild(tostring(LP.UserId))
                     if ch and (not ts or ts:GetAttribute("CanSend") ~= false) then
                         local pkt = table.remove(P2P.queue, 1)
-                        P2P.nextSendAt = os.clock() + 1.15
-                        pcall(function() ch:SendAsync(pkt.wire) end)
+                        local minGap = (pkt.kind == "SBV") and 2.8 or 4.0
+                        P2P.nextSendAt = os.clock() + minGap
+                        P2P.sentTimes[#P2P.sentTimes + 1] = os.clock()
+                        if pkt.sig then
+                            P2P.lastSentSig = pkt.sig
+                            P2P.lastStateSentAt = os.clock()
+                        end
+                        local sendOk, sendRes
+                        if not P2P.metaBroken and type(pkt.meta) == "string" and pkt.meta ~= "" then
+                            P2P.lastMetaSentAt = os.clock()
+                            P2P.lastMetaSentPayload = pkt.meta
+                            sendOk, sendRes = pcall(function() return ch:SendAsync("xwkp", pkt.meta) end)
+                        elseif type(pkt.fallback) == "string" and #pkt.fallback <= 200 then
+                            sendOk, sendRes = pcall(function() return ch:SendAsync(pkt.fallback) end)
+                        end
+                        if sendOk and typeof(sendRes) == "Instance" and sendRes.Status == Enum.TextChatMessageStatus.Floodchecked then
+                            P2P.blockedUntil = os.clock() + 12.0
+                            for i = #P2P.queue, 1, -1 do
+                                if P2P.queue[i].kind ~= "SBV" then table.remove(P2P.queue, i) end
+                            end
+                        end
                     else
-                        task.wait(0.45)
+                        task.wait(0.5)
                     end
                 end
             end
@@ -12640,58 +13435,117 @@ end
         end)
     end
 
-    local function buildStatePacket(isHello, isReset)
+    local function buildStatePayloads(isHello, isReset)
         local S = Visual.State
         local _, roleIdx = Visual.FindRoleEntry(isReset and "none" or S.role)
         local effIdx = Visual.GetEffectIndex(isReset and "None" or S.effect)
-        local flags = (isReset and 1 or 0) + (isHello and 2 or 0)
-        local bytes = { isHello and 0x12 or 0x11, flags, roleIdx, effIdx }
-        pushStr(bytes, isReset and "" or (S.customName or ""), 22)
+        local roleKey = isReset and "none" or tostring(S.role or "none")
+        local effName = isReset and "None" or tostring(S.effect or "None")
+        local customName = isReset and "" or tostring(S.customName or "")
+        local colorCode = isReset and "" or tostring(S.colorCode or "")
+        local customTitle = isReset and "none" or tostring(S.customTitle or "none")
+        local skinPreset = isReset and "Real (Server Skin)" or tostring(S.skinPreset or "Real (Server Skin)")
+        local guildMode = isReset and "None (Real)" or tostring(S.guildMode or "None (Real)")
+        local guildTag = isReset and "" or tostring(S.guildTag or "")
+        local country = isReset and "Real (Unchanged)" or tostring(S.country or "Real (Unchanged)")
+        local boosterColor = isReset and "Default (Real)" or tostring(S.boosterColor or "Default (Real)")
+        local spoofLevel = isReset and 0 or (tonumber(S.spoofLevel) or 0)
 
+        local flags = (isReset and 1 or 0)
+            + (isHello and 2 or 0)
+            + ((not isReset and S.ghostSkin) and 4 or 0)
+            + ((not isReset and S.spoofDr) and 8 or 0)
+            + ((not isReset and S.spoofLegend) and 16 or 0)
+            + ((not isReset and S.spoofStillTag) and 32 or 0)
+            + ((not isReset and S.booster) and 64 or 0)
+            + ((not isReset and S.hideName) and 128 or 0)
+
+        local wornPairs = {}
         local wornList = {}
         if not isReset then
             for sl, id in pairs(S.fakeWorn or {}) do
                 local sIdx = SLOT_TO_IDX[tostring(sl)]
                 if sIdx and type(id) == "number" and id >= 0 then
-                    wornList[#wornList + 1] = { sIdx = sIdx, id = math.floor(id) }
+                    local iid = math.floor(id)
+                    wornList[#wornList + 1] = { sIdx = sIdx, id = iid }
                 end
             end
             table.sort(wornList, function(a, b) return a.sIdx < b.sIdx end)
+            for _, item in ipairs(wornList) do
+                wornPairs[#wornPairs + 1] = tostring(item.sIdx) .. "=" .. tostring(item.id)
+            end
         end
 
+        local metaStr = table.concat({
+            "SYT2",
+            isHello and "H" or "S",
+            tostring(flags),
+            cleanPipeVal(roleKey),
+            cleanPipeVal(effName),
+            cleanPipeVal(colorCode),
+            cleanPipeVal(customTitle),
+            cleanPipeVal(skinPreset),
+            cleanPipeVal(guildMode),
+            cleanPipeVal(country),
+            cleanPipeVal(boosterColor),
+            tostring(math.floor(spoofLevel)),
+            strToHex(customName:sub(1, 28)),
+            strToHex(guildTag:sub(1, 16)),
+            table.concat(wornPairs, ",")
+        }, "|")
+
+        local bytes = { isHello and 0x12 or 0x11, flags, roleIdx, effIdx }
+        pushStr(bytes, customName, 20)
         local countPos = #bytes + 1
         bytes[countPos] = 0
         local added = 0
         for _, item in ipairs(wornList) do
             local temp = {}
             pushVarint(temp, item.id)
-            if (#bytes + 1 + #temp + 1) > 81 then break end
+            if (#bytes + 1 + #temp + 1) > 84 then break end
             bytes[#bytes + 1] = item.sIdx
             for _, tb in ipairs(temp) do bytes[#bytes + 1] = tb end
             added = added + 1
         end
         bytes[countPos] = added
-        return encodeBytesToWire(bytes)
+        local fallbackWire = encodeBytesToWire(bytes)
+        local sig = buildPeerSig({
+            reset = isReset == true, role = roleKey, effect = effName, colorCode = colorCode,
+            customTitle = customTitle, customName = customName, skinPreset = skinPreset,
+            ghostSkin = (not isReset and S.ghostSkin) == true,
+            spoofDr = (not isReset and S.spoofDr) == true,
+            spoofLegend = (not isReset and S.spoofLegend) == true,
+            spoofStillTag = (not isReset and S.spoofStillTag) == true,
+            hideName = (not isReset and S.hideName) == true,
+            guildMode = guildMode, guildTag = guildTag, country = country,
+            booster = (not isReset and S.booster) == true, boosterColor = boosterColor,
+            spoofLevel = spoofLevel, worn = isReset and {} or (S.fakeWorn or {}),
+        })
+        return metaStr, fallbackWire, sig
     end
 
     function P2P.BroadcastState(isReset)
         if ProxyCommands.State.p2pEnabled == false then return end
-        if P2P.pendingBroadcast and not isReset then return end
+        P2P.pendingBroadcastToken = (P2P.pendingBroadcastToken or 0) + 1
+        local myTok = P2P.pendingBroadcastToken
         P2P.pendingBroadcast = true
-        task.delay(isReset and 0.05 or 0.18, function()
+        task.delay(isReset and 0.08 or 0.75, function()
+            if myTok ~= P2P.pendingBroadcastToken then return end
             P2P.pendingBroadcast = false
             if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
             if ProxyCommands.State.p2pEnabled == false then return end
-            enqueueWire("SET", buildStatePacket(false, isReset == true))
+            local metaStr, fallbackWire, sig = buildStatePayloads(false, isReset == true)
+            enqueueWire("SET", metaStr, fallbackWire, sig)
         end)
     end
 
     function P2P.SendHello()
         if ProxyCommands.State.p2pEnabled == false then return end
         local now = os.clock()
-        if (now - (P2P.lastHelloAt or 0)) < 2.5 then return end
+        if (now - (P2P.lastHelloAt or 0)) < 5.0 then return end
         P2P.lastHelloAt = now
-        enqueueWire("HELLO", buildStatePacket(true, false))
+        local metaStr, fallbackWire, sig = buildStatePayloads(true, false)
+        enqueueWire("HELLO", metaStr, fallbackWire, sig)
     end
 
     function P2P.SendSbv(msgText)
@@ -12700,9 +13554,10 @@ end
             proxyConsole("`o[SBV] Format: /sbv <pesan>``")
             return false
         end
+        cleanMsg = cleanMsg:sub(1, 120)
         local now = os.clock()
-        if (now - (P2P.lastSbvAt or 0)) < 2.0 then
-            proxyConsole("`o[SBV] Tunggu sebentar sebelum kirim /sbv lagi.``")
+        if (now - (P2P.lastSbvAt or 0)) < 2.8 then
+            proxyConsole("`o[SBV] Tunggu ~3 detik sebelum kirim /sbv lagi (anti-spam).``")
             return false
         end
         P2P.lastSbvAt = now
@@ -12711,31 +13566,155 @@ end
         local _, roleIdx = Visual.FindRoleEntry(S.role)
         local effIdx = Visual.GetEffectIndex(S.effect)
         local curWorld = (H.gt and cleanWorldName(H.gt.name)) or "START"
+        local opts = { spoofDr = S.spoofDr == true, spoofLegend = S.spoofLegend == true }
 
-        displaySbvLine(Core.GetInGameName(LP, true), S.customName, S.role, S.effect, S.colorCode, curWorld, cleanMsg)
+        displaySbvLine(Core.GetInGameName(LP, true), S.customName, S.role, S.effect, S.colorCode, curWorld, cleanMsg, opts)
+
+        local flags = (S.spoofDr and 8 or 0) + (S.spoofLegend and 16 or 0)
+        local metaStr = table.concat({
+            "SYT2", "B", tostring(flags),
+            cleanPipeVal(S.role or "none"),
+            cleanPipeVal(S.effect or "None"),
+            cleanPipeVal(S.colorCode or ""),
+            cleanPipeVal(S.customTitle or "none"),
+            strToHex((S.customName or ""):sub(1, 24)),
+            strToHex(curWorld:sub(1, 18)),
+            strToHex(cleanMsg)
+        }, "|")
 
         local bytes = { 0x13, roleIdx, effIdx }
         pushStr(bytes, S.customName or "", 20)
         pushStr(bytes, curWorld, 16)
-        local rem = math.max(12, 80 - #bytes - 1)
+        local rem = math.max(12, 84 - #bytes - 1)
         pushStr(bytes, cleanMsg, rem)
-        enqueueWire("SBV", encodeBytesToWire(bytes))
+        enqueueWire("SBV", metaStr, encodeBytesToWire(bytes), nil)
         return true
     end
 
-    function P2P.HandleIncomingWire(wireTxt, senderUid)
-        if type(wireTxt) ~= "string" or wireTxt:sub(1, #P2P_PREFIX) ~= P2P_PREFIX then return false end
+    local function applyDecodedPeerState(senderUid, peerObj, wantReply)
+        peerObj.sig = buildPeerSig(peerObj)
+        P2P.Peers[senderUid] = peerObj
+        pcall(P2P.SaveToEnv)
+        pcall(applyPeerToWorld, senderUid, peerObj)
+
+        if wantReply and ProxyCommands.State.p2pEnabled ~= false and not P2P.replyTimers[senderUid] then
+            local now = os.clock()
+            if (now - (P2P.lastStateSentAt or 0)) < 7.0 then return end
+            P2P.replyTimers[senderUid] = true
+            local stagger = 1.4 + ((LP and (LP.UserId % 5) or 0) * 0.45)
+            task.delay(stagger, function()
+                P2P.replyTimers[senderUid] = nil
+                if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+                if ProxyCommands.State.p2pEnabled ~= false then
+                    local metaStr, fallbackWire, sig = buildStatePayloads(false, false)
+                    enqueueWire("SET", metaStr, fallbackWire, sig)
+                end
+            end)
+        end
+    end
+
+    function P2P.HandleIncomingPacket(wireTxt, metaTxt, senderUid, msgId)
+        local isMeta = type(metaTxt) == "string" and metaTxt:sub(1, #P2P_META_TAG) == P2P_META_TAG
+        local isWire = type(wireTxt) == "string" and wireTxt:sub(1, #P2P_PREFIX) == P2P_PREFIX
+        if not isMeta and not isWire then return false end
+
         senderUid = tonumber(senderUid)
-        if not senderUid or (LP and senderUid == LP.UserId) then return true end
+        if LP and senderUid == LP.UserId then
+            if wireTxt == "xwkp" or isWire then
+                if isMeta and metaTxt == P2P.lastMetaSentPayload then
+                    P2P.metaBroken = false
+                elseif not isMeta and (os.clock() - (P2P.lastMetaSentAt or 0)) < 3.0 and (metaTxt == nil or metaTxt == "") then
+                    P2P.metaBroken = true
+                end
+            end
+            return true
+        end
+        if not senderUid then return true end
 
         local now = os.clock()
-        local dedupeKey = tostring(senderUid) .. "|" .. wireTxt
-        if P2P.seenWire[dedupeKey] and (now - P2P.seenWire[dedupeKey]) < 2.0 then
+        local dedupeKey = tostring(msgId or "") ~= "" and ("ID:" .. tostring(msgId)) or (tostring(senderUid) .. "|" .. (isMeta and metaTxt or wireTxt))
+        if P2P.seenWire[dedupeKey] and (now - P2P.seenWire[dedupeKey]) < 4.0 then
             return true
         end
         P2P.seenWire[dedupeKey] = now
         for k, t0 in pairs(P2P.seenWire) do
-            if (now - t0) > 8.0 then P2P.seenWire[k] = nil end
+            if (now - t0) > 12.0 then P2P.seenWire[k] = nil end
+        end
+
+        if isMeta then
+            local f = {}
+            for seg in (metaTxt .. "|"):gmatch("([^|]*)|") do f[#f + 1] = seg end
+            local kind = f[2]
+            if kind == "S" or kind == "H" then
+                local flags = tonumber(f[3]) or 0
+                local isReset = (flags % 2) == 1
+                local wantReply = (math.floor(flags / 2) % 2) == 1
+                local ghostSkin = (math.floor(flags / 4) % 2) == 1
+                local spoofDr = (math.floor(flags / 8) % 2) == 1
+                local spoofLegend = (math.floor(flags / 16) % 2) == 1
+                local spoofStillTag = (math.floor(flags / 32) % 2) == 1
+                local booster = (math.floor(flags / 64) % 2) == 1
+                local hideName = (math.floor(flags / 128) % 2) == 1
+                local roleKey = f[4] ~= "" and f[4] or "none"
+                local effName = f[5] ~= "" and f[5] or "None"
+                local colorCode = f[6] or ""
+                local customTitle = f[7] ~= "" and f[7] or "none"
+                local skinPreset = f[8] ~= "" and f[8] or "Real (Server Skin)"
+                local guildMode = f[9] ~= "" and f[9] or "None (Real)"
+                local country = f[10] ~= "" and f[10] or "Real (Unchanged)"
+                local boosterColor = f[11] ~= "" and f[11] or "Default (Real)"
+                local spoofLevel = tonumber(f[12]) or 0
+                local cName = hexToStr(f[13] or "")
+                local gTag = hexToStr(f[14] or "")
+                local wornMap = {}
+                for pair in tostring(f[15] or ""):gmatch("[^,]+") do
+                    local sIdxStr, idStr = pair:match("^(%d+)=(%d+)$")
+                    local sl = SLOTS_ORDER[tonumber(sIdxStr) or 0]
+                    if sl and idStr then wornMap[sl] = tonumber(idStr) end
+                end
+                applyDecodedPeerState(senderUid, {
+                    uid = senderUid,
+                    reset = isReset,
+                    role = roleKey,
+                    effect = effName,
+                    colorCode = colorCode,
+                    customTitle = customTitle,
+                    customName = cName,
+                    skinPreset = skinPreset,
+                    ghostSkin = ghostSkin,
+                    spoofDr = spoofDr,
+                    spoofLegend = spoofLegend,
+                    spoofStillTag = spoofStillTag,
+                    hideName = hideName,
+                    guildMode = guildMode,
+                    guildTag = gTag,
+                    country = country,
+                    booster = booster,
+                    boosterColor = boosterColor,
+                    spoofLevel = spoofLevel,
+                    worn = wornMap,
+                    updatedAt = now,
+                    origAttrs = P2P.Peers[senderUid] and P2P.Peers[senderUid].origAttrs or nil,
+                }, kind == "H" or wantReply)
+                return true
+            elseif kind == "B" then
+                local flags = tonumber(f[3]) or 0
+                local spoofDr = (math.floor(flags / 8) % 2) == 1
+                local spoofLegend = (math.floor(flags / 16) % 2) == 1
+                local roleKey = f[4] ~= "" and f[4] or "none"
+                local effName = f[5] ~= "" and f[5] or "None"
+                local colorCode = f[6] or ""
+                local cName = hexToStr(f[8] or "")
+                local wName = hexToStr(f[9] or "")
+                local sbMsg = hexToStr(f[10] or "")
+                local plr = Players:GetPlayerByUserId(senderUid)
+                local rawNm = (plr and (plr:GetAttribute("GameName") or plr.Name)) or "Player"
+                if P2P.Peers[senderUid] and P2P.Peers[senderUid].origAttrs and P2P.Peers[senderUid].origAttrs.GameName then
+                    rawNm = P2P.Peers[senderUid].origAttrs.GameName
+                end
+                displaySbvLine(rawNm, cName, roleKey, effName, colorCode, wName, sbMsg, { spoofDr = spoofDr, spoofLegend = spoofLegend })
+                return true
+            end
         end
 
         local bytes = decodeWireToBytes(wireTxt)
@@ -12748,6 +13727,12 @@ end
             local effIdx = bytes[4] or 1
             local isReset = (flags % 2) == 1
             local wantReply = (math.floor(flags / 2) % 2) == 1
+            local ghostSkin = (math.floor(flags / 4) % 2) == 1
+            local spoofDr = (math.floor(flags / 8) % 2) == 1
+            local spoofLegend = (math.floor(flags / 16) % 2) == 1
+            local spoofStillTag = (math.floor(flags / 32) % 2) == 1
+            local booster = (math.floor(flags / 64) % 2) == 1
+            local hideName = (math.floor(flags / 128) % 2) == 1
             local cName, pos = readStr(bytes, 5)
             local slotCnt = bytes[pos] or 0
             pos = pos + 1
@@ -12764,32 +13749,22 @@ end
 
             local rc = Visual.RoleCatalog[roleIdx] or Visual.RoleCatalog[1]
             local eff = Visual.Presets.effects[effIdx] or "None"
-            local peerObj = {
+            applyDecodedPeerState(senderUid, {
                 uid = senderUid,
                 reset = isReset,
                 role = rc.key,
                 effect = eff,
                 customName = cName,
+                ghostSkin = ghostSkin,
+                spoofDr = spoofDr,
+                spoofLegend = spoofLegend,
+                spoofStillTag = spoofStillTag,
+                booster = booster,
+                hideName = hideName,
                 worn = wornMap,
                 updatedAt = now,
                 origAttrs = P2P.Peers[senderUid] and P2P.Peers[senderUid].origAttrs or nil,
-            }
-            peerObj.sig = buildPeerSig(peerObj)
-            P2P.Peers[senderUid] = peerObj
-            pcall(P2P.SaveToEnv)
-            pcall(applyPeerToWorld, senderUid, peerObj)
-
-            if (ptype == 0x12 or wantReply) and ProxyCommands.State.p2pEnabled ~= false and not P2P.replyTimers[senderUid] then
-                P2P.replyTimers[senderUid] = true
-                local stagger = 0.15 + ((LP and (LP.UserId % 7) or 0) * 0.18)
-                task.delay(stagger, function()
-                    P2P.replyTimers[senderUid] = nil
-                    if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
-                    if ProxyCommands.State.p2pEnabled ~= false then
-                        enqueueWire("SET", buildStatePacket(false, false))
-                    end
-                end)
-            end
+            }, ptype == 0x12 or wantReply)
             return true
         elseif ptype == 0x13 then
             local roleIdx = bytes[2] or 1
@@ -12811,14 +13786,22 @@ end
         return false
     end
 
+    function P2P.HandleIncomingWire(wireTxt, senderUid)
+        return P2P.HandleIncomingPacket(wireTxt, nil, senderUid, nil)
+    end
+
     getEnv().__SYT_OVERLAY_PROFILE_FN = P2P.OverlayProfile
     getEnv().__SYT_P2P_ON_INCOMING_FN = function(msg)
-        if not msg or type(msg.Text) ~= "string" then return nil end
-        if msg.Text:sub(1, #P2P_PREFIX) == P2P_PREFIX then
+        if not msg then return nil end
+        local txt = type(msg.Text) == "string" and msg.Text or ""
+        local meta = type(msg.Metadata) == "string" and msg.Metadata or ""
+        local isP2P = (meta:sub(1, #P2P_META_TAG) == P2P_META_TAG) or (txt:sub(1, 4) == "xwkp")
+        if isP2P then
             local uid = msg.TextSource and msg.TextSource.UserId
-            pcall(P2P.HandleIncomingWire, msg.Text, uid)
+            pcall(P2P.HandleIncomingPacket, txt, meta, uid, msg.MessageId)
             local props = Instance.new("TextChatMessageProperties")
             props.Text = ""
+            props.PrefixText = ""
             return props
         end
         return nil
@@ -12828,7 +13811,8 @@ end)()
 -- Dialog 1: /CLOTHES (3-Column Character Edit + Explicit SET buttons + P2P Auto-Sync)
 function ProxyCommands.OpenClothesDialog()
     Core.EnsureInit()
-    local _, inner = makeNativeGameDialog("Clothes", "Character Edit - Wardrobe (/clothes)", 710, 430)
+    Visual.EnsureOutfitPersistenceHooks()
+    local sg, inner = makeNativeGameDialog("Clothes", "Character Edit - Wardrobe (/clothes)", 710, 430)
     local selectedCat = "all"
     local searchQ = ""
 
@@ -12852,59 +13836,115 @@ function ProxyCommands.OpenClothesDialog()
     Instance.new("UICorner", midCol).CornerRadius = UDim.new(0, 6)
 
     local avatarBox = Instance.new("Frame", midCol)
-    avatarBox.Size = UDim2.fromOffset(152, 160)
-    avatarBox.Position = UDim2.new(0.5, -76, 0, 10)
+    avatarBox.Size = UDim2.fromOffset(168, 162)
+    avatarBox.Position = UDim2.new(0.5, -84, 0, 8)
     avatarBox.BackgroundColor3 = Color3.fromRGB(12, 34, 46)
+    avatarBox.ClipsDescendants = true
     Instance.new("UICorner", avatarBox).CornerRadius = UDim.new(0, 6)
 
-    local previewGrid = Instance.new("Frame", avatarBox)
-    previewGrid.Size = UDim2.new(1, -12, 1, -30)
-    previewGrid.Position = UDim2.fromOffset(6, 6)
-    previewGrid.BackgroundTransparency = 1
-    local pgLayout = Instance.new("UIGridLayout", previewGrid)
-    pgLayout.CellSize = UDim2.fromOffset(32, 36)
-    pgLayout.CellPadding = UDim2.fromOffset(4, 4)
+    local charStage = Instance.new("Frame", avatarBox)
+    charStage.Name = "ClothesCharStage"
+    charStage.Size = UDim2.new(1, -8, 1, -36)
+    charStage.Position = UDim2.fromOffset(4, 2)
+    charStage.BackgroundTransparency = 1
+
+    local portraitHost = Instance.new("Frame", charStage)
+    portraitHost.Name = "Portrait"
+    portraitHost.Size = UDim2.fromOffset(32, 32)
+    portraitHost.AnchorPoint = Vector2.new(0.5, 0.5)
+    portraitHost.Position = UDim2.new(0.5, 0, 0.58, 0)
+    portraitHost.BackgroundTransparency = 1
+    portraitHost.ZIndex = 3
+    local rigScale = Instance.new("UIScale", portraitHost)
+    rigScale.Scale = 2.55
+
+    local ps = H.playerSpriteObj
+    local activeRig = nil
+    if type(ps) == "table" and type(ps.buildRig) == "function" and type(ps.allRigs) == "table" then
+        local okRig, built = pcall(ps.buildRig, false, portraitHost)
+        if okRig and type(built) == "table" then
+            built.portrait = true
+            built.flip = false
+            built.sign = 0
+            table.insert(ps.allRigs, built)
+            activeRig = built
+            if type(ps.applyFeet) == "function" then pcall(ps.applyFeet, ps) end
+            if typeof(ps.SKIN) == "Color3" and type(ps.setSkin) == "function" then pcall(ps.setSkin, ps, ps.SKIN) end
+            if H.skillsObj and type(H.skillsObj.applyWorn) == "function" then
+                pcall(H.skillsObj.applyWorn, built, os.clock())
+            end
+        end
+    end
+
+    local function cleanupPortraitRig()
+        if activeRig and type(ps) == "table" and type(ps.allRigs) == "table" then
+            for ri = #ps.allRigs, 1, -1 do
+                if ps.allRigs[ri] == activeRig then
+                    table.remove(ps.allRigs, ri)
+                end
+            end
+            activeRig = nil
+        end
+    end
+    if sg and typeof(sg) == "Instance" then
+        sg.Destroying:Connect(cleanupPortraitRig)
+    end
+    avatarBox.Destroying:Connect(cleanupPortraitRig)
+
+    local slotInfoLbl = Instance.new("TextLabel", avatarBox)
+    slotInfoLbl.Size = UDim2.new(1, -8, 0, 14)
+    slotInfoLbl.Position = UDim2.new(0, 4, 1, -36)
+    slotInfoLbl.BackgroundTransparency = 1
+    slotInfoLbl.Font = Enum.Font.Code
+    slotInfoLbl.TextSize = 9
+    slotInfoLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    slotInfoLbl.TextColor3 = Color3.fromRGB(148, 226, 255)
 
     local pNameLbl = Instance.new("TextLabel", avatarBox)
-    pNameLbl.Size = UDim2.new(1, -8, 0, 20)
-    pNameLbl.Position = UDim2.new(0, 4, 1, -22)
+    pNameLbl.Size = UDim2.new(1, -8, 0, 18)
+    pNameLbl.Position = UDim2.new(0, 4, 1, -20)
     pNameLbl.BackgroundTransparency = 1
     pNameLbl.Font = Enum.Font.GothamBold
     pNameLbl.TextSize = 11
     pNameLbl.TextColor3 = Color3.fromRGB(255, 230, 180)
-    pNameLbl.Text = Visual.FormatPreviewText(Visual.State.customName or "", Visual.State.role or "none")
+    pNameLbl.Text = Visual.FormatPreviewText(Visual.State.customName or "", Visual.State.role or "none", {
+        spoofDr = Visual.State.spoofDr == true,
+        spoofLegend = Visual.State.spoofLegend == true,
+    })
 
     local function rebuildMidPreview()
-        for _, ch in ipairs(previewGrid:GetChildren()) do
-            if not ch:IsA("UIGridLayout") then ch:Destroy() end
-        end
-        pNameLbl.Text = Visual.FormatPreviewText(Visual.State.customName or "", Visual.State.role or "none")
+        pNameLbl.Text = Visual.FormatPreviewText(Visual.State.customName or "", Visual.State.role or "none", {
+            spoofDr = Visual.State.spoofDr == true,
+            spoofLegend = Visual.State.spoofLegend == true,
+        })
         local rc = Visual.FindRoleEntry(Visual.State.role or "none")
         pNameLbl.TextColor3 = rc.color or Color3.fromRGB(255, 230, 180)
         local wt = H.wornTbl or {}
-        for _, sl in ipairs({ "hat", "hair", "face", "shirt", "back", "hand", "pants", "feet" }) do
+        local activeCount, parts = 0, {}
+        for _, sl in ipairs({ "hat", "hair", "face", "shirt", "back", "hand", "pants", "feet", "chest", "ances", "neck", "pet" }) do
             local id = Visual.State.fakeWorn[sl]
             if id == nil then id = wt[sl] end
-            local slotF = Instance.new("Frame", previewGrid)
-            slotF.BackgroundColor3 = Color3.fromRGB(28, 52, 58)
-            Instance.new("UICorner", slotF).CornerRadius = UDim.new(0, 4)
             if type(id) == "number" and id > 0 then
-                Core.AttachItemSprite(slotF, id, 28)
-            else
-                local slbl = Instance.new("TextLabel", slotF)
-                slbl.Size = UDim2.fromScale(1, 1)
-                slbl.BackgroundTransparency = 1
-                slbl.Font = Enum.Font.Code
-                slbl.TextSize = 8
-                slbl.TextColor3 = Color3.fromRGB(160, 190, 205)
-                slbl.Text = sl:upper()
+                activeCount += 1
+                if #parts < 3 then parts[#parts + 1] = sl:sub(1, 3):upper() .. "#" .. tostring(id) end
+            end
+        end
+        slotInfoLbl.Text = (activeCount > 0) and string.format("Set (%d): %s", activeCount, table.concat(parts, " ")) or "Set: Polos / Kosong (0)"
+        if activeRig then
+            local pObj = H.playerSpriteObj
+            if H.skillsObj and type(H.skillsObj.applyWorn) == "function" then
+                pcall(H.skillsObj.applyWorn, activeRig, os.clock())
+            end
+            if type(pObj) == "table" and type(pObj.applyFeet) == "function" then pcall(pObj.applyFeet, pObj) end
+            if type(pObj) == "table" and typeof(pObj.SKIN) == "Color3" and type(pObj.setSkin) == "function" then
+                pcall(pObj.setSkin, pObj, pObj.SKIN)
             end
         end
     end
 
     local setNowBtn = Instance.new("TextButton", midCol)
     setNowBtn.Size = UDim2.new(1, -16, 0, 28)
-    setNowBtn.Position = UDim2.fromOffset(8, 180)
+    setNowBtn.Position = UDim2.fromOffset(8, 178)
     setNowBtn.BackgroundColor3 = Color3.fromRGB(64, 186, 84)
     setNowBtn.Font = Enum.Font.GothamBold
     setNowBtn.TextSize = 11
@@ -12913,8 +13953,8 @@ function ProxyCommands.OpenClothesDialog()
     Instance.new("UICorner", setNowBtn).CornerRadius = UDim.new(0, 5)
 
     local saveBtn = Instance.new("TextButton", midCol)
-    saveBtn.Size = UDim2.new(0.5, -10, 0, 28)
-    saveBtn.Position = UDim2.fromOffset(8, 214)
+    saveBtn.Size = UDim2.new(0.5, -10, 0, 26)
+    saveBtn.Position = UDim2.fromOffset(8, 212)
     saveBtn.BackgroundColor3 = Color3.fromRGB(39, 125, 159)
     saveBtn.Font = Enum.Font.GothamBold
     saveBtn.TextSize = 11
@@ -12923,8 +13963,8 @@ function ProxyCommands.OpenClothesDialog()
     Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 5)
 
     local loadBtn = Instance.new("TextButton", midCol)
-    loadBtn.Size = UDim2.new(0.5, -10, 0, 28)
-    loadBtn.Position = UDim2.new(0.5, 2, 0, 214)
+    loadBtn.Size = UDim2.new(0.5, -10, 0, 26)
+    loadBtn.Position = UDim2.new(0.5, 2, 0, 212)
     loadBtn.BackgroundColor3 = Color3.fromRGB(140, 180, 192)
     loadBtn.Font = Enum.Font.GothamBold
     loadBtn.TextSize = 11
@@ -12933,24 +13973,34 @@ function ProxyCommands.OpenClothesDialog()
     Instance.new("UICorner", loadBtn).CornerRadius = UDim.new(0, 5)
 
     local clearBtn = Instance.new("TextButton", midCol)
-    clearBtn.Size = UDim2.new(1, -16, 0, 28)
-    clearBtn.Position = UDim2.fromOffset(8, 248)
+    clearBtn.Size = UDim2.new(0.5, -10, 0, 26)
+    clearBtn.Position = UDim2.fromOffset(8, 244)
     clearBtn.BackgroundColor3 = Color3.fromRGB(180, 70, 70)
     clearBtn.Font = Enum.Font.GothamBold
-    clearBtn.TextSize = 11
+    clearBtn.TextSize = 10
     clearBtn.TextColor3 = Color3.new(1, 1, 1)
-    clearBtn.Text = "RESET OUTFIT REAL"
+    clearBtn.Text = "RESET REAL"
     Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0, 5)
 
+    local nakedBtn = Instance.new("TextButton", midCol)
+    nakedBtn.Size = UDim2.new(0.5, -10, 0, 26)
+    nakedBtn.Position = UDim2.new(0.5, 2, 0, 244)
+    nakedBtn.BackgroundColor3 = Color3.fromRGB(145, 92, 48)
+    nakedBtn.Font = Enum.Font.GothamBold
+    nakedBtn.TextSize = 10
+    nakedBtn.TextColor3 = Color3.new(1, 1, 1)
+    nakedBtn.Text = "NAKED (0)"
+    Instance.new("UICorner", nakedBtn).CornerRadius = UDim.new(0, 5)
+
     local wingsNote = Instance.new("TextLabel", midCol)
-    wingsNote.Size = UDim2.new(1, -16, 0, 68)
-    wingsNote.Position = UDim2.fromOffset(8, 284)
+    wingsNote.Size = UDim2.new(1, -16, 0, 82)
+    wingsNote.Position = UDim2.fromOffset(8, 276)
     wingsNote.BackgroundTransparency = 1
     wingsNote.Font = Enum.Font.Gotham
     wingsNote.TextSize = 10
     wingsNote.TextWrapped = true
     wingsNote.TextColor3 = Color3.fromRGB(200, 225, 235)
-    wingsNote.Text = "Klik SET pada baju untuk pakai & kirim ke sesama pengguna SYT (P2P). Double-jump wings otomatis dinonaktifkan."
+    wingsNote.Text = "Klik SET pada baju untuk pakai & kirim lengkap ke sesama pengguna SYT (P2P). Klik UNSET untuk kembalikan slot asli atau NAKED untuk lepas semua."
 
     local rightCol = Instance.new("Frame", inner)
     rightCol.Position = UDim2.fromOffset(344, 44)
@@ -12982,6 +14032,16 @@ function ProxyCommands.OpenClothesDialog()
     local rLayout = Instance.new("UIListLayout", itemScroll)
     rLayout.Padding = UDim.new(0, 4)
 
+    local function catMatchesSlot(catKey, itemSlot)
+        if catKey == "all" then return true end
+        if catKey == "neck" then
+            return itemSlot == "neck" or itemSlot == "chest" or itemSlot == "ances"
+        elseif catKey == "pet" then
+            return itemSlot == "pet" or itemSlot == "mask" or itemSlot == "ring"
+        end
+        return itemSlot == catKey
+    end
+
     local rebuildItems
     rebuildItems = function()
         for _, ch in ipairs(itemScroll:GetChildren()) do
@@ -13003,7 +14063,7 @@ function ProxyCommands.OpenClothesDialog()
         for id, info in pairs(db) do
             if type(id) == "number" and type(info) == "table" and type(info.name) == "string" and not info.seed and info.kind ~= "seed" then
                 local isWearable = (info.kind == "cloth") or (type(info.slot) == "string" and info.slot ~= "")
-                if isWearable and (selectedCat == "all" or info.slot == selectedCat) then
+                if isWearable and catMatchesSlot(selectedCat, info.slot) then
                     if q == "" or string.find(string.lower(info.name), q, 1, true) or string.find(tostring(id), q, 1, true) then
                         list[#list + 1] = { id = id, info = info }
                     end
@@ -13107,7 +14167,19 @@ function ProxyCommands.OpenClothesDialog()
         Visual.ApplyOutfit()
         rebuildMidPreview()
         rebuildItems()
-        proxyConsole("`2[Clothes] Outfit dikembalikan ke asli.``")
+        proxyConsole("`2[Clothes] Outfit dikembalikan ke asli (+ Sync P2P).``")
+    end)
+
+    nakedBtn.MouseButton1Click:Connect(function()
+        Visual.State.fakeWorn = {}
+        for _, sl in ipairs(Visual.Presets.wearSlots or {}) do
+            Visual.State.fakeWorn[sl] = 0
+        end
+        H._stripWingDoubleJump = true
+        Visual.ApplyOutfit()
+        rebuildMidPreview()
+        rebuildItems()
+        proxyConsole("`2[Clothes] Semua slot dikosongkan (Naked 0) + Sync P2P!``")
     end)
 
     local cats = {
@@ -13116,6 +14188,7 @@ function ProxyCommands.OpenClothesDialog()
         { key = "shirt", label = "SHIRT / BADAN" }, { key = "pants", label = "PANTS" },
         { key = "feet", label = "FEET / KAKI" }, { key = "back", label = "BACK / WINGS" },
         { key = "hand", label = "HAND" }, { key = "neck", label = "NECK / CHEST" },
+        { key = "pet", label = "PET / MASK" },
     }
     for _, c in ipairs(cats) do
         local cb = Instance.new("TextButton", leftCol)
@@ -13243,19 +14316,17 @@ function ProxyCommands.OpenCnDialog()
         local rc = Visual.FindRoleEntry(chosenRole)
         Visual.State.customName = (nameInput.Text or ""):match("^%s*(.-)%s*$")
         Visual.State.role = rc.key
-        Visual.State.customTitle = rc.key
+        Visual.State.customTitle = (rc.key ~= "none") and rc.key or "none"
         Visual.State.spoofDr = (rc.key == "dr")
         Visual.State.spoofLegend = (rc.key == "legend")
-        Visual.State.lockNames = (Visual.State.customName ~= "" or rc.key ~= "none")
         Visual.State.effect = Visual.Presets.effects[effIdx] or "None"
+        Visual.State.lockNames = (Visual.State.customName ~= "" or rc.key ~= "none" or Visual.State.effect ~= "None")
         Visual.Apply()
-        if LP then
-            pcall(function()
-                LP:SetAttribute("GameName", Visual.State.customName ~= "" and Visual.State.customName or (Visual.State.origGameName or LP.Name))
-            end)
-        end
         syncRoleVisuals()
-        local shown = Visual.FormatPreviewText(Visual.State.customName, rc.key)
+        local shown = Visual.FormatPreviewText(Visual.State.customName, rc.key, {
+            spoofDr = Visual.State.spoofDr == true,
+            spoofLegend = Visual.State.spoofLegend == true,
+        })
         proxyConsole(string.format("`2[CN] SET '%s' | Role: %s (%s) | Synced P2P!``", shown, rc.label, rc.kind))
     end
 
@@ -13601,16 +14672,18 @@ function ProxyCommands.Install()
         end)
     end
 
-    -- Hook Net.entered & Net.look agar visual P2P peer tetap terpasang setelah server refresh look
+    -- Hook Net.entered & Net.look agar visual P2P peer tetap terpasang setelah server refresh look (0-frame defer + 0.18s followup)
     if H.Net and not H._p2pNetHooked then
         H._p2pNetHooked = true
         local function schedulePeerResync()
-            task.delay(0.25, function()
+            local function runSync()
                 if env.__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
                 if ProxyCommands.P2P and ProxyCommands.P2P.SyncVisiblePeers then
                     pcall(ProxyCommands.P2P.SyncVisiblePeers)
                 end
-            end)
+            end
+            task.defer(runSync)
+            task.delay(0.18, runSync)
         end
         if H.Net.entered and type(H.Net.entered.listen) == "function" then
             pcall(H.Net.entered.listen, schedulePeerResync)
@@ -13620,31 +14693,26 @@ function ProxyCommands.Install()
         end
     end
 
-    -- Utama: Hook ChatUI.onCommand langsung (Growblox memanggil ChatUI.onCommand sebelum SendAsync!)
+    -- Utama: Hook ChatUI.onCommand langsung (selalu re-check bila Game.lua menulis ulang onCommand)
     local chatTbl = resolveConsoleUi()
-    if not chatTbl then
-        local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
-        local gg = pg and pg:FindFirstChild("GameGui")
-        local cm = gg and gg:FindFirstChild("ChatUI")
-        if cm and cm:IsA("ModuleScript") then
-            local okR, reqT = pcall(require, cm)
-            if okR and type(reqT) == "table" then chatTbl = reqT end
-        end
-    end
-    if chatTbl and H.chatOnCmdHookedTbl ~= chatTbl then
-        H.chatOnCmdHookedTbl = chatTbl
-        local origOnCmd = rawget(chatTbl, "onCommand")
-        chatTbl.onCommand = function(txt, ...)
-            if type(txt) == "string" and txt:sub(1, 1) == "/" then
-                local okCmd, handled = pcall(handleProxyCommand, txt, LP and LP.Name or "")
-                if okCmd and handled then
-                    return true
+    if chatTbl and type(rawget(chatTbl, "add")) == "function" and type(rawget(chatTbl, "prefill")) == "function" then
+        local curOnCmd = rawget(chatTbl, "onCommand")
+        if curOnCmd ~= H._sytOnCmdWrapper then
+            local origOnCmd = (type(curOnCmd) == "function") and curOnCmd or nil
+            H._sytOnCmdWrapper = function(txt, ...)
+                if type(txt) == "string" and txt:sub(1, 1) == "/" then
+                    local okCmd, handled = pcall(handleProxyCommand, txt, LP and LP.Name or "")
+                    if okCmd and handled then
+                        return true
+                    end
                 end
+                if type(origOnCmd) == "function" then
+                    return origOnCmd(txt, ...)
+                end
+                return false
             end
-            if type(origOnCmd) == "function" then
-                return origOnCmd(txt, ...)
-            end
-            return false
+            chatTbl.onCommand = H._sytOnCmdWrapper
+            H.chatOnCmdHookedTbl = chatTbl
         end
     end
 
@@ -13669,62 +14737,44 @@ function ProxyCommands.Install()
                 end)
             end
 
-            local function hookChannel(ch)
-                if not ch or not ch:IsA("TextChannel") then return end
-                if not ch:GetAttribute("SYT_Hooked") then
-                    ch:SetAttribute("SYT_Hooked", true)
-                    pcall(function()
-                        local origSend = ch.SendAsync
-                        if type(hookfunction) == "function" then
-                            local oldFn
-                            oldFn = hookfunction(origSend, function(selfCh, msg, ...)
-                                if selfCh == ch and type(msg) == "string" and msg:sub(1, 1) == "/" then
-                                    local hFn = env.__SYT_PROXY_CMD_HANDLER
-                                    if type(hFn) == "function" and hFn(msg, LP and LP.Name or "") then
-                                        return nil
+            -- Global SendAsync hook (dipasang sekali pada method TextChannel.SendAsync untuk blokir /sbv & /cmd ke chat publik)
+            if not env.__SYT_TCS_SENDASYNC_HOOKED and type(hookfunction) == "function" then
+                pcall(function()
+                    local sampleCh = TCS:FindFirstChildWhichIsA("TextChannel", true)
+                    if sampleCh and type(sampleCh.SendAsync) == "function" then
+                        env.__SYT_TCS_SENDASYNC_HOOKED = true
+                        local origSend = sampleCh.SendAsync
+                        env.__SYT_TCS_SENDASYNC_ORIG = hookfunction(origSend, function(selfCh, msgText, metaText, ...)
+                            if typeof(selfCh) == "Instance" and selfCh:IsA("TextChannel") and type(msgText) == "string" and msgText:sub(1, 1) == "/" then
+                                local hFn = env.__SYT_PROXY_CMD_HANDLER
+                                if type(hFn) == "function" then
+                                    local okH, handled = pcall(hFn, msgText, LP and LP.Name or "")
+                                    if okH and handled then
+                                        return { Status = Enum.TextChatMessageStatus.Success, Text = "" }
                                     end
                                 end
-                                return oldFn(selfCh, msg, ...)
-                            end)
-                        end
-                    end)
-                end
-                if ch:GetAttribute("SYT_P2P_Tok") ~= MY_SCRIPT_TOKEN then
-                    ch:SetAttribute("SYT_P2P_Tok", MY_SCRIPT_TOKEN)
-                    local okC, conn = pcall(function()
-                        return ch.MessageReceived:Connect(function(msg)
-                            local txt = msg and msg.Text or ""
-                            local uid = msg and msg.TextSource and msg.TextSource.UserId
-                            if txt:sub(1, 5) == "xwkp " and ProxyCommands.P2P and ProxyCommands.P2P.HandleIncomingWire then
-                                pcall(ProxyCommands.P2P.HandleIncomingWire, txt, uid)
-                                return
                             end
-                            local src = msg and msg.TextSource and msg.TextSource.Name or ""
-                            handleProxyCommand(txt, src)
+                            return env.__SYT_TCS_SENDASYNC_ORIG(selfCh, msgText, metaText, ...)
                         end)
-                    end)
-                    if okC and conn then p2pConns[#p2pConns + 1] = conn end
-                end
-            end
-            for _, d in ipairs(TCS:GetDescendants()) do
-                if d:IsA("TextChannel") then hookChannel(d) end
-            end
-            local okD, dConn = pcall(function()
-                return TCS.DescendantAdded:Connect(function(d)
-                    if d:IsA("TextChannel") then hookChannel(d) end
+                    end
                 end)
-            end)
-            if okD and dConn then p2pConns[#p2pConns + 1] = dConn end
+            end
+
+            -- Satu listener MessageReceived terpusat (menghindari duplikasi double-handle)
             pcall(function()
                 local mConn = TCS.MessageReceived:Connect(function(msg)
-                    local txt = msg and msg.Text or ""
-                    local uid = msg and msg.TextSource and msg.TextSource.UserId
-                    if txt:sub(1, 5) == "xwkp " and ProxyCommands.P2P and ProxyCommands.P2P.HandleIncomingWire then
-                        pcall(ProxyCommands.P2P.HandleIncomingWire, txt, uid)
+                    if not msg then return end
+                    local txt = type(msg.Text) == "string" and msg.Text or ""
+                    local meta = type(msg.Metadata) == "string" and msg.Metadata or ""
+                    local uid = msg.TextSource and msg.TextSource.UserId
+                    if (meta:sub(1, 5) == "SYT2|" or txt:sub(1, 4) == "xwkp") and ProxyCommands.P2P and ProxyCommands.P2P.HandleIncomingPacket then
+                        pcall(ProxyCommands.P2P.HandleIncomingPacket, txt, meta, uid, msg.MessageId)
                         return
                     end
-                    local src = msg and msg.TextSource and msg.TextSource.Name or ""
-                    handleProxyCommand(txt, src)
+                    if txt:sub(1, 1) ~= "/" then
+                        local src = msg.TextSource and msg.TextSource.Name or ""
+                        handleProxyCommand(txt, src)
+                    end
                 end)
                 p2pConns[#p2pConns + 1] = mConn
             end)
@@ -13733,14 +14783,19 @@ function ProxyCommands.Install()
 end
 
 stopAllAutomationImpl = function(reason)
+    local keepSession = (reason == "Rerun SYT")
     if PNB then PNB.Stop() end
     if Pabrik then Pabrik.Stop() end
-    if DirtFarm then DirtFarm.Stop() end
-    if ClearWorld then ClearWorld.Stop() end
+    if DirtFarm then DirtFarm.Stop(keepSession) end
+    if ClearWorld then ClearWorld.Stop(keepSession) end
     if MoveBlock then MoveBlock.Stop() end
-    if AutoLeveling then AutoLeveling.Stop() end
+    if AutoLeveling then AutoLeveling.Stop(keepSession) end
     if Spam then Spam.Stop() end
     stopRandomTp()
+    if not keepSession then
+        local ed = getEnv().__SYT_ENV_DATA
+        if type(ed) == "table" then ed.rotSession = nil end
+    end
     if reason and reason ~= "" and UI then
         setPNBStatus(reason)
         setPabrikStatus(reason)
@@ -13949,6 +15004,11 @@ buildSYTMenuFn = function()
             end)
         end),
         right = right(function(r)
+            local PnbCtrl = r:Card("PNB Control", "Run", "Bolt", {})
+            PnbCtrl:Button("[PNB] Start / Stop", "TOGGLE", "Bolt", function() PNB.Toggle() end)
+            PnbCtrl:Input("Block Dipilih", "PnbSelectedDisplay", "None", PNB.State.selectedBlockId and tostring(PNB.State.selectedBlockId) or "None")
+            PnbCtrl:Input("Status PNB", "PnbStatusDisplay", "Idle", PNB.State.status or "Idle")
+
             local PnbCfg = r:Card("Storage & Buy", "PNB", "Combat", {})
             PnbCfg:Input("Storage Block (WORLD:ID)", "PnbStorageBlockInput", "Maks 8 char...", PNB.State.storageBlock, function(txt)
                 PNB.State.storageBlock = tostring(txt or ""):gsub("%s+", ""):upper():sub(1, 17)
@@ -13962,11 +15022,6 @@ buildSYTMenuFn = function()
             PnbCfg:Dropdown("Auto Buy (Min 5x Gems)", "PnbAutoBuySelect", autoBuyOptions, "OFF", function(v)
                 PNB.State.autoBuyKey = v or "OFF"
             end)
-
-            local PnbCtrl = r:Card("PNB Control", "Run", "Bolt", {})
-            PnbCtrl:Button("[PNB] Start / Stop", "TOGGLE", "Bolt", function() PNB.Toggle() end)
-            PnbCtrl:Input("Block Dipilih", "PnbSelectedDisplay", "None", PNB.State.selectedBlockId and tostring(PNB.State.selectedBlockId) or "None")
-            PnbCtrl:Input("Status PNB", "PnbStatusDisplay", "Idle", PNB.State.status or "Idle")
         end)
     })
 
@@ -14022,6 +15077,7 @@ buildSYTMenuFn = function()
                     list[#list + 1] = clean
                     DirtFarm.State.rotationWorlds = list
                     DirtFarm.State.rotationText = table.concat(list, ", ")
+                    if DirtFarm._syncEnvQueue then DirtFarm._syncEnvQueue(list) end
                     UI:SetValue("DfWorldInput", "")
                     if UIHooks.refreshDfList then UIHooks.refreshDfList() end
                 end
@@ -14171,13 +15227,15 @@ function UIHooks.scanResponsiveButtons()
                                     if btn then
                                         local badgeTxt, badgePill = nil, nil
                                         for _, ch in ipairs(btn:GetDescendants()) do
-                                            if ch:IsA("TextLabel") and ch ~= d and ch.Text == "TOGGLE" then
+                                            if ch:IsA("TextLabel") and ch ~= d and (ch.Text == "TOGGLE" or ch.Text == "START" or ch.Text == "STOP" or ch.Text == "CLICKED") then
                                                 badgeTxt = ch; badgePill = ch.Parent; break
                                             end
                                         end
                                         buttonMap[sp.prefix] = { lbl = d, badgeTxt = badgeTxt, badgePill = badgePill, getState = sp.getState }
                                         btn.MouseButton1Click:Connect(function()
-                                            task.delay(0.15, function() if UIHooks.updateButtons then UIHooks.updateButtons() end end)
+                                            task.delay(0.05, function() if UIHooks.updateButtons then UIHooks.updateButtons() end end)
+                                            task.delay(0.20, function() if UIHooks.updateButtons then UIHooks.updateButtons() end end)
+                                            task.delay(0.62, function() if UIHooks.updateButtons then UIHooks.updateButtons() end end)
                                         end)
                                     end
                                 end
@@ -14645,6 +15703,7 @@ UIHooks.buildMountedCanvasesFn = function()
         function(i)
             table.remove(DirtFarm.State.rotationWorlds, i)
             DirtFarm.State.rotationText = table.concat(DirtFarm.State.rotationWorlds, ", ")
+            if DirtFarm._syncEnvQueue then DirtFarm._syncEnvQueue(DirtFarm.State.rotationWorlds) end
             if UIHooks.refreshDfList then UIHooks.refreshDfList() end
         end,
         "refreshDfList"
@@ -14847,6 +15906,7 @@ task.spawn(function()
         task.wait(0.35)
     end
     if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+    Visual.EnsureOutfitPersistenceHooks()
     if Visual.HasActiveSpoof() or (Visual.State.customName or "") ~= "" or (Visual.State.role or "none") ~= "none" or next(Visual.State.fakeWorn or {}) ~= nil then
         H._stripWingDoubleJump = (next(Visual.State.fakeWorn or {}) ~= nil)
         pcall(Visual.Apply)
@@ -14857,29 +15917,93 @@ task.spawn(function()
     end
 end)
 
--- Auto-Rerun AutoLeveling jika tersimpan status aktif di syt_autolvl.dat (level < 10)
+-- Auto-Resume dari Local Memory env (__SYT_ENV_DATA.rotSession + queue DF/CW) & AutoLeveling (level < 10) tanpa spam warp
 task.spawn(function()
-    local savedAutoLvl = safeReadStorage("syt_autolvl.dat")
-    if type(savedAutoLvl) == "string" and string.sub(savedAutoLvl, 1, 3) == "ON|" then
-        local dl = os.clock() + 10
-        while os.clock() < dl do
-            if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
-            pcall(SYT_Logic.Init, false)
-            if H.gt and (H.gt.name or "") ~= "" then break end
-            task.wait(0.35)
+    local ed = getEnv().__SYT_ENV_DATA
+    if type(ed) == "table" then
+        if type(ed.dfQueue) == "table" and #ed.dfQueue > 0 then
+            local q = {}
+            for i, w in ipairs(ed.dfQueue) do q[i] = w end
+            DirtFarm.State.rotationWorlds = q
+            DirtFarm.State.rotationText = table.concat(q, ", ")
+            if UIHooks.refreshDfList then pcall(UIHooks.refreshDfList) end
         end
-        if H.gt and (H.gt.name or "") ~= "" and AutoLeveling.GetLevel() < AutoLeveling.State.targetLevel then
+        if type(ed.cwQueue) == "table" and #ed.cwQueue > 0 then
+            local q = {}
+            for i, w in ipairs(ed.cwQueue) do q[i] = w end
+            ClearWorld.State.worldList = q
+            if UIHooks.refreshCwList then pcall(UIHooks.refreshCwList) end
+        end
+    end
+
+    local rot = type(ed) == "table" and ed.rotSession or nil
+    local savedAutoLvl = safeReadStorage("syt_autolvl.dat")
+    local hasRot = (type(rot) == "table" and rot.active == true and (type(rot.updatedAt) ~= "number" or (os.clock() - rot.updatedAt) <= 300))
+    local hasAutoFile = (not hasRot) and (type(savedAutoLvl) == "string" and string.sub(savedAutoLvl, 1, 3) == "ON|")
+    if not hasRot and not hasAutoFile then return end
+
+    local dl = os.clock() + 12
+    while os.clock() < dl do
+        if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+        pcall(SYT_Logic.Init, false)
+        if H.gt and (H.gt.name or "") ~= "" then break end
+        task.wait(0.35)
+    end
+    if getEnv().__SYT_SCRIPT_TOKEN ~= MY_SCRIPT_TOKEN then return end
+    if not H.gt or (H.gt.name or "") == "" then return end
+
+    if hasRot then
+        if rot.mode == "DirtFarm" then
+            if type(rot.worlds) == "table" and #rot.worlds > 0 then
+                local q = {}
+                for i, w in ipairs(rot.worlds) do q[i] = w end
+                DirtFarm.State.rotationWorlds = q
+                DirtFarm.State.rotationText = table.concat(q, ", ")
+                if UIHooks.refreshDfList then pcall(UIHooks.refreshDfList) end
+            end
+            DirtFarm.Start()
+            return
+        elseif rot.mode == "ClearWorld" then
+            if type(rot.worlds) == "table" and #rot.worlds > 0 then
+                local q = {}
+                for i, w in ipairs(rot.worlds) do q[i] = w end
+                ClearWorld.State.worldList = q
+                if UIHooks.refreshCwList then pcall(UIHooks.refreshCwList) end
+            end
+            ClearWorld.Start({ halfWorld = rot.halfWorld == true, noCollect = rot.noCollect == true })
+            return
+        elseif rot.mode == "AutoLeveling" then
+            if AutoLeveling.GetLevel() < AutoLeveling.State.targetLevel then
+                if type(rot.targetWorld) == "string" and rot.targetWorld ~= "" then
+                    AutoLeveling.State.targetWorld = rot.targetWorld
+                end
+                if type(rot.completedWorlds) == "table" then
+                    AutoLeveling.State.completedWorlds = rot.completedWorlds
+                end
+                if UI then pcall(UI.SetValue, UI, "SysAutoLevelToggle", true, true) end
+                AutoLeveling.Start()
+                return
+            else
+                ed.rotSession = nil
+                safeWriteStorage("syt_autolvl.dat", "")
+                return
+            end
+        end
+    end
+
+    if hasAutoFile then
+        if AutoLeveling.GetLevel() < AutoLeveling.State.targetLevel then
             local savedW = string.sub(savedAutoLvl, 4)
             if savedW ~= "" then AutoLeveling.State.targetWorld = savedW end
             if UI then pcall(UI.SetValue, UI, "SysAutoLevelToggle", true, true) end
             AutoLeveling.Start()
-        elseif AutoLeveling.GetLevel() >= AutoLeveling.State.targetLevel then
+        else
             safeWriteStorage("syt_autolvl.dat", "")
         end
     end
 end)
 
--- Runtime Watcher: Live Sync, World Change, Player/Mod Detection, P2P & Low-Heat Minimized Mode
+-- Runtime Watcher: Live Sync, World Change, Player/Mod Detection, Outfit Anti-Drop Self-Heal & Low-Heat Mode
 local function computeInvHash()
     local slots = Core.GetBackpackSlots()
     if #slots == 0 then return "" end
@@ -14902,6 +16026,22 @@ H.watcherConn = RunService.Heartbeat:Connect(function()
     if (now - lastFastTick) < 0.25 then return end
     lastFastTick = now
     if Misc.State.fastRoulette then Core.SkipWheelAnimations() end
+    if not H.chatOnCmdHookedTbl or rawget(H.chatOnCmdHookedTbl, "onCommand") ~= H._sytOnCmdWrapper then
+        pcall(ProxyCommands.Install)
+    end
+    if Visual and Visual.State and type(Visual.State.fakeWorn) == "table" and next(Visual.State.fakeWorn) ~= nil and type(H.wornTbl) == "table" then
+        Visual.EnsureOutfitPersistenceHooks()
+        local drifted = false
+        for sl, fv in pairs(Visual.State.fakeWorn) do
+            if (fv > 0 and H.wornTbl[sl] ~= fv) or (fv == 0 and H.wornTbl[sl] ~= nil) then
+                drifted = true
+                break
+            end
+        end
+        if drifted and Visual.ReapplyOutfitLocally then
+            pcall(Visual.ReapplyOutfitLocally)
+        end
+    end
 
     local uiVisible = (UI and not UI.IsMinimized and UI.MainWindow and UI.MainWindow.Parent and UI.MainWindow.Visible) == true
     local gt = H.gt

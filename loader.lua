@@ -1,5 +1,11 @@
 --!nocheck
-local TARGET_URL = "https://raw.githubusercontent.com/Mytzcodes/GUIX/refs/heads/main/SYT_CN.lua"
+local CANDIDATE_URLS = {
+    "https://raw.githubusercontent.com/Mytzcodes/GUIX/refs/heads/main/SYT_CN.lua",
+    "https://cdn.jsdelivr.net/gh/Mytzcodes/GUIX@main/SYT_CN.lua",
+    "https://raw.githubusercontent.com/Mytzcodes/GUIX/main/SYT_CN.lua",
+    "https://github.com/Mytzcodes/GUIX/raw/refs/heads/main/SYT_CN.lua",
+    "https://raw.githubusercontent.com/Mytzcodes/GUIX/refs/heads/main/SYT.lua",
+}
 
 local function notify(title, text)
     pcall(function()
@@ -26,47 +32,74 @@ if not Players.LocalPlayer then
 end
 
 local function isValidSource(body)
-    return type(body) == "string" and #body > 128 and string.sub(body, 1, 4) ~= "404:"
+    if type(body) ~= "string" or #body < 128 then
+        return false
+    end
+    local head = string.lower((string.sub(body, 1, 64)):match("^%s*(.-)$") or "")
+    if string.sub(head, 1, 4) == "404:" or string.sub(head, 1, 5) == "<html" or string.sub(head, 1, 9) == "<!doctype" then
+        return false
+    end
+    return true
 end
 
-local function fetchSource(url)
-    local okPlain, resPlain = pcall(function()
+local reqFn = (type(syn) == "table" and type(syn.request) == "function" and syn.request)
+    or (type(http_request) == "function" and http_request)
+    or (type(request) == "function" and request)
+    or nil
+
+local function tryFetchOnce(url)
+    local okGet, resGet = pcall(function()
         return game:HttpGet(url, true)
     end)
-    if okPlain and isValidSource(resPlain) then
-        return resPlain
+    if okGet and isValidSource(resGet) then
+        return resGet
     end
-
-    local bustUrl = url .. "?t=" .. tostring(math.floor(os.time()))
-    local okBust, resBust = pcall(function()
-        return game:HttpGet(bustUrl, true)
-    end)
-    if okBust and isValidSource(resBust) then
-        return resBust
-    end
-
-    local reqFn = (type(syn) == "table" and type(syn.request) == "function" and syn.request)
-        or (type(http_request) == "function" and http_request)
-        or (type(request) == "function" and request)
-        or nil
 
     if reqFn then
-        local okReq, resp = pcall(reqFn, { Url = bustUrl, Method = "GET" })
+        local okReq, resp = pcall(reqFn, {
+            Url = url,
+            Method = "GET",
+            Headers = { ["Cache-Control"] = "no-cache" },
+        })
         if okReq and type(resp) == "table" and isValidSource(resp.Body) then
-            return resp.Body
+            local sc = tonumber(resp.StatusCode)
+            if not sc or (sc >= 200 and sc < 300) then
+                return resp.Body
+            end
         end
     end
 
-    return nil, tostring(resPlain or resBust or "Gagal mengunduh SYT.lua")
+    return nil, tostring(resGet or "empty/http error")
 end
 
-local src, fetchErr = fetchSource(TARGET_URL)
+local function fetchBestSource()
+    local lastErr = "unknown"
+    for pass = 1, 2 do
+        local bust = "?t=" .. tostring(math.floor(os.time())) .. "_" .. tostring(pass)
+        for _, baseUrl in ipairs(CANDIDATE_URLS) do
+            local target = (pass == 1) and baseUrl or (baseUrl .. bust)
+            local body, err = tryFetchOnce(target)
+            if body then
+                return body
+            end
+            lastErr = tostring(err)
+            task.wait()
+        end
+        if pass < 2 then
+            task.wait(0.35)
+        end
+    end
+    return nil, lastErr
+end
+
+local src, fetchErr = fetchBestSource()
 if not src then
     warn("[SYT Loader] Download gagal: " .. tostring(fetchErr))
-    notify("SYT Loader", "Gagal mengunduh script. Cek koneksi/URL.")
+    notify("SYT Loader", "Gagal mengunduh SYT_CN. Cek koneksi/VPN/DNS.")
     return
 end
 
+task.wait()
 local chunk, compileErr = loadstring(src)
 if type(chunk) ~= "function" then
     warn("[SYT Loader] Compile error: " .. tostring(compileErr))

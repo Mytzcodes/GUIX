@@ -99,7 +99,16 @@ if not src then
     return
 end
 
-task.wait()
+local function elevateThread()
+    local fn = (type(setthreadidentity) == "function" and setthreadidentity)
+        or (type(setidentity) == "function" and setidentity)
+        or (type(set_thread_identity) == "function" and set_thread_identity)
+        or (type(syn) == "table" and type(syn.set_thread_identity) == "function" and syn.set_thread_identity)
+        or nil
+    if fn then pcall(fn, 8) end
+end
+
+elevateThread()
 local chunk, compileErr = loadstring(src)
 if type(chunk) ~= "function" then
     warn("[SYT Loader] Compile error: " .. tostring(compileErr))
@@ -107,6 +116,7 @@ if type(chunk) ~= "function" then
     return
 end
 
+elevateThread()
 local okRun, resOrErr = xpcall(chunk, debug.traceback)
 if not okRun then
     warn("[SYT Loader] Runtime error:\n" .. tostring(resOrErr))

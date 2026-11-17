@@ -1,5 +1,5 @@
 --!nocheck
-local TARGET_URL = "https://raw.githubusercontent.com/Mytzcodes/GUIX/refs/heads/main/SYT.lua"
+local TARGET_URL = "https://raw.githubusercontent.com/Mytzcodes/GUIX/refs/heads/main/SYT_CN.lua"
 
 local function notify(title, text)
     pcall(function()

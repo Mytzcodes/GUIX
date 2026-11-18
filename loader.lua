@@ -1,9 +1,10 @@
 --!nocheck
+-- SYT_CN Auto-Updater Loader (R9.4)
 local CANDIDATE_URLS = {
     "https://raw.githubusercontent.com/Mytzcodes/GUIX/refs/heads/main/SYT_CN.lua",
-    "https://cdn.jsdelivr.net/gh/Mytzcodes/GUIX@main/SYT_CN.lua",
     "https://raw.githubusercontent.com/Mytzcodes/GUIX/main/SYT_CN.lua",
     "https://github.com/Mytzcodes/GUIX/raw/refs/heads/main/SYT_CN.lua",
+    "https://cdn.jsdelivr.net/gh/Mytzcodes/GUIX@main/SYT_CN.lua",
     "https://raw.githubusercontent.com/Mytzcodes/GUIX/refs/heads/main/SYT.lua",
 }
 
@@ -48,18 +49,14 @@ local reqFn = (type(syn) == "table" and type(syn.request) == "function" and syn.
     or nil
 
 local function tryFetchOnce(url)
-    local okGet, resGet = pcall(function()
-        return game:HttpGet(url, true)
-    end)
-    if okGet and isValidSource(resGet) then
-        return resGet
-    end
-
     if reqFn then
         local okReq, resp = pcall(reqFn, {
             Url = url,
             Method = "GET",
-            Headers = { ["Cache-Control"] = "no-cache" },
+            Headers = {
+                ["Cache-Control"] = "no-cache, no-store, max-age=0",
+                ["Pragma"] = "no-cache",
+            },
         })
         if okReq and type(resp) == "table" and isValidSource(resp.Body) then
             local sc = tonumber(resp.StatusCode)
@@ -69,18 +66,25 @@ local function tryFetchOnce(url)
         end
     end
 
+    local okGet, resGet = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+    if okGet and isValidSource(resGet) then
+        return resGet
+    end
+
     return nil, tostring(resGet or "empty/http error")
 end
 
 local function fetchBestSource()
     local lastErr = "unknown"
     for pass = 1, 2 do
-        local bust = "?t=" .. tostring(math.floor(os.time())) .. "_" .. tostring(pass)
+        local bust = "?cb=" .. tostring(os.time()) .. "_" .. tostring(math.floor(os.clock() * 1000) % 100000) .. "_" .. tostring(pass)
         for _, baseUrl in ipairs(CANDIDATE_URLS) do
-            local target = (pass == 1) and baseUrl or (baseUrl .. bust)
+            local target = (pass == 1) and (baseUrl .. bust) or baseUrl
             local body, err = tryFetchOnce(target)
             if body then
-                return body
+                return body, nil, target
             end
             lastErr = tostring(err)
             task.wait()
@@ -89,15 +93,16 @@ local function fetchBestSource()
             task.wait(0.35)
         end
     end
-    return nil, lastErr
+    return nil, lastErr, nil
 end
 
-local src, fetchErr = fetchBestSource()
+local src, fetchErr, loadedFrom = fetchBestSource()
 if not src then
     warn("[SYT Loader] Download gagal: " .. tostring(fetchErr))
     notify("SYT Loader", "Gagal mengunduh SYT_CN. Cek koneksi/VPN/DNS.")
     return
 end
+print(string.format("[SYT Loader] Loaded %d bytes", #src))
 
 local function elevateThread()
     local fn = (type(setthreadidentity) == "function" and setthreadidentity)
@@ -109,7 +114,7 @@ local function elevateThread()
 end
 
 elevateThread()
-local chunk, compileErr = loadstring(src)
+local chunk, compileErr = loadstring(src, "=SYT_CN")
 if type(chunk) ~= "function" then
     warn("[SYT Loader] Compile error: " .. tostring(compileErr))
     notify("SYT Loader", "Compile error! Cek F9 console.")

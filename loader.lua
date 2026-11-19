@@ -96,6 +96,26 @@ local function fetchBestSource()
     return nil, lastErr, nil
 end
 
+local R8_PREFETCH_URLS = {
+    "https://raw.githubusercontent.com/Mytzcodes/R-8/refs/heads/main/r%268_dv.lua",
+    "https://cdn.jsdelivr.net/gh/Mytzcodes/R-8@main/r%268_dv.lua",
+}
+
+-- Smart Parallel Prefetch: unduh framework UI r&8_dv.lua bersamaan saat mengunduh SYT_CN agar boot 0ms tunggu UI!
+task.spawn(function()
+    local env = (type(getgenv) == "function" and select(2, pcall(getgenv))) or _G
+    if type(env) ~= "table" then return end
+    if type(env.__SYT_R8_SOURCE_V9) == "string" and #env.__SYT_R8_SOURCE_V9 > 128 then return end
+    if type(env.__SYT_R8_RAW_PREFETCH) == "string" and #env.__SYT_R8_RAW_PREFETCH > 128 then return end
+    for _, u in ipairs(R8_PREFETCH_URLS) do
+        local body = tryFetchOnce(u)
+        if body then
+            env.__SYT_R8_RAW_PREFETCH = body
+            return
+        end
+    end
+end)
+
 local src, fetchErr, loadedFrom = fetchBestSource()
 if not src then
     warn("[SYT Loader] Download gagal: " .. tostring(fetchErr))
